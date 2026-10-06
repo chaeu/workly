@@ -7,6 +7,7 @@ Lightweight local macOS app to manage tasks, projects and use cases on top of pl
 - `docs/SPEC.md` – the specification. It is the source of truth. If code and spec disagree, ask; do not silently deviate.
 - `docs/design/DESIGN.md`, `docs/design/tokens.css`, `docs/design/components.css` – the design system.
 - `docs/reference/*.html` – working HTML prototypes (task board, use-case cockpit). Open them in a browser to see behaviour. `docs/screenshots/` shows the target look.
+- `docs/CLI.md` – `wly` commands, exit codes and JSON fields (stable; change only with the doc).
 - `docs/PROMPTS.md` – the milestone plan. Work on one milestone at a time.
 
 The spec and design docs are written in German; code, comments, commits, UI labels and identifiers are English.
@@ -63,6 +64,8 @@ pnpm check                              # svelte-kit sync + svelte-check
 cargo test --workspace                  # core + cli tests
 cargo clippy --workspace -- -D warnings
 cargo run -p wly -- --version
+cargo install --path crates/wly         # wly CLI to ~/.cargo/bin (or Settings → Install CLI: ~/.local/bin/wly -> app binary)
+WORKLY_WORKSPACE=/tmp/workly-dev cargo run -q -p wly -- task show WR-5   # CLI against the dev fixture copy; flags in docs/CLI.md
 pnpm tauri build                        # -> target/release/bundle/macos/Workly.app
 pnpm tauri icon docs/design/icon/workly-icon-1024.png  # regenerate icons (delete non-macOS output)
 ```
