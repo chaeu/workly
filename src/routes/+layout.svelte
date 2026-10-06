@@ -6,6 +6,7 @@
   import "@fontsource/ibm-plex-mono/latin-500.css";
   import "$lib/styles/tokens.css";
   import "$lib/styles/components.css";
+  import "$lib/styles/markdown.css";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { getCurrentWindow } from "@tauri-apps/api/window";

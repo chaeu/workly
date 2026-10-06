@@ -116,6 +116,7 @@ fn update_rules() {
     assert!(matches!(ws.update_task_field("WR-5", "status", &json!("nope"), "app"), Err(Error::Invalid(_))));
     assert!(matches!(ws.update_task_field("WR-5", "priority", &json!(7), "app"), Err(Error::Invalid(_))));
     assert!(matches!(ws.update_task_field("WR-5", "id", &json!("WR-50"), "app"), Err(Error::Invalid(_))));
+    assert!(matches!(ws.update_task_field("WR-5", "title", &json!(" "), "app"), Err(Error::Invalid(_))));
     assert!(matches!(ws.update_task_field("XX-1", "status", &json!("todo"), "app"), Err(Error::NotFound(_))));
     ws.update_task_field("WR-5", "status", &json!("done"), "app").unwrap();
     ws.update_task_field("WR-5", "agent.active", &json!("codex"), "cli").unwrap();

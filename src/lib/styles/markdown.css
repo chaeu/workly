@@ -1,0 +1,63 @@
+/* Rendered Markdown previews (sanitised HTML from renderMarkdown). */
+.md {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: auto;
+  max-width: 72ch;
+  line-height: 1.55;
+}
+.md h1,
+.md h2,
+.md h3 {
+  font-family: var(--w-font-label);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 1.2em 0 0.4em;
+}
+.md h1 {
+  font-size: var(--w-fs-heading);
+}
+.md h2 {
+  font-size: var(--w-fs-title);
+}
+.md h3 {
+  font-size: var(--w-fs-body);
+}
+.md a {
+  color: var(--w-accent);
+  cursor: pointer;
+}
+.md code {
+  font-family: var(--w-font-mono);
+  font-size: var(--w-fs-small);
+  background: var(--w-sunk);
+  border-radius: var(--w-r-sm);
+  padding: 1px 4px;
+}
+.md pre {
+  background: var(--w-sunk);
+  border-radius: var(--w-r-md);
+  padding: var(--w-s-3);
+  overflow-x: auto;
+}
+.md pre code {
+  padding: 0;
+}
+.md blockquote {
+  margin: 0;
+  padding-left: var(--w-s-3);
+  border-left: 3px solid var(--w-line);
+  color: var(--w-muted);
+}
+.md table {
+  border-collapse: collapse;
+}
+.md th,
+.md td {
+  border: 1px solid var(--w-line);
+  padding: 4px 8px;
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--w-line);
+}

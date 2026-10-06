@@ -246,6 +246,7 @@ impl Workspace {
     fn check_update(&self, field: &str, value: &Value, actor: &str) -> Result<()> {
         match field {
             "id" => Err(Error::Invalid("the id of a task cannot change".into())),
+            "title" if value.as_str().is_none_or(|s| s.trim().is_empty()) => Err(Error::Invalid("a task needs a title".into())),
             "status" => {
                 let status = value.as_str().unwrap_or_default();
                 if !self.config.task_statuses.iter().any(|s| s.id == status) {

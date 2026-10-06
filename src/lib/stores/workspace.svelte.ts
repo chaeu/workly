@@ -13,8 +13,22 @@ export type TaskEntry = {
   priority: number | null;
   due: string | null;
   tags: string[];
-  agent: { active: string | null; ready: boolean } | null;
+  focus: string | null;
+  focus_order: number | null;
+  order: number | null;
+  done_at: string | null;
+  agent: AgentState | null;
   [field: string]: unknown;
+};
+export type AgentState = {
+  ready: boolean;
+  runner: string | null;
+  model: string | null;
+  effort: string | null;
+  active: string | null;
+  since: string | null;
+  commit: string | null;
+  last_run: string | null;
 };
 export type Link = { label: string | null; url: string };
 export type ProjectEntry = {
@@ -45,6 +59,8 @@ export type Settings = {
   active: string | null;
   repos_dir: string | null;
   theme: "system" | "light" | "dark" | null;
+  focus_hidden?: boolean;
+  task_detail?: "popup" | "panel";
   [key: string]: unknown;
 };
 
@@ -97,8 +113,21 @@ async function run<T>(cmd: string, args: Record<string, unknown> = {}): Promise<
 
 // ------------------------------------------------------------------ tasks
 
-export const updateTaskField = (id: string, field: string, value: unknown) => run("update_task_field", { id, field, value });
-export const createTask = (title: string, project: string | null) => run<string>("create_task", { title, project });
+/** False when the write was refused, so an input can fall back to the file's value. */
+export async function updateTaskField(id: string, field: string, value: unknown) {
+  try {
+    await invoke("update_task_field", { id, field, value });
+    return true;
+  } catch (e) {
+    workspace.error = String(e);
+    return false;
+  }
+}
+export const createTask = (title: string, project: string | null, priority: number | null = null) =>
+  run<string>("create_task", { title, project, priority });
+export const reorderTasks = (ids: string[]) => run("reorder_tasks", { ids });
+export const setFocus = (ids: string[]) => run("set_focus", { ids });
+export const addTaskUpdate = (id: string, text: string) => run("add_task_update", { id, text });
 export const moveTask = (id: string, project: string | null) => run("move_task", { id, project });
 export const deleteTask = (id: string) => run("delete_task", { id });
 export const restore = (path: string) => run("restore", { path });

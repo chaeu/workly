@@ -3,6 +3,7 @@
   import { workspace, saveSettings, openWorkspace, chooseWorkspace, createWorkspace, tilde, expandHome } from "$lib/stores/workspace.svelte";
 
   const themes = ["system", "light", "dark"] as const;
+  const detailModes = [["popup", "Popup"], ["panel", "Side panel"]] as const;
   const settings = $derived(workspace.settings);
   // The open workspace can differ from `active` while WORKLY_WORKSPACE is set (dev).
   const openRoot = $derived(workspace.index?.root ?? null);
@@ -76,6 +77,19 @@
             <button type="button" aria-pressed={(settings.theme ?? "system") === t} onclick={() => saveSettings({ theme: t })}
               >{t[0].toUpperCase() + t.slice(1)}</button
             >
+          {/each}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="w-h2">Task details</h2>
+      <div class="w-toolbar">
+        <div class="w-seg" role="group" aria-label="Task details">
+          {#each detailModes as [mode, label] (mode)}
+            <button type="button" aria-pressed={(settings.task_detail ?? "popup") === mode} onclick={() => saveSettings({ task_detail: mode })}>{label}</button>
           {/each}
         </div>
       </div>

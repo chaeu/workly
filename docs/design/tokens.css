@@ -74,6 +74,7 @@
   --w-font-label: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --w-font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --w-fs-display: 28px;       /* page title, label font (Plex Sans), 600 */
+  --w-fs-headline: 22px;      /* detail card title, label font, 600 */
   --w-fs-heading: 20px;       /* headings in Markdown previews, label font, 600 */
   --w-fs-title: 15px;         /* column/section heads, label font, 600 */
   --w-fs-body: 14px;          /* body, card titles (500) */
