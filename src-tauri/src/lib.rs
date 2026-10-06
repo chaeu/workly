@@ -112,6 +112,11 @@ fn update_project_field(app: AppHandle, state: State<AppState>, key: String, fie
 }
 
 #[tauri::command]
+fn move_usecase(app: AppHandle, state: State<AppState>, key: String, step: String) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.move_usecase(&key, &step, ACTOR)))
+}
+
+#[tauri::command]
 fn reorder_projects(app: AppHandle, state: State<AppState>, keys: Vec<String>) -> Result<(), String> {
     changed(&app, with_ws(&state, |ws| ws.reorder_projects(&keys, ACTOR)))
 }
@@ -271,6 +276,7 @@ pub fn run() {
             suggest_key,
             create_project,
             update_project_field,
+            move_usecase,
             reorder_projects,
             delete_project,
             project_files,

@@ -412,3 +412,71 @@ fn create_task_with_priority() {
     assert!(matches!(ws.create_task(" ", None, None, "app"), Err(Error::Invalid(_))));
     assert!(matches!(ws.create_task("x", None, Some(5), "app"), Err(Error::Invalid(_))));
 }
+
+// --------------------------------------------------------------- use cases (M4)
+
+#[test]
+fn move_usecase_writes_step_since_and_decision() {
+    let (_tmp, root) = fixture();
+    let file = root.join("projects/invoice-extraction/_project.md");
+    let before = fs::read_to_string(&file).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    let today = workly_core::today();
+
+    // Into a gate: no decision yet.
+    ws.move_usecase("IE", "g1", "app").unwrap();
+    let at_gate = before.replace("  step: pilot\n  step_since: 2026-09-24\n", &format!("  step: g1\n  step_since: {today}\n"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), at_gate);
+
+    // Out of a gate along an edge: the edge label becomes the decision, old items stay verbatim.
+    ws.move_usecase("IE", "wd", "app").unwrap();
+    let decided = at_gate.replace("  step: g1\n", "  step: wd\n").replace(
+        "    - { date: 2026-09-10, gate: null, text: \"Start pilot, timebox 3 weeks\" }\n",
+        &format!("    - {{ date: 2026-09-10, gate: null, text: \"Start pilot, timebox 3 weeks\" }}\n    - {{ date: {today}, gate: G1, text: \"Yes\" }}\n"),
+    );
+    assert_eq!(fs::read_to_string(&file).unwrap(), decided);
+    let uc = ws.index.project("IE").unwrap().project.usecase.clone().unwrap();
+    assert_eq!((uc.step.as_deref(), uc.decisions.len()), (Some("wd"), 2));
+
+    let last = log_lines(&root).pop().unwrap();
+    assert_eq!((&last["kind"], &last["id"], &last["field"], &last["from"], &last["to"]), (&json!("usecase.move"), &json!("IE"), &json!("usecase.step"), &json!("g1"), &json!("wd")));
+
+    // Same step: nothing written.
+    ws.move_usecase("IE", "wd", "app").unwrap();
+    assert_eq!(fs::read_to_string(&file).unwrap(), decided);
+}
+
+#[test]
+fn move_usecase_without_decisions_and_off_edge() {
+    let (_tmp, root) = fixture();
+    let file = root.join("projects/support-triage/_project.md");
+    let before = fs::read_to_string(&file).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    let today = workly_core::today();
+    ws.move_usecase("ST", "g3", "app").unwrap();
+    // No edge g3 -> parked: the decision says where it went.
+    ws.move_usecase("ST", "parked", "app").unwrap();
+    let want = before.replace("  step: need\n  step_since: 2026-10-02\n", &format!("  step: parked\n  step_since: {today}\n")).replace(
+        "  current_state: Need reported, no pilot yet\n",
+        &format!("  current_state: Need reported, no pilot yet\n  decisions: [{{ date: {today}, gate: G3, text: Moved to Parked }}]\n"),
+    );
+    assert_eq!(fs::read_to_string(&file).unwrap(), want);
+}
+
+#[test]
+fn move_usecase_rules() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    for (key, step) in [("IE", "start"), ("IE", "nowhere"), ("WR", "pilot")] {
+        assert!(matches!(ws.move_usecase(key, step, "app"), Err(Error::Invalid(_))), "{key} {step}");
+    }
+    assert!(matches!(ws.move_usecase("XX", "pilot", "app"), Err(Error::NotFound(_))));
+    // Moves take one path; status and type follow process.yml.
+    for (field, value) in [("usecase.step", json!("g1")), ("usecase.decisions", json!([])), ("usecase.status", json!("done")), ("usecase.type", json!("ml"))] {
+        assert!(matches!(ws.update_project_field("IE", field, &value, "app"), Err(Error::Invalid(_))), "{field}");
+    }
+    // Status is a property: it never moves the use case.
+    ws.update_project_field("IE", "usecase.status", &json!("blocked"), "app").unwrap();
+    let uc = ws.index.project("IE").unwrap().project.usecase.clone().unwrap();
+    assert_eq!((uc.status.as_deref(), uc.step.as_deref()), (Some("blocked"), Some("pilot")));
+}

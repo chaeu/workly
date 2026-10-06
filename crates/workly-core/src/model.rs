@@ -266,6 +266,9 @@ impl Process {
             }
         }
         for (i, e) in self.edges.iter().enumerate() {
+            if !["h", "hv", "hvh", "vu", "over"].contains(&e.route.as_str()) {
+                errors.push(format!("edge {} ({} -> {}) has unknown route '{}' (h | hv | hvh | vu | over)", i + 1, e.from, e.to, e.route));
+            }
             for end in [&e.from, &e.to] {
                 if !has(&steps, end) {
                     errors.push(format!("edge {} ({} -> {}) references unknown step '{end}'", i + 1, e.from, e.to));
@@ -319,12 +322,13 @@ mod tests {
         let p: Process = serde_yaml::from_str(
             "lanes: [{id: a, label: A}]\nphases: [{id: p, name: P}]\n\
              steps: [{id: s, kind: box, col: 0, lane: a, phase: p, label: S}]\n\
-             edges: [{from: s, to: nope, route: h}]\nphase_default_step: {p: gone, q: s}\n",
+             edges: [{from: s, to: nope, route: zz}]\nphase_default_step: {p: gone, q: s}\n",
         )
         .unwrap();
         assert_eq!(
             p.validate(),
             [
+                "edge 1 (s -> nope) has unknown route 'zz' (h | hv | hvh | vu | over)",
                 "edge 1 (s -> nope) references unknown step 'nope'",
                 "phase_default_step: phase 'p' points to unknown step 'gone'",
                 "phase_default_step: unknown phase 'q'",

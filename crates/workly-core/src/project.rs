@@ -32,6 +32,8 @@ const WORKSPACE_DIRS: [&str; 5] = ["inbox", "projects", "knowledge", ".workly/lo
 pub const PROJECT_DIRS: [&str; 4] = ["tasks", "docs", "notes", "decisions"];
 pub const PROJECT_STATUSES: [&str; 3] = ["active", "paused", "archived"];
 pub const COLORS: [&str; 6] = ["proj-1", "proj-2", "proj-3", "proj-4", "proj-5", "proj-6"];
+/// Use-case fields only `move_usecase` writes, so every move takes the same path.
+const MOVE_FIELDS: [&str; 3] = ["usecase.step", "usecase.step_since", "usecase.decisions"];
 /// Folders the project detail shows as a tree.
 pub const DOC_DIRS: [&str; 4] = ["docs", "notes", "decisions", "agent"];
 
@@ -156,6 +158,15 @@ impl Workspace {
             "color" if !value.as_str().is_some_and(|s| COLORS.contains(&s)) => {
                 return Err(Error::Invalid(format!("unknown colour {value}")));
             }
+            f if MOVE_FIELDS.contains(&f) => return Err(Error::Invalid(format!("{f} only changes by moving the use case"))),
+            "usecase.status" | "usecase.type" => {
+                if let Some(p) = &self.process {
+                    let list = if field == "usecase.status" { &p.statuses } else { &p.types };
+                    if !list.iter().any(|x| value.as_str() == Some(x.id.as_str())) {
+                        return Err(Error::Invalid(format!("{field}: {value} is not listed in process.yml")));
+                    }
+                }
+            }
             _ => {}
         }
         let dir = self.project_dir(key)?;
@@ -173,6 +184,44 @@ impl Workspace {
         if field == "repos" {
             self.code_workspace(key, true)?;
         }
+        Ok(())
+    }
+
+    /// The one way a use case changes its step (board drag, map drag, decision button):
+    /// sets `usecase.step` and `usecase.step_since` (today), and when it leaves a gate,
+    /// appends `{ date, gate, text }` to `usecase.decisions`. The text is the label of
+    /// the edge taken, or "Moved to <step>" when no edge leads there. One write, one log line.
+    pub fn move_usecase(&mut self, key: &str, step: &str, actor: &str) -> Result<()> {
+        let process = self.process.as_ref().ok_or_else(|| Error::Invalid("no valid .workly/process.yml".into()))?;
+        let step_of = |id: &str| process.steps.iter().find(|s| s.id == id);
+        let to = step_of(step).ok_or_else(|| Error::Invalid(format!("unknown step '{step}'")))?;
+        if to.kind == "term" {
+            return Err(Error::Invalid(format!("'{}' is a start or end point, not a position", to.label)));
+        }
+        let entry = self.index.project(key).ok_or_else(|| Error::NotFound(format!("project {key} not found")))?;
+        let from = entry.project.usecase.as_ref().ok_or_else(|| Error::Invalid(format!("{key} is not a use case")))?.step.clone();
+        if from.as_deref() == Some(step) {
+            return Ok(());
+        }
+        let file = self.root.join(&entry.path).join("_project.md");
+        let today = crate::today();
+        let src = fs::read_to_string(&file)?;
+        let mut out = patch::set_field(&src, &["usecase", "step"], &Value::from(step)).map_err(Error::Invalid)?;
+        out = patch::set_field(&out, &["usecase", "step_since"], &Value::from(today.as_str())).map_err(Error::Invalid)?;
+        if let Some(gate) = from.as_deref().and_then(step_of).filter(|s| s.kind == "gate") {
+            let edge = process.edges.iter().find(|e| e.from == gate.id && e.to == step);
+            let text = edge.and_then(|e| e.label.clone()).unwrap_or_else(|| format!("Moved to {}", to.label));
+            let mut decisions = match patch::get_field(&out, &["usecase", "decisions"]).map_err(Error::Invalid)? {
+                Value::Array(list) => list,
+                Value::Null => Vec::new(),
+                _ => return Err(Error::Invalid(format!("{key}: usecase.decisions is not a list"))),
+            };
+            decisions.push(json!({ "date": today, "gate": gate.code.as_deref().unwrap_or(&gate.id), "text": text }));
+            out = patch::set_field(&out, &["usecase", "decisions"], &Value::Array(decisions)).map_err(Error::Invalid)?;
+        }
+        atomic_write(&file, &out, &self.own)?;
+        log(&self.root, &LogEntry::new(actor, "usecase.move", key, Some("usecase.step"), from.into(), step.into()))?;
+        self.rescan();
         Ok(())
     }
 
