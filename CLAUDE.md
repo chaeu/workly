@@ -44,6 +44,7 @@ docs/                 spec, design, prototypes, prompts
 8. **Never write to `fixtures/workspace` in tests.** Copy it to a temp dir first (`tempfile`).
 9. **No company data.** Only neutral sample data in the repo.
 10. **Agents never set `done`.** The CLI refuses it for actors other than the human user (exit code 3).
+11. **Agent UI sits behind one switch.** From M5 on, every agent element in the app (views, card badges, detail sections, buttons) checks the `agents_enabled` device setting. Off = basic version; files and the CLI are unaffected.
 
 ## Working style
 

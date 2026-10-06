@@ -15,7 +15,8 @@ Workly ist eine eigenständige, leichte macOS-App. Dateien sind die Quelle der W
 | Tasks | Liegen im Projektordner unter `tasks/`, Tasks ohne Projekt in `inbox/` | Alles zu einem Projekt an einem Ort, auch für Agents |
 | IDs | Projekt-Key + Nummer (`WR-12`); Key wird aus dem Namen vorgeschlagen, beim Anlegen änderbar, danach fest; Inbox-Tasks nutzen den reservierten Key `IN` | Lesbar in Commits und Branches |
 | Einstellungen | Pfade pro Gerät in der App, Regeln pro Workspace in `.workly/config.yml` | Standalone-fähig; derselbe Workspace funktioniert auf mehreren Macs |
-| Agents | CLI `wly` als einzige Schreibschnittstelle für Agents; Ausführung durch Runner-Adapter (v1: Codex CLI, Copilot in VS Code) | Workly koordiniert und protokolliert, Agents arbeiten in ihren eigenen Werkzeugen |
+| Agents | CLI `wly` als einzige Schreibschnittstelle für Agents; Ausführung durch Runner-Adapter (Codex CLI, Copilot in VS Code), erst nach dem Probebetrieb | Workly koordiniert und protokolliert, Agents arbeiten in ihren eigenen Werkzeugen |
+| Agent-Funktionen | Abschaltbar per Geräte-Einstellung `agents_enabled` (Standard: an). Aus = Basisversion ohne Agent-Oberfläche; Felder in den Dateien und die CLI bleiben | Workly bleibt ohne Agents ein schlankes PM-Werkzeug; ob „Start agent“ gebaut wird, entscheidet der Probebetrieb |
 | Sprache | UI-Labels Englisch, Deutsch später als zweite Sprache; Datei-IDs immer Englisch | |
 | Name | Workly (Bundle-ID z. B. `dev.chaeu.workly`, CLI `wly`, Ordner `.workly/`) | |
 | Design | Workly Design System (`docs/design/`) | Steht bereits, inklusive Prototypen |
@@ -57,7 +58,7 @@ Ein Workspace ist ein Ordner, zugleich Obsidian-Vault und Git-Repo. Menschenlesb
 
 | Ebene | Ort | Inhalt |
 | --- | --- | --- |
-| Gerät | `~/Library/Application Support/Workly/settings.json` | Workspaces (Name + Pfad, mehrere, umschaltbar), Repos-Ordner, Theme, Fenster, UI-Präferenzen |
+| Gerät | `~/Library/Application Support/Workly/settings.json` | Workspaces (Name + Pfad, mehrere, umschaltbar), Repos-Ordner, Theme, Fenster, UI-Präferenzen, Agent-Funktionen an/aus |
 | Workspace | `<workspace>/.workly/config.yml` | Ordner für neue Projekte und Inbox, Scan-Ausschlüsse, Task-Status, WIP-Limits, Agent-Standards |
 | Workspace | `<workspace>/.workly/process.yml` | Use-Case-Prozess (Phasen, Schritte, Gates, Kanten) |
 
@@ -219,11 +220,15 @@ Jeder Agent ist ein Adapter: Kontext zusammensetzen, starten, Status über `wly`
 
 Claude Code folgt als weiterer Adapter.
 
+### Schalter Agent-Funktionen
+
+`agents_enabled` in den Geräte-Einstellungen (Standard: an). Aus blendet jede Agent-Oberfläche aus: Ansicht und Menüpunkt „Agents“, Agent-Bereich der Task-Detailkarte, Agent-Badge, -Ring und Commit auf Karten, Agent-Dateien in der Projektansicht, „Install CLI“ und später „Start agent“. Nichts wird gelöscht: `agent:`-Felder bleiben in den Dateien, `wly` funktioniert weiter. Jede neue Agent-Oberfläche hängt an diesem einen Schalter.
+
 ### Stufen
 
 | Stufe | Inhalt |
 | --- | --- |
-| v1 | Agent-Dateien, CLI, Button „Start agent“ mit zwei Adaptern, Live-Status auf der Karte |
+| v1 | Agent-Dateien, CLI, Schalter, Live-Status auf der Karte; Button „Start agent“ mit zwei Adaptern nur, wenn der Probebetrieb dafür spricht (M7) |
 | v1.5 | Queue: Läufe ohne Fenster nacheinander, Git-Worktree je Task auf Branch `wly/WR-12`, Agent-Ansicht (Queue, Running, Review, Failed) mit Live-Log |
 | v2 | Parallele Läufe, automatische Modellwahl, Budgets, Folge-Tasks, MCP-Server |
 
@@ -233,14 +238,14 @@ Claude Code folgt als weiterer Adapter.
 
 | Bereich | Funktionen | Abnahme |
 | --- | --- | --- |
-| Settings | Workspace wählen oder anlegen (mehrere, umschaltbar), Repos-Ordner, Theme | Leerer Ordner wird mit `_templates/` und `.workly/` zum Workspace |
+| Settings | Workspace wählen oder anlegen (mehrere, umschaltbar), Repos-Ordner, Theme, Agent-Funktionen an/aus | Leerer Ordner wird mit `_templates/` und `.workly/` zum Workspace |
 | Projects | Liste, anlegen aus Vorlage, bearbeiten, Farbe, Sortierung per Drag, archivieren, löschen (Papierkorb) | Neues Projekt erzeugt Ordnerstruktur; Änderungen in Obsidian erscheinen ohne Neustart |
 | Project detail | Übersicht, Ordnerbaum, Markdown-Vorschau, öffnen in Obsidian/VS Code/Finder, Repos verknüpfen | Alle Links öffnen das richtige Ziel |
 | Tasks | Board, Gruppierung nach Projekt, Filter, Suche, Drag & Drop, Schnelleingabe, bearbeiten, löschen | Jede Änderung landet verlustfrei in der Datei |
 | Detail card | Popup oder Seitenleiste, Status, Priorität, Fälligkeit, Tags, Beschreibung, Updates | Wie im Design System |
 | Focus | Streifen mit bis zu drei Tasks, ein- und ausblendbar | `focus`, `focus_order` gesetzt |
 | Use-case cockpit | Board und Prozesslandkarte, Detailkarte mit Entscheidungen, Filter | Wie im Prototyp, Prozess aus `process.yml` |
-| Agents | CLI `wly`, Agent-Dateien, „Start agent“ (Codex, Copilot), Live-Status | Ein Agent setzt einen Task über `wly` auf Review |
+| Agents | CLI `wly`, Agent-Dateien, Schalter, Live-Status; „Start agent“ (Codex, Copilot) nur nach Entscheidung im Probebetrieb | Ein Agent setzt einen Task über `wly` auf Review; Schalter aus zeigt keine Agent-Oberfläche |
 | Log | Jede Änderung in `.workly/log/` | |
 
 **Nicht in v1:** Queue-Runner, Wochenreview, Jira/SharePoint, Markdown-Editor, Geräte-Sync, Mobile.
@@ -256,6 +261,9 @@ Claude Code folgt als weiterer Adapter.
 | M2 | Projects + Settings | Abnahme laut Umfang |
 | M3 | Tasks: Board, Gruppierung, Detailkarte, Fokus | Abnahme laut Umfang, Screenshots gegen Referenz |
 | M4 | Use-Case-Cockpit | Wie im Prototyp |
-| M5 | CLI `wly` + Agent-Dateien | Ein Agent setzt einen Fixture-Task über `wly` auf Review |
-| M6 | „Start agent“ mit Codex- und Copilot-Adapter, Live-Status | Ein Klick führt vom Task zum laufenden Agent, Status kommt zurück |
-| M7 | Kürzel, leere Zustände, Fehler, Build, Installation | Ein Tag echter Einsatz |
+| M5 | Schalter Agent-Funktionen, CLI `wly` + Agent-Dateien | Ein Agent setzt einen Fixture-Task über `wly` auf Review; Schalter aus blendet alle Agent-Oberfläche aus |
+| M6 | Kürzel, leere Zustände, Fehler, Build, Installation | Ein Tag echter Einsatz |
+| – | Probebetrieb, 1–2 Wochen echter Einsatz | Entscheidung über M7 ist hier nachgetragen |
+| M7 (optional) | „Start agent“ mit Codex- und Copilot-Adapter, Live-Status | Ein Klick führt vom Task zum laufenden Agent, Status kommt zurück |
+
+**Reihenfolge:** Der Agent-Start (M7) ist der teuerste und unsicherste Teil. Er kommt erst nach dem Probebetrieb und nur, wenn dort der Wunsch entsteht, einen Agent aus der App zu starten. Sonst endet v1 nach M6.

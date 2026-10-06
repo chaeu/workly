@@ -18,8 +18,10 @@ Pro Meilenstein eine frische Claude-Code-Session, Prompt unten reinkopieren, Pla
 
 | Meilenstein | Modell | Warum |
 | --- | --- | --- |
-| M1 Core, M4 Cockpit, M6 Agent-Start | stärkstes verfügbares (Opus) | Verlustfreies Schreiben, Kantenrouting, Prozess-Spawning: hier kosten Fehler später am meisten |
-| M0, M2, M3, M5, M7 | Sonnet reicht, Opus schadet nicht | Gut spezifiziert, viel Fleißarbeit |
+| M1 Core, M4 Cockpit, M7 Agent-Start | stärkstes verfügbares (Opus) | Verlustfreies Schreiben, Kantenrouting, Prozess-Spawning: hier kosten Fehler später am meisten |
+| M0, M2, M3, M5, M6 | Sonnet reicht, Opus schadet nicht | Gut spezifiziert, viel Fleißarbeit |
+
+**Reihenfolge ab M5:** M5 (Schalter + CLI) → M6 (Feinschliff, Installation) → Probebetrieb → Entscheidung über M7 („Start agent“). Siehe `docs/SPEC.md`, Abschnitt 7.
 
 Jeden Prompt im **Plan-Modus** starten (Shift+Tab). Den Plan lesen, Einwände direkt zurückgeben, dann freigeben. Bei UI-Meilensteinen nach dem Bau Screenshots machen lassen oder selbst neben `docs/screenshots/` legen.
 
@@ -156,12 +158,13 @@ Plan first, then build. Stop after M4 and report with screenshots.
 
 ---
 
-## M5 – CLI `wly` und Agent-Dateien
+## M5 – Schalter, CLI `wly` und Agent-Dateien
 
 ```
 Read CLAUDE.md and docs/SPEC.md (section 5). Look at fixtures/workspace/.workly/agent/AGENTS.md and projects/website-relaunch/agent/.
 
-Milestone M5: the wly CLI on top of workly-core.
+Milestone M5: the agent switch, then the wly CLI on top of workly-core.
+- First: device setting `agents_enabled` (default true), toggle in Settings ("Agent features"). Off hides every agent UI: Agents view and nav item, the agent group in the task detail, agent badge/ring/commit on cards, agent files in project detail, "Install CLI". Nothing is deleted: `agent:` fields stay in the files and wly keeps working. Every agent UI in this and later milestones goes through this one switch.
 - Commands exactly as in the spec: task list/show/start/note/review/add, project list. --json on every read command, stable field names, documented in docs/CLI.md.
 - Workspace resolution: --workspace, then WORKLY_WORKSPACE, then active workspace from device settings.
 - Actor: --agent <name> or WORKLY_AGENT sets actor agent:<name> in the log; otherwise cli.
@@ -176,38 +179,16 @@ Acceptance: an agent (Codex CLI or Claude Code) given only "Work on WR-5 in this
 Plan first, then build. Stop after M5 and report.
 ```
 
-**Checkliste:** In einem Terminal `wly task start WR-5 --agent codex` → Karte zeigt Badge. `wly task review WR-5` → Review. `wly task ... done` als Agent → Exit 3.
+**Checkliste:** Settings → Agent features aus → kein Menüpunkt „Agents“, kein Agent-Bereich in der Task-Karte, kein Badge; wieder an → alles zurück, Dateien unverändert. In einem Terminal `wly task start WR-5 --agent codex` → Karte zeigt Badge. `wly task review WR-5` → Review. `wly task ... done` als Agent → Exit 3.
 
 ---
 
-## M6 – „Start agent“ (Opus)
-
-```
-Read CLAUDE.md and docs/SPEC.md (section 5, Runner-Adapter).
-
-Milestone M6: start an agent from a task.
-- Runner adapter trait in workly-core: build_prompt(task) -> String, start(task, prompt) -> Result. Prompt = global rules + project AGENTS.md + skill list + task (id, title, body, acceptance criteria) + the exact wly commands to use.
-- Adapter codex: open a new Terminal window (AppleScript via osascript; fall back to iTerm if configured) in the first repo of the project, run `codex` with the prompt (pass via a temp file, not shell-escaped inline text), env WORKLY_WORKSPACE and WORKLY_AGENT=codex set. Model/effort from the task's agent fields or config defaults, mapped to codex flags.
-- Adapter copilot: open <key>.code-workspace in VS Code (`code` CLI or `open -a`), copy the prompt to the clipboard, show a toast "Prompt copied – paste into Copilot Chat". Status updates come from Copilot calling wly in the terminal, or the user.
-- Adapter selection: task agent.runner, else config default; "auto" = config default.
-- UI: "Start agent" button in the task detail card and in the card's context menu, disabled without repo (with reason). Shows runner, model, effort before start; "Copy prompt" always available.
-- Live status: card badge from agent.active/since, updates via watcher; a task stuck in doing with an agent for > 2 h shows a warning.
-- Never block the UI thread; spawn errors appear as toasts with the stderr tail.
-
-Acceptance: one click goes from task to a running Codex session in the right repo with the full prompt; the agent's wly calls show up on the card; Copilot path opens the workspace and puts the prompt in the clipboard.
-Plan first, then build. Stop after M6 and report.
-```
-
-**Checkliste:** Start agent bei WR-5 → Terminal im Repo, Codex läuft mit Prompt, Badge erscheint, Review kommt zurück. Copilot-Pfad: VS Code öffnet richtigen Workspace, Prompt in Zwischenablage.
-
----
-
-## M7 – Feinschliff und Installation
+## M6 – Feinschliff und Installation
 
 ```
 Read CLAUDE.md and docs/SPEC.md (section 6, non-functional).
 
-Milestone M7: polish and release.
+Milestone M6: polish and release.
 - Shortcuts: ⌘N quick add, ⌘K search, ⌘1-4 views, Esc closes cards, ⌘⌫ delete with confirmation, ⌘, settings. Shortcut overlay on ?.
 - Empty states (no workspace, no projects, empty board) calm and minimal as in DESIGN.md principle 6.
 - Error states: parse errors list (file, line, open in editor), unreachable repo, missing CLI. Never a blank screen.
@@ -217,8 +198,42 @@ Milestone M7: polish and release.
 - Release build, ad-hoc signed, scripts/install.sh copies Workly.app to /Applications and installs wly. Document in README how to move to another Mac (clone repo, build, point settings to the workspace).
 
 Acceptance: one day of real use without touching the files by hand except in Obsidian/VS Code.
+Plan first, then build. Stop after M6 and report.
+```
+
+---
+
+## Probebetrieb (1–2 Wochen, kein Bauen)
+
+Workly echt benutzen, Agents laufen dabei über `wly` in ihren eigenen Werkzeugen. Jedes Mal notieren, wenn du einen Agent direkt aus der App starten wolltest, und was dich an der Oberfläche gestört hat.
+
+Danach entscheiden und in `docs/SPEC.md`, Abschnitt 7, nachtragen:
+- **Wunsch war oft da:** M7 bauen.
+- **Kaum oder nie:** M7 streichen, v1 ist fertig. Die gesammelten Störungen werden ein kleiner Feinschliff-Meilenstein.
+
+---
+
+## M7 – „Start agent“ (Opus, optional)
+
+Nur bauen, wenn der Probebetrieb dafür spricht.
+
+```
+Read CLAUDE.md and docs/SPEC.md (section 5, Runner-Adapter).
+
+Milestone M7: start an agent from a task. All of it lives behind the agents_enabled switch from M5.
+- Runner adapter trait in workly-core: build_prompt(task) -> String, start(task, prompt) -> Result. Prompt = global rules + project AGENTS.md + skill list + task (id, title, body, acceptance criteria) + the exact wly commands to use.
+- Adapter codex: open a new Terminal window (AppleScript via osascript; fall back to iTerm if configured) in the first repo of the project, run `codex` with the prompt (pass via a temp file, not shell-escaped inline text), env WORKLY_WORKSPACE and WORKLY_AGENT=codex set. Model/effort from the task's agent fields or config defaults, mapped to codex flags.
+- Adapter copilot: open <key>.code-workspace in VS Code (`code` CLI or `open -a`), copy the prompt to the clipboard, show a toast "Prompt copied – paste into Copilot Chat". Status updates come from Copilot calling wly in the terminal, or the user.
+- Adapter selection: task agent.runner, else config default; "auto" = config default.
+- UI: "Start agent" button in the task detail card and in the card's context menu, disabled without repo (with reason). Shows runner, model, effort before start; "Copy prompt" always available.
+- Live status: card badge from agent.active/since, updates via watcher; a task stuck in doing with an agent for > 2 h shows a warning.
+- Never block the UI thread; spawn errors appear as toasts with the stderr tail.
+
+Acceptance: one click goes from task to a running Codex session in the right repo with the full prompt; the agent's wly calls show up on the card; Copilot path opens the workspace and puts the prompt in the clipboard.
 Plan first, then build. Stop after M7 and report.
 ```
+
+**Checkliste:** Start agent bei WR-5 → Terminal im Repo, Codex läuft mit Prompt, Badge erscheint, Review kommt zurück. Copilot-Pfad: VS Code öffnet richtigen Workspace, Prompt in Zwischenablage.
 
 ---
 
