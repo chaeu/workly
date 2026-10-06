@@ -1,0 +1,125 @@
+/* Workly design tokens · direction D ("Synthese")
+   Structure from "Leitstand" (IBM Plex, fixed card anatomy, single petrol accent),
+   softness from "Weich" (tinted trays, borderless cards, soft shadows).
+   Light is the default; dark applies via prefers-color-scheme unless data-theme="light",
+   or explicitly via data-theme="dark". */
+
+:root {
+  /* Ground and surfaces */
+  --w-bg: #f2f4f5;            /* app ground */
+  --w-tray: #e8ecee;          /* sidebar, column trays, inputs, segmented controls */
+  --w-surface: #ffffff;       /* cards, panels, modal */
+  --w-sunk: #f2f4f5;          /* inset areas inside a surface (commit chip, focus item) */
+  --w-line: #dde3e7;          /* hairlines, dividers */
+  --w-edge: #7f8b99;          /* connectors, diagram outlines */
+
+  /* Text */
+  --w-ink: #15212b;
+  --w-muted: #586674;         /* 5.6:1 on --w-surface, 4.9:1 on --w-tray */
+
+  /* Accent: one hue, used for "active / selected / primary" only */
+  --w-accent: #0d6b75;
+  --w-accent-hover: #0a535b;
+  --w-accent-soft: rgba(13, 107, 117, .10);
+  --w-on-accent: #ffffff;
+
+  /* Semantic (never used as decoration) */
+  --w-info: #2459c2;          /* in progress */
+  --w-warn: #a35a0c;          /* waiting, P2, stale */
+  --w-danger: #b42f25;        /* blocked, P1 */
+  --w-danger-soft: rgba(180, 47, 37, .08);
+  --w-hold: #7b8594;          /* on hold, parked */
+  --w-ok: #2b7f47;            /* done, stable */
+
+  /* Project palette (assign in order, cycle after 6) */
+  --w-proj-1: #2459c2;
+  --w-proj-2: #6b4fbb;
+  --w-proj-3: #b8580f;
+  --w-proj-4: #2b7f47;
+  --w-proj-5: #b03a6e;
+  --w-proj-6: #3d7a8a;
+
+  /* Swimlane tints (process map) */
+  --w-lane-fb: rgba(36, 89, 194, .045);
+  --w-lane-me: rgba(13, 107, 117, .06);
+  --w-lane-gov: rgba(168, 105, 15, .06);
+  --w-lane-it: rgba(91, 103, 118, .06);
+
+  /* Elevation */
+  --w-shadow-card: 0 1px 2px rgba(21, 33, 43, .07), 0 2px 8px rgba(21, 33, 43, .04);
+  --w-shadow-raised: 0 1px 2px rgba(21, 33, 43, .10);
+  --w-shadow-panel: 0 1px 2px rgba(21, 33, 43, .06), 0 3px 12px rgba(21, 33, 43, .04);
+  --w-shadow-pop: 0 12px 32px rgba(21, 33, 43, .18);
+  --w-ring-active: 0 0 0 1.5px var(--w-accent), 0 3px 12px rgba(13, 107, 117, .12);
+  --w-scrim: rgba(14, 19, 24, .38);
+
+  /* Shape */
+  --w-r-sm: 5px;              /* chips, tags, inline code */
+  --w-r-md: 9px;              /* cards, buttons, inputs, nav items */
+  --w-r-lg: 12px;             /* trays, panels */
+  --w-r-xl: 14px;             /* modal */
+  --w-r-pill: 999px;
+
+  /* Spacing scale */
+  --w-s-1: 4px;
+  --w-s-2: 8px;
+  --w-s-3: 12px;
+  --w-s-4: 16px;
+  --w-s-5: 20px;
+  --w-s-6: 24px;
+  --w-s-8: 32px;
+
+  /* Type */
+  --w-font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --w-font-label: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --w-font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --w-fs-display: 28px;       /* page title, label font (Plex Sans), 600 */
+  --w-fs-title: 15px;         /* column/section heads, label font, 600 */
+  --w-fs-body: 14px;          /* body, card titles (500) */
+  --w-fs-small: 13px;         /* controls, secondary text */
+  --w-fs-caption: 12px;       /* meta, caps labels */
+  --w-fs-micro: 11px;         /* IDs, counts, dates (mono) */
+
+  /* Layout */
+  --w-sidebar-w: 236px;
+  --w-col-min: 216px;
+
+  /* Motion */
+  --w-ease: cubic-bezier(.2, .7, .2, 1);
+  --w-dur: 160ms;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --w-bg: #0f1418; --w-tray: #172027; --w-surface: #1c262e; --w-sunk: #141b21;
+    --w-line: #2a3640; --w-edge: #6a7787;
+    --w-ink: #e4e9ee; --w-muted: #94a2b0;
+    --w-accent: #4cb2bc; --w-accent-hover: #6cc6cf; --w-accent-soft: rgba(76, 178, 188, .14); --w-on-accent: #0f1418;
+    --w-info: #6f9bf0; --w-warn: #dca24a; --w-danger: #ef6f63; --w-danger-soft: rgba(239, 111, 99, .12);
+    --w-hold: #8f99a8; --w-ok: #5cbf7d;
+    --w-proj-1: #6f9bf0; --w-proj-2: #a58be6; --w-proj-3: #e09a55; --w-proj-4: #5cbf7d; --w-proj-5: #e07aa8; --w-proj-6: #6cb6c6;
+    --w-lane-fb: rgba(111, 155, 240, .06); --w-lane-me: rgba(76, 178, 188, .07); --w-lane-gov: rgba(220, 162, 74, .07); --w-lane-it: rgba(148, 162, 176, .06);
+    --w-shadow-card: 0 1px 2px rgba(0, 0, 0, .35); --w-shadow-raised: 0 1px 2px rgba(0, 0, 0, .4);
+    --w-shadow-panel: 0 1px 2px rgba(0, 0, 0, .35); --w-shadow-pop: 0 14px 36px rgba(0, 0, 0, .55);
+    --w-ring-active: 0 0 0 1.5px var(--w-accent), 0 3px 12px rgba(0, 0, 0, .4);
+    --w-scrim: rgba(0, 0, 0, .5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --w-bg: #0f1418; --w-tray: #172027; --w-surface: #1c262e; --w-sunk: #141b21;
+  --w-line: #2a3640; --w-edge: #6a7787;
+  --w-ink: #e4e9ee; --w-muted: #94a2b0;
+  --w-accent: #4cb2bc; --w-accent-hover: #6cc6cf; --w-accent-soft: rgba(76, 178, 188, .14); --w-on-accent: #0f1418;
+  --w-info: #6f9bf0; --w-warn: #dca24a; --w-danger: #ef6f63; --w-danger-soft: rgba(239, 111, 99, .12);
+  --w-hold: #8f99a8; --w-ok: #5cbf7d;
+  --w-proj-1: #6f9bf0; --w-proj-2: #a58be6; --w-proj-3: #e09a55; --w-proj-4: #5cbf7d; --w-proj-5: #e07aa8; --w-proj-6: #6cb6c6;
+  --w-lane-fb: rgba(111, 155, 240, .06); --w-lane-me: rgba(76, 178, 188, .07); --w-lane-gov: rgba(220, 162, 74, .07); --w-lane-it: rgba(148, 162, 176, .06);
+  --w-shadow-card: 0 1px 2px rgba(0, 0, 0, .35); --w-shadow-raised: 0 1px 2px rgba(0, 0, 0, .4);
+  --w-shadow-panel: 0 1px 2px rgba(0, 0, 0, .35); --w-shadow-pop: 0 14px 36px rgba(0, 0, 0, .55);
+  --w-ring-active: 0 0 0 1.5px var(--w-accent), 0 3px 12px rgba(0, 0, 0, .4);
+  --w-scrim: rgba(0, 0, 0, .5);
+  color-scheme: dark;
+}
