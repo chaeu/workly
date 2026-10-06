@@ -16,7 +16,13 @@
     type Link,
   } from "$lib/stores/workspace.svelte";
 
-  let { project = null, onclose }: { project?: ProjectEntry | null; onclose: () => void } = $props();
+  // `usecase`: create as a use case (type + area); `oncreated` replaces the jump to the project page.
+  let {
+    project = null,
+    usecase = false,
+    onclose,
+    oncreated,
+  }: { project?: ProjectEntry | null; usecase?: boolean; onclose: () => void; oncreated?: (key: string) => void } = $props();
 
   // Form state starts as a copy of the project; nothing is written until Save.
   // svelte-ignore state_referenced_locally
@@ -28,6 +34,9 @@
   let status = $state(p?.status ?? "active");
   let repos = $state<string[]>([...(p?.repos ?? [])]);
   let links = $state<{ label: string; url: string }[]>((p?.links ?? []).map((l) => ({ label: l.label ?? "", url: l.url })));
+  const process = $derived(workspace.index?.process);
+  let ucType = $state(workspace.index?.process?.types[0]?.id ?? "");
+  let ucArea = $state("");
   let error = $state<string | null>(null);
   let busy = $state(false);
 
@@ -64,9 +73,11 @@
     error = null;
     try {
       if (!p) {
-        await createProject({ title: title.trim(), key, color, repos: $state.snapshot(repos) });
+        const uc = usecase ? { type: ucType, area: ucArea || null } : null;
+        await createProject({ title: title.trim(), key, color, repos: $state.snapshot(repos), usecase: uc });
         onclose();
-        goto(`/projects/${key}`);
+        if (oncreated) oncreated(key);
+        else goto(`/projects/${key}`);
         return;
       }
       const changes: [string, unknown, unknown][] = [
@@ -111,7 +122,7 @@
 <div class="w-modal" role="dialog" aria-modal="true" aria-labelledby="pf-title">
   <form onsubmit={save}>
     <div class="body">
-      <h2 class="w-h2" id="pf-title">{p ? `Edit ${p.key}` : "New project"}</h2>
+      <h2 class="w-h2" id="pf-title">{p ? `Edit ${p.key}` : usecase ? "New use case" : "New project"}</h2>
 
       <label class="field">
         <span class="w-caps">Title</span>
@@ -151,6 +162,24 @@
           {/each}
         </div>
       </div>
+
+      {#if usecase && !p && process}
+        <div class="field">
+          <span class="w-caps">Type</span>
+          <div class="w-seg" role="group" aria-label="Type">
+            {#each process.types as t (t.id)}
+              <button type="button" aria-pressed={ucType === t.id} onclick={() => (ucType = t.id)}>{t.label}</button>
+            {/each}
+          </div>
+        </div>
+        <label class="field">
+          <span class="w-caps">Area</span>
+          <select bind:value={ucArea}>
+            <option value="">–</option>
+            {#each process.areas as a (a)}<option value={a}>{a}</option>{/each}
+          </select>
+        </label>
+      {/if}
 
       {#if p}
         <div class="field">
@@ -197,7 +226,7 @@
       {/if}
       <span class="grow"></span>
       <button type="button" class="w-btn w-btn--quiet" onclick={onclose}>Cancel</button>
-      <button type="submit" class="w-btn w-btn--primary" disabled={!canSave}>{p ? "Save" : "Create project"}</button>
+      <button type="submit" class="w-btn w-btn--primary" disabled={!canSave}>{p ? "Save" : usecase ? "Create use case" : "Create project"}</button>
     </div>
   </form>
 </div>
@@ -223,7 +252,8 @@
     flex-direction: column;
     gap: var(--w-s-2);
   }
-  input {
+  input,
+  select {
     border: 0;
     outline: none;
     background: var(--w-tray);
@@ -232,7 +262,8 @@
     font-size: var(--w-fs-small);
     min-width: 0;
   }
-  input:focus {
+  input:focus,
+  select:focus {
     box-shadow: 0 0 0 2px var(--w-accent-soft);
   }
   .key {

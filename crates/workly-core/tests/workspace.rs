@@ -215,7 +215,7 @@ fn empty_folder_becomes_workspace() {
     let mut ws = Workspace::open(&root).unwrap();
     assert!(ws.index.errors.is_empty() && ws.index.projects.is_empty(), "{:?}", ws.index.errors);
     assert_eq!(ws.suggest_key("Test Alpha"), "TA");
-    let new = NewProject { title: "Test Alpha".into(), key: "TA".into(), color: "proj-1".into(), repos: vec![] };
+    let new = NewProject { title: "Test Alpha".into(), key: "TA".into(), color: "proj-1".into(), repos: vec![], usecase: None };
     assert_eq!(ws.create_project(&new, "app").unwrap(), "projects/test-alpha");
     assert_eq!(ws.create_task("First", Some("TA"), None, "app").unwrap(), "TA-1");
 }
@@ -225,7 +225,7 @@ fn create_project_builds_structure() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
     let repo = workly_core::settings::home().join("repos/alpha");
-    let new = NewProject { title: "Über: Alpha".into(), key: "UA".into(), color: "proj-3".into(), repos: vec!["~/repos/alpha".into()] };
+    let new = NewProject { title: "Über: Alpha".into(), key: "UA".into(), color: "proj-3".into(), repos: vec!["~/repos/alpha".into()], usecase: None };
     let dir = ws.create_project(&new, "app").unwrap();
     assert_eq!(dir, "projects/ueber-alpha");
     let d = root.join(&dir);
@@ -242,7 +242,7 @@ fn create_project_builds_structure() {
     assert_eq!(log_lines(&root).pop().unwrap()["kind"], "project.create");
 
     let mut bad = |key: &str, title: &str, color: &str| {
-        let n = NewProject { title: title.into(), key: key.into(), color: color.into(), repos: vec![] };
+        let n = NewProject { title: title.into(), key: key.into(), color: color.into(), repos: vec![], usecase: None };
         matches!(ws.create_project(&n, "app"), Err(Error::Invalid(_)))
     };
     assert!(bad("WR", "Other", "proj-1"), "key taken");
@@ -479,4 +479,25 @@ fn move_usecase_rules() {
     ws.update_project_field("IE", "usecase.status", &json!("blocked"), "app").unwrap();
     let uc = ws.index.project("IE").unwrap().project.usecase.clone().unwrap();
     assert_eq!((uc.status.as_deref(), uc.step.as_deref()), (Some("blocked"), Some("pilot")));
+}
+
+#[test]
+fn create_usecase_starts_at_first_phase() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let uc = Some(workly_core::project::NewUseCase { kind: "ai".into(), area: Some("Finance".into()) });
+    let new = NewProject { title: "Mail Sorting".into(), key: "MS".into(), color: "proj-1".into(), repos: vec![], usecase: uc };
+    let dir = ws.create_project(&new, "app").unwrap();
+    let src = fs::read_to_string(root.join(dir).join("_project.md")).unwrap();
+    let today = workly_core::today();
+    let block = format!(
+        "created: {today}\nusecase:\n  type: ai\n  area: Finance\n  step: need\n  step_since: {today}\n  status: active\n  blocked_by: null\n  next_step: null\n  current_state: null\n---\n"
+    );
+    assert!(src.contains(&block), "{src}");
+    assert_eq!(ws.index.project("MS").unwrap().project.usecase.as_ref().unwrap().step.as_deref(), Some("need"));
+
+    let bad = Some(workly_core::project::NewUseCase { kind: "ml".into(), area: None });
+    let n = NewProject { title: "Other".into(), key: "OT".into(), color: "proj-2".into(), repos: vec![], usecase: bad };
+    assert!(matches!(ws.create_project(&n, "app"), Err(Error::Invalid(_))));
+    assert!(!root.join("projects/other").exists());
 }

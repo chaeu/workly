@@ -68,6 +68,16 @@ pub struct NewProject {
     pub color: String,
     #[serde(default)]
     pub repos: Vec<String>,
+    /// Set = the project starts as a use case at the first phase's default step.
+    #[serde(default)]
+    pub usecase: Option<NewUseCase>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct NewUseCase {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub area: Option<String>,
 }
 
 /// 2-6 characters, uppercase letters, digits only after the first letter (`WR`, `WR2`).
@@ -129,6 +139,9 @@ impl Workspace {
         if !new.repos.is_empty() {
             content = patch::set_field(&content, &["repos"], &json!(new.repos)).map_err(Error::Invalid)?;
         }
+        if let Some(uc) = &new.usecase {
+            content = self.with_usecase(&content, uc, &today)?;
+        }
         match parse_file::<Project>("_templates/project.md", &content) {
             Ok(p) if p.key == new.key && p.title == title => {}
             _ => return Err(Error::Invalid("_templates/project.md does not produce a valid project".into())),
@@ -185,6 +198,32 @@ impl Workspace {
             self.code_workspace(key, true)?;
         }
         Ok(())
+    }
+
+    /// `usecase:` block for a new use case, in the field order of the spec.
+    fn with_usecase(&self, content: &str, uc: &NewUseCase, today: &str) -> Result<String> {
+        let p = self.process.as_ref().ok_or_else(|| Error::Invalid("no valid .workly/process.yml".into()))?;
+        if !p.types.iter().any(|t| t.id == uc.kind) {
+            return Err(Error::Invalid(format!("usecase.type: '{}' is not listed in process.yml", uc.kind)));
+        }
+        let first = p.phases.first().ok_or_else(|| Error::Invalid("process.yml has no phases".into()))?;
+        let step = p.phase_default_step.get(&first.id).ok_or_else(|| Error::Invalid(format!("process.yml has no phase_default_step for '{}'", first.id)))?;
+        let status = p.statuses.first().ok_or_else(|| Error::Invalid("process.yml has no statuses".into()))?;
+        let fields = [
+            ("type", Value::from(uc.kind.as_str())),
+            ("area", uc.area.as_deref().filter(|a| !a.trim().is_empty()).map_or(Value::Null, |a| Value::from(a.trim()))),
+            ("step", Value::from(step.as_str())),
+            ("step_since", Value::from(today)),
+            ("status", Value::from(status.id.as_str())),
+            ("blocked_by", Value::Null),
+            ("next_step", Value::Null),
+            ("current_state", Value::Null),
+        ];
+        let mut out = content.to_string();
+        for (field, value) in fields {
+            out = patch::set_field(&out, &["usecase", field], &value).map_err(Error::Invalid)?;
+        }
+        Ok(out)
     }
 
     /// The one way a use case changes its step (board drag, map drag, decision button):

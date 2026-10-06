@@ -1,6 +1,7 @@
 <script lang="ts">
   import UseCaseMap from "$lib/components/UseCaseMap.svelte";
   import UseCaseDetail from "$lib/components/UseCaseDetail.svelte";
+  import ProjectForm from "$lib/components/ProjectForm.svelte";
   import { workspace, moveUseCase, updateProjectField, saveSettings, openInVscode } from "$lib/stores/workspace.svelte";
   import { startClock } from "$lib/tasks.svelte";
   import {
@@ -26,6 +27,17 @@
   const unplaced = $derived(p ? ucs.filter((u) => !phaseOf(p, u)) : []);
   const detailMode = $derived(workspace.settings?.task_detail ?? "popup");
   let openKey = $state<string | null>(null);
+  const compact = $derived(workspace.settings?.usecase_compact ?? false);
+
+  // A new use case opens once the reloaded index has it (the reload is async).
+  let creating = $state(false);
+  let openWhenLoaded = $state<string | null>(null);
+  $effect(() => {
+    if (openWhenLoaded && ucs.some((u) => u.key === openWhenLoaded)) {
+      openKey = openWhenLoaded;
+      openWhenLoaded = null;
+    }
+  });
 
   // --------------------------------------------------------------- lanes
 
@@ -240,6 +252,9 @@
       <button type="button" aria-pressed={ui.view === "board"} onclick={() => (ui.view = "board")}>Board</button>
       <button type="button" aria-pressed={ui.view === "map"} onclick={() => (ui.view = "map")}>Process map</button>
     </div>
+    {#if p && !processErrors.length}
+      <button type="button" class="w-btn w-btn--primary" onclick={() => (creating = true)}>+ New use case</button>
+    {/if}
   </div>
 </header>
 
@@ -279,6 +294,12 @@
         {/each}
       </div>
     </div>
+    {#if ui.view === "board"}
+      <div class="w-seg" role="group" aria-label="Density">
+        <button type="button" aria-pressed={!compact} onclick={() => saveSettings({ usecase_compact: false })}>Detailed</button>
+        <button type="button" aria-pressed={compact} onclick={() => saveSettings({ usecase_compact: true })}>Compact</button>
+      </div>
+    {/if}
     <select class="w-chip" class:on={fArea} bind:value={fArea} aria-label="Area">
       <option value="">All areas</option>
       {#each areas as a (a)}<option value={a}>{a}</option>{/each}
@@ -330,7 +351,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroll" class:map-wrap={ui.view === "map"} {onpointerdown}>
     {#if ui.view === "board"}
-      <div class="board" style:--n={p.phases.length}>
+      <div class="board" class:compact style:--n={p.phases.length}>
         <div class="corner w-caps">{LANE_MODES.find(([m]) => m === ui.lanes)![1]} / phase</div>
         {#each p.phases as ph, i (ph.id)}
           {@const rework = reworkNote(p, ph.id)}
@@ -387,6 +408,10 @@
       >Number = days in the current step{p.stale_after_days != null ? `, orange from ${p.stale_after_days}` : ""}. Diamond = decision (gate).</span
     >
   </div>
+
+  {#if creating}
+    <ProjectForm usecase onclose={() => (creating = false)} oncreated={(key) => (openWhenLoaded = key)} />
+  {/if}
 
   {#if openKey}
     {#key openKey}
@@ -720,6 +745,9 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+  .compact .c-next {
+    display: none;
   }
   .card.blocked {
     background: var(--w-danger-soft);

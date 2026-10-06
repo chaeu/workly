@@ -102,6 +102,7 @@ export type Settings = {
   theme: "system" | "light" | "dark" | null;
   focus_hidden?: boolean;
   task_detail?: "popup" | "panel";
+  usecase_compact?: boolean;
   [key: string]: unknown;
 };
 
@@ -178,7 +179,7 @@ export const restore = (path: string) => run("restore", { path });
 export const COLORS = ["proj-1", "proj-2", "proj-3", "proj-4", "proj-5", "proj-6"];
 export const PROJECT_STATUSES = ["active", "paused", "archived"];
 
-export type NewProject = { title: string; key: string; color: string; repos: string[] };
+export type NewProject = { title: string; key: string; color: string; repos: string[]; usecase?: { type: string; area: string | null } | null };
 
 export const suggestKey = (title: string) => invoke<string>("suggest_key", { title });
 /** Throws, so the form can show the error next to its fields. */
