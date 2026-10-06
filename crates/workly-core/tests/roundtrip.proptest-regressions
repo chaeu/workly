@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 9f3fd63e42250ee52d6c81d126d82eb193b4014517c6b89ab75d445e4117b54b # shrinks to (doc, paths) = ("---\n# header comment\nk0: \"\"\nk1: \"\"   # \nagent:\n  c0: \"\"\n---\nbody  \n\n- [ ] x", [(["k0"], false), (["k1"], false), (["agent", "c0"], false)]), pick = Index(6148914691236517206), y_scalar = String(""), y_list = Array [String("\"")], use_list = true
+cc cec181e95ce399b02cf39d60f5e5e5b4e526f2bd0051997882e47c77965374c9 # shrinks to (doc, paths) = ("---\n# header comment\nk0: \"\"   # \n---\nbody  \n\n- [ ] x", [(["k0"], false)]), pick = Index(0), y_scalar = String(""), y_list = Array [String("0\"")], use_list = true
+cc 08c5f2adaee0f6b330a6a153fc165a92263f4d644fdea0f43dc85404fca4cd31 # shrinks to (doc, paths) = ("---\n# header comment\nk0: \"\"   # \n---\nbody  \n\n- [ ] x", [(["k0"], false)]), pick = Index(0), y_scalar = String(""), y_list = Array [String("a \"")], use_list = true
+cc cd0e57b3a4ea2d88c0cd7db13397337a53c444496c2469838154871bc0101dc6 # shrinks to (doc, paths) = ("---\n# header comment\nk0: \"\"   # \n---\nbody  \n\n- [ ] x", [(["k0"], false)]), pick = Index(0), y_scalar = String(""), y_list = Array [String("a:\"")], use_list = true

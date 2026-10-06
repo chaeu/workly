@@ -1,0 +1,332 @@
+//! Typed views of workspace files. Read-only: writes go through `patch`.
+
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+/// Fields the app does not know. Kept so nothing is hidden, never written back.
+pub type Extra = BTreeMap<String, serde_yaml::Value>;
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Task {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub status: String,
+    pub priority: Option<u8>,
+    pub due: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub focus: Option<String>,
+    pub focus_order: Option<u8>,
+    pub created: Option<String>,
+    pub done_at: Option<String>,
+    pub agent: Option<AgentState>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AgentState {
+    #[serde(default)]
+    pub ready: bool,
+    pub runner: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub active: Option<String>,
+    pub since: Option<String>,
+    pub commit: Option<String>,
+    pub last_run: Option<String>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Project {
+    pub key: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub status: String,
+    pub color: Option<String>,
+    pub order: Option<i64>,
+    #[serde(default)]
+    pub repos: Vec<String>,
+    #[serde(default)]
+    pub links: Vec<Link>,
+    pub created: Option<String>,
+    pub usecase: Option<UseCase>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Link {
+    pub label: Option<String>,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct UseCase {
+    #[serde(rename = "type")]
+    pub kind: Option<String>,
+    pub area: Option<String>,
+    pub step: Option<String>,
+    pub step_since: Option<String>,
+    pub status: Option<String>,
+    pub blocked_by: Option<String>,
+    pub next_step: Option<String>,
+    pub current_state: Option<String>,
+    #[serde(default)]
+    pub decisions: Vec<Decision>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Decision {
+    pub date: Option<String>,
+    pub gate: Option<String>,
+    pub text: String,
+}
+
+/// Parse error located in the file (1-based line), never fatal for a scan.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ParseError {
+    pub path: String,
+    pub line: Option<usize>,
+    pub message: String,
+}
+
+/// Parse a file's frontmatter into `T`. `path` is only used for the error.
+pub fn parse_file<T: serde::de::DeserializeOwned>(path: &str, src: &str) -> Result<T, ParseError> {
+    let parts = crate::frontmatter::split(src);
+    if !parts.has_frontmatter() {
+        return Err(ParseError { path: path.into(), line: Some(1), message: "missing frontmatter".into() });
+    }
+    // Lines before the YAML: the opening fence.
+    let offset = 1;
+    serde_yaml::from_str(parts.frontmatter).map_err(|e| ParseError {
+        path: path.into(),
+        line: e.location().map(|l| l.line() + offset),
+        message: e.to_string(),
+    })
+}
+
+// ---------------------------------------------------------------- config.yml
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct Config {
+    pub version: u32,
+    pub new_projects_dir: String,
+    pub inbox_dir: String,
+    pub scan_exclude: Vec<String>,
+    pub task_statuses: Vec<TaskStatus>,
+    pub agent_defaults: AgentDefaults,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        let status = |id: &str, label: &str| TaskStatus { id: id.into(), label: label.into(), wip_limit: None };
+        Config {
+            version: 1,
+            new_projects_dir: "projects".into(),
+            inbox_dir: "inbox".into(),
+            scan_exclude: [".git", "node_modules", ".obsidian", ".workly", "_templates"].map(String::from).into(),
+            task_statuses: vec![
+                status("backlog", "Backlog"),
+                status("todo", "To do"),
+                status("doing", "Doing"),
+                status("review", "Review"),
+                status("done", "Done"),
+            ],
+            agent_defaults: AgentDefaults::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TaskStatus {
+    pub id: String,
+    pub label: String,
+    pub wip_limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct AgentDefaults {
+    pub runner: String,
+    pub model: String,
+    pub effort: String,
+}
+
+impl Default for AgentDefaults {
+    fn default() -> Self {
+        AgentDefaults { runner: "auto".into(), model: "auto".into(), effort: "auto".into() }
+    }
+}
+
+// --------------------------------------------------------------- process.yml
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Process {
+    #[serde(default)]
+    pub lanes: Vec<Lane>,
+    #[serde(default)]
+    pub phases: Vec<Phase>,
+    #[serde(default)]
+    pub steps: Vec<Step>,
+    #[serde(default)]
+    pub phase_default_step: BTreeMap<String, String>,
+    #[serde(default)]
+    pub board_gates: BTreeMap<String, String>,
+    #[serde(default)]
+    pub edges: Vec<Edge>,
+    #[serde(default)]
+    pub statuses: Vec<Labelled>,
+    #[serde(default)]
+    pub types: Vec<Labelled>,
+    #[serde(default)]
+    pub areas: Vec<String>,
+    pub stale_after_days: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Lane {
+    pub id: String,
+    pub label: String,
+    pub sub: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Phase {
+    pub id: String,
+    pub name: String,
+    pub desc: Option<String>,
+    #[serde(default)]
+    pub optional: bool,
+    #[serde(default)]
+    pub parked: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Step {
+    pub id: String,
+    /// box | gate | term
+    pub kind: String,
+    pub col: u32,
+    pub lane: String,
+    pub phase: Option<String>,
+    pub label: String,
+    pub sub: Option<String>,
+    pub code: Option<String>,
+    pub hint: Option<String>,
+    #[serde(default)]
+    pub optional: bool,
+    #[serde(default)]
+    pub parked: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Edge {
+    pub from: String,
+    pub to: String,
+    pub route: String,
+    pub label: Option<String>,
+    pub label_dx: Option<i32>,
+    pub offset: Option<i32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Labelled {
+    pub id: String,
+    pub label: String,
+}
+
+impl Process {
+    /// Every dangling reference as a readable message. Empty = valid.
+    pub fn validate(&self) -> Vec<String> {
+        let has = |list: &[&str], id: &str| list.contains(&id);
+        let steps: Vec<&str> = self.steps.iter().map(|s| s.id.as_str()).collect();
+        let phases: Vec<&str> = self.phases.iter().map(|p| p.id.as_str()).collect();
+        let lanes: Vec<&str> = self.lanes.iter().map(|l| l.id.as_str()).collect();
+        let mut errors = Vec::new();
+        for s in &self.steps {
+            if !has(&lanes, &s.lane) {
+                errors.push(format!("step '{}' uses unknown lane '{}'", s.id, s.lane));
+            }
+            if let Some(p) = s.phase.as_deref().filter(|p| !has(&phases, p)) {
+                errors.push(format!("step '{}' uses unknown phase '{p}'", s.id));
+            }
+            if !["box", "gate", "term"].contains(&s.kind.as_str()) {
+                errors.push(format!("step '{}' has unknown kind '{}' (box | gate | term)", s.id, s.kind));
+            }
+        }
+        for (i, e) in self.edges.iter().enumerate() {
+            for end in [&e.from, &e.to] {
+                if !has(&steps, end) {
+                    errors.push(format!("edge {} ({} -> {}) references unknown step '{end}'", i + 1, e.from, e.to));
+                }
+            }
+        }
+        for (name, map) in [("phase_default_step", &self.phase_default_step), ("board_gates", &self.board_gates)] {
+            for (phase, step) in map {
+                if !has(&phases, phase) {
+                    errors.push(format!("{name}: unknown phase '{phase}'"));
+                }
+                if !has(&steps, step) {
+                    errors.push(format!("{name}: phase '{phase}' points to unknown step '{step}'"));
+                }
+            }
+        }
+        errors
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_with_unknown_fields() {
+        let src = "---\nid: A-1\ntitle: T\npriority: 2\nestimate: 3h\nagent:\n  ready: true\n  x: 1\n---\n";
+        let t: Task = parse_file("a.md", src).unwrap();
+        assert_eq!(t.priority, Some(2));
+        assert!(t.extra.contains_key("estimate"));
+        let agent = t.agent.unwrap();
+        assert!(agent.ready && agent.extra.contains_key("x"));
+    }
+
+    #[test]
+    fn dates_stay_strings() {
+        let t: Task = parse_file("a.md", "---\nid: A-1\ndue: 2026-10-10\n---\n").unwrap();
+        assert_eq!(t.due.as_deref(), Some("2026-10-10"));
+    }
+
+    #[test]
+    fn invalid_yaml_has_file_line() {
+        let src = "---\nid: IN-3\ntitle: \"Unclosed quote\nstatus: todo\n---\n";
+        let e = parse_file::<Task>("inbox/IN-3.md", src).unwrap_err();
+        assert_eq!(e.path, "inbox/IN-3.md");
+        assert!(matches!(e.line, Some(3..=5)), "{e:?}");
+    }
+
+    #[test]
+    fn process_validation_messages() {
+        let p: Process = serde_yaml::from_str(
+            "lanes: [{id: a, label: A}]\nphases: [{id: p, name: P}]\n\
+             steps: [{id: s, kind: box, col: 0, lane: a, phase: p, label: S}]\n\
+             edges: [{from: s, to: nope, route: h}]\nphase_default_step: {p: gone, q: s}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            p.validate(),
+            [
+                "edge 1 (s -> nope) references unknown step 'nope'",
+                "phase_default_step: phase 'p' points to unknown step 'gone'",
+                "phase_default_step: unknown phase 'q'",
+            ]
+        );
+    }
+}
