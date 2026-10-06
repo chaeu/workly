@@ -1,0 +1,2 @@
+{"ts":"2026-10-05T16:40:12Z","actor":"app","kind":"task.update","id":"WR-3","field":"status","from":"todo","to":"doing"}
+{"ts":"2026-10-06T08:02:55Z","actor":"agent:codex","kind":"task.note","id":"WR-3","field":"body","from":null,"to":"Header component extracted"}

@@ -1,0 +1,252 @@
+# Workly – Spezifikation v1
+
+Stand: 6. Oktober 2026. Quelle: Dokument „Workly – Spezifikation v1“ (claude.ai). Bei Widerspruch gilt diese Datei im Repo.
+
+## 1. Entscheidungen
+
+Workly ist eine eigenständige, leichte macOS-App. Dateien sind die Quelle der Wahrheit, die App ist ein Werkzeug darauf.
+
+| Thema | Entscheidung | Warum |
+| --- | --- | --- |
+| Stack | Tauri 2, SvelteKit (adapter-static, SPA, Svelte 5), Rust-Core | Native Hülle mit System-WebView statt gebündeltem Chromium; SvelteKit ist der stärkste Stack des Entwicklers |
+| Daten | Markdown mit YAML-Frontmatter, keine Datenbank | Obsidian, VS Code, Git und Agents lesen dieselben Dateien |
+| Projekt | Jeder Ordner mit einer `_project.md` ist ein Projekt | Ordner liegen, wo der Nutzer will; die App findet sie |
+| Use Case | Ein Projekt mit einem `usecase:`-Block im Frontmatter | Keine zweite Entität; aus einer Idee wird ohne Umzug ein Projekt |
+| Tasks | Liegen im Projektordner unter `tasks/`, Tasks ohne Projekt in `inbox/` | Alles zu einem Projekt an einem Ort, auch für Agents |
+| IDs | Projekt-Key + Nummer (`WR-12`); Key wird aus dem Namen vorgeschlagen, beim Anlegen änderbar, danach fest; Inbox-Tasks nutzen den reservierten Key `IN` | Lesbar in Commits und Branches |
+| Einstellungen | Pfade pro Gerät in der App, Regeln pro Workspace in `.workly/config.yml` | Standalone-fähig; derselbe Workspace funktioniert auf mehreren Macs |
+| Agents | CLI `wly` als einzige Schreibschnittstelle für Agents; Ausführung durch Runner-Adapter (v1: Codex CLI, Copilot in VS Code) | Workly koordiniert und protokolliert, Agents arbeiten in ihren eigenen Werkzeugen |
+| Sprache | UI-Labels Englisch, Deutsch später als zweite Sprache; Datei-IDs immer Englisch | |
+| Name | Workly (Bundle-ID z. B. `dev.chaeu.workly`, CLI `wly`, Ordner `.workly/`) | |
+| Design | Workly Design System (`docs/design/`) | Steht bereits, inklusive Prototypen |
+
+**Leitplanken:** Keine Firmendaten im Repo, Entwicklung mit dem Beispiel-Workspace unter `fixtures/workspace`. Kein eigener Editor und keine eigene Agent-Umgebung: Bearbeiten in Obsidian oder VS Code, Agents in ihren eigenen CLIs.
+
+## 2. Architektur
+
+Ein Rust-Core (`workly-core`) besitzt alle Regeln für den Zugriff auf die Dateien. App, CLI und später der Runner sind nur verschiedene Türen dazu. So kann ein Agent nichts anderes schreiben als die Oberfläche.
+
+```
+ Workly App (SvelteKit in Tauri 2)     wly CLI  <── Agents (Codex, Claude Code)
+              │ Tauri commands            │                    ▲
+              ▼                           ▼                    │ starts (v1.5)
+ ┌──────────────────── workly-core (Rust) ─────────┐ ──>  Runner (v1.5)
+ │ scan · in-memory index · file watcher · IDs     │          │ works in
+ │ lossless write · process · log · trash          │          ▼
+ └─────────────────────────────────────────────────┘     Repos (git worktree per task)
+              │ read, write, watch
+              ▼
+ Workspace (Markdown files)  <── same files ──>  Obsidian · VS Code · Git
+```
+
+Keine Datenbank, kein Server. Beim Start baut der Core einen Index im Speicher und hält ihn per Datei-Watcher aktuell; externe Änderungen erscheinen ohne Neustart. Ein Cache kommt erst, wenn Messungen ihn rechtfertigen, und wäre jederzeit neu aufbaubar.
+
+**Cargo-Workspace:**
+
+| Crate | Zweck |
+| --- | --- |
+| `crates/workly-core` | Domänenmodell, Scan, Parser, verlustfreies Schreiben, Index, Watcher, IDs, Prozess, Log, Papierkorb |
+| `src-tauri` (`workly-app`) | Tauri-Befehle und Events, dünn über dem Core |
+| `crates/wly` | CLI über dem Core, JSON-Ausgabe für Agents |
+
+## 3. Workspace und Dateiformat
+
+Ein Workspace ist ein Ordner, zugleich Obsidian-Vault und Git-Repo. Menschenlesbares liegt sichtbar, Maschinendaten im versteckten `.workly/`.
+
+### Einstellungen
+
+| Ebene | Ort | Inhalt |
+| --- | --- | --- |
+| Gerät | `~/Library/Application Support/Workly/settings.json` | Workspaces (Name + Pfad, mehrere, umschaltbar), Repos-Ordner, Theme, Fenster, UI-Präferenzen |
+| Workspace | `<workspace>/.workly/config.yml` | Ordner für neue Projekte und Inbox, Scan-Ausschlüsse, Task-Status, WIP-Limits, Agent-Standards |
+| Workspace | `<workspace>/.workly/process.yml` | Use-Case-Prozess (Phasen, Schritte, Gates, Kanten) |
+
+### Ordnerstruktur
+
+```
+<workspace>/
+  _templates/                  # project, task, note, decision
+  inbox/                       # tasks without a project (IN-*)
+  knowledge/                   # general docs, not a project
+  projects/
+    website-relaunch/
+      _project.md              # metadata + overview
+      tasks/WR-12-navigation.md
+      docs/
+      notes/2026-10-06-kickoff.md
+      decisions/0001-hosting.md
+      agent/AGENTS.md
+      agent/skills/<name>/SKILL.md
+  .workly/
+    config.yml
+    process.yml
+    agent/AGENTS.md            # global agent rules
+    log/2026-10.jsonl          # every change, append-only
+    runs/<run-id>/             # agent runs (v1.5)
+    trash/                     # deleted items, restorable
+```
+
+Die App scannt alle Ordner unterhalb des Workspace (ohne `.git`, `node_modules`, `.obsidian`, `.workly`, `_templates`) nach `_project.md`.
+
+### Projekt: `_project.md`
+
+```yaml
+---
+key: WR                       # 2-5 uppercase letters, unique, fixed after creation
+title: Website Relaunch
+status: active                # active | paused | archived
+color: proj-1                 # design token proj-1 … proj-6
+order: 1                      # manual sort
+repos: [~/repos/website]
+links: []
+created: 2026-10-06
+usecase:                      # optional, only for use cases
+  type: ai                    # ai | hybrid | rule
+  area: Finance
+  step: pilot                 # step id from process.yml
+  step_since: 2026-10-01
+  status: active              # active | waiting | blocked | on_hold | stable
+  blocked_by: null
+  next_step: Review pilot results
+  current_state: Pilot with 20 invoices running
+  decisions:                  # gate decisions, newest last
+    - { date: 2026-09-10, gate: G1, text: "Yes, pursue" }
+---
+Short description in Markdown, shown as overview in the app.
+```
+
+### Task: `tasks/WR-12-<slug>.md`
+
+```yaml
+---
+id: WR-12
+title: Navigation überarbeiten
+status: todo                  # backlog | todo | doing | review | done
+priority: 2                   # 1 | 2 | 3
+due: 2026-10-10
+tags: [frontend]
+focus: 2026-10-06             # on the focus strip when equal to today
+focus_order: 1                # 1-3
+created: 2026-10-06
+done_at: null
+agent:                        # optional
+  ready: false
+  runner: auto                # auto | codex | copilot | claude-code
+  model: auto
+  effort: auto                # auto | low | medium | high
+  active: null                # set while an agent works, e.g. codex
+  since: null                 # ISO timestamp, drives "Codex working · 14 min"
+  commit: null
+  last_run: null
+---
+Description and acceptance criteria.
+
+## Updates
+- 2026-10-06 09:12 · codex: Pipeline green on dev.
+```
+
+### Regeln
+
+- **IDs:** Nächste Nummer = höchste vorhandene Nummer dieses Keys im Workspace + 1 (inklusive Papierkorb), kein gespeicherter Zähler. Eine ID bleibt beim Verschieben in ein anderes Projekt unverändert.
+- **Keys:** Vorschlag aus dem Titel: ist das erste Wort ein Kürzel in Großbuchstaben, wird es übernommen; sonst Anfangsbuchstaben der ersten bis zu drei Wörter; bei einem Wort die ersten drei Buchstaben. Bei Kollision Ziffer anhängen. `IN` ist reserviert.
+- **Verlustfreies Schreiben:** Nur betroffene Felder ändern. Unbekannte Felder, Reihenfolge, Kommentare, Leerzeilen und Body bleiben byte-gleich. Wichtigster Test im Projekt.
+- **Updates** werden als Zeile unter `## Updates` im Body angehängt (Abschnitt wird bei Bedarf angelegt).
+- **Löschen** verschiebt nach `.workly/trash/` (Pfad erhalten), wiederherstellbar.
+- **Log:** Jede Änderung als JSON-Zeile in `.workly/log/JJJJ-MM.jsonl`: `{ts, actor, kind, id, field, from, to}`. `actor` = `app`, `cli`, `agent:<name>`.
+- **Dateinamen:** `<ID>-<slug>.md`; Titeländerungen benennen die Datei nicht um (stabil für Links).
+
+## 4. Dokumentation
+
+Jedes Projekt hat genau ein Zuhause: seinen Projektordner. Das Repo enthält nur, was mit dem Code versioniert werden muss.
+
+| Art | Ort |
+| --- | --- |
+| Überblick, Ziel, Stakeholder | `_project.md` (Body) |
+| Lebende Doku | `docs/` |
+| Datierte Notizen | `notes/JJJJ-MM-TT-thema.md` |
+| Entscheidungen | `decisions/0001-thema.md` |
+| Agent-Anweisungen | `agent/AGENTS.md`, `agent/skills/` |
+| Code-nahe Doku | im Repo |
+| Allgemeines Wissen | `knowledge/` |
+
+- **Obsidian** liest und schreibt Doku; `.workly/` bleibt dort unsichtbar.
+- **VS Code:** Workly erzeugt pro Projekt `<projekt>/<key>.code-workspace` mit Projektordner und Repos; „Open in VS Code“ öffnet diese Datei.
+- **Workly** zeigt Struktur und Status, Markdown-Vorschau, öffnet Dateien in Obsidian (`obsidian://open?path=…`), VS Code oder Finder. Kein eigener Editor in v1.
+- **Vorlagen** in `_templates/` werden von App und Obsidian genutzt.
+- **Git** macht der Nutzer; Workly committet nicht.
+
+## 5. Agentic Workflow
+
+### CLI `wly`
+
+Läuft auf demselben Core wie die App. Agents (und der Nutzer) lesen und ändern Tasks darüber.
+
+```
+wly task list [--project WR] [--status todo] [--json]
+wly task show WR-12 [--json]          # task + project + agent files as context
+wly task start WR-12 --agent codex    # status doing, agent.active + agent.since set
+wly task note WR-12 "text"            # appends to ## Updates
+wly task review WR-12 [--commit a3f9c1]   # status review, agent.active cleared; never done
+wly task add "title" [--project WR | --inbox] [--priority 2]
+wly project list [--json]
+```
+
+Exit-Codes: 0 ok, 1 Nutzungsfehler, 2 nicht gefunden, 3 ungültiger Übergang. `--workspace <path>` oder `WORKLY_WORKSPACE` wählt den Workspace, sonst der in den Geräte-Einstellungen aktive.
+
+### Agent-Dateien
+
+- `<projekt>/agent/AGENTS.md`: Projekt-Anweisungen.
+- `<projekt>/agent/skills/<name>/SKILL.md`: wiederkehrende Abläufe.
+- `<workspace>/.workly/agent/AGENTS.md`: globale Regeln (Status nur über `wly`, nie `done`, nichts löschen).
+
+Beim Start setzt Workly den Kontext zusammen: globale Regeln, Projekt-Anweisungen, Skills, Task.
+
+### Runner-Adapter
+
+Jeder Agent ist ein Adapter: Kontext zusammensetzen, starten, Status über `wly`. v1:
+
+- **Codex CLI:** öffnet Terminal im Repo und startet Codex mit dem zusammengesetzten Prompt.
+- **Copilot in VS Code:** öffnet die `.code-workspace`-Datei und legt den Prompt in die Zwischenablage.
+
+Claude Code folgt als weiterer Adapter.
+
+### Stufen
+
+| Stufe | Inhalt |
+| --- | --- |
+| v1 | Agent-Dateien, CLI, Button „Start agent“ mit zwei Adaptern, Live-Status auf der Karte |
+| v1.5 | Queue: Läufe ohne Fenster nacheinander, Git-Worktree je Task auf Branch `wly/WR-12`, Agent-Ansicht (Queue, Running, Review, Failed) mit Live-Log |
+| v2 | Parallele Läufe, automatische Modellwahl, Budgets, Folge-Tasks, MCP-Server |
+
+**Grenzen:** Agents setzen nie `done`, löschen nichts, arbeiten nur im Repo bzw. Worktree.
+
+## 6. Umfang v1
+
+| Bereich | Funktionen | Abnahme |
+| --- | --- | --- |
+| Settings | Workspace wählen oder anlegen (mehrere, umschaltbar), Repos-Ordner, Theme | Leerer Ordner wird mit `_templates/` und `.workly/` zum Workspace |
+| Projects | Liste, anlegen aus Vorlage, bearbeiten, Farbe, Sortierung per Drag, archivieren, löschen (Papierkorb) | Neues Projekt erzeugt Ordnerstruktur; Änderungen in Obsidian erscheinen ohne Neustart |
+| Project detail | Übersicht, Ordnerbaum, Markdown-Vorschau, öffnen in Obsidian/VS Code/Finder, Repos verknüpfen | Alle Links öffnen das richtige Ziel |
+| Tasks | Board, Gruppierung nach Projekt, Filter, Suche, Drag & Drop, Schnelleingabe, bearbeiten, löschen | Jede Änderung landet verlustfrei in der Datei |
+| Detail card | Popup oder Seitenleiste, Status, Priorität, Fälligkeit, Tags, Beschreibung, Updates | Wie im Design System |
+| Focus | Streifen mit bis zu drei Tasks, ein- und ausblendbar | `focus`, `focus_order` gesetzt |
+| Use-case cockpit | Board und Prozesslandkarte, Detailkarte mit Entscheidungen, Filter | Wie im Prototyp, Prozess aus `process.yml` |
+| Agents | CLI `wly`, Agent-Dateien, „Start agent“ (Codex, Copilot), Live-Status | Ein Agent setzt einen Task über `wly` auf Review |
+| Log | Jede Änderung in `.workly/log/` | |
+
+**Nicht in v1:** Queue-Runner, Wochenreview, Jira/SharePoint, Markdown-Editor, Geräte-Sync, Mobile.
+
+**Nicht-funktional:** Start < 1 s bei einigen hundert Dateien, keine CPU-Last im Leerlauf, externe Änderungen < 1 s sichtbar, hell und dunkel, Kürzel ⌘N (Schnelleingabe), ⌘K (Suche), ⌘1–4 (Ansichten).
+
+## 7. Bauplan
+
+| # | Meilenstein | Fertig, wenn |
+| --- | --- | --- |
+| M0 | Gerüst: Tauri 2 + SvelteKit + Cargo-Workspace, Tokens, Fonts, App-Rahmen | `.app` startet, leerer Rahmen hell und dunkel |
+| M1 | Core: Scan, verlustfreies Lesen/Schreiben, Index, Watcher, IDs, Papierkorb, Log | Tests grün inkl. byte-gleicher Roundtrip; externe Änderung erscheint live |
+| M2 | Projects + Settings | Abnahme laut Umfang |
+| M3 | Tasks: Board, Gruppierung, Detailkarte, Fokus | Abnahme laut Umfang, Screenshots gegen Referenz |
+| M4 | Use-Case-Cockpit | Wie im Prototyp |
+| M5 | CLI `wly` + Agent-Dateien | Ein Agent setzt einen Fixture-Task über `wly` auf Review |
+| M6 | „Start agent“ mit Codex- und Copilot-Adapter, Live-Status | Ein Klick führt vom Task zum laufenden Agent, Status kommt zurück |
+| M7 | Kürzel, leere Zustände, Fehler, Build, Installation | Ein Tag echter Einsatz |

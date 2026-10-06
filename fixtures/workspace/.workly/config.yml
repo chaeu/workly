@@ -1,0 +1,15 @@
+# Workspace rules. Device-specific paths live in the app settings, not here.
+version: 1
+new_projects_dir: projects
+inbox_dir: inbox
+scan_exclude: [.git, node_modules, .obsidian, .workly, _templates]
+task_statuses:
+  - { id: backlog, label: Backlog }
+  - { id: todo,    label: To do }
+  - { id: doing,   label: Doing, wip_limit: 3 }
+  - { id: review,  label: Review }
+  - { id: done,    label: Done }
+agent_defaults:
+  runner: codex          # codex | copilot | claude-code
+  model: auto
+  effort: medium

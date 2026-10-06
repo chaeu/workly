@@ -1,0 +1,95 @@
+# Use-case process. Data, not code: editable without a rebuild.
+# Fixture version with neutral English labels.
+
+lanes:
+  - { id: fb,  label: Business,              sub: "Need, test, acceptance" }
+  - { id: me,  label: Me / Automation,       sub: "Pilot, concept, build" }
+  - { id: gov, label: Boards & Governance,   sub: "Demand board, privacy, security, AI" }
+  - { id: it,  label: IT & Operations,       sub: "Access, go-live, operations" }
+
+phases:
+  - { id: idea,    name: Idea,       desc: Need reported }
+  - { id: pilot,   name: Pilot,      desc: "Quick feasibility, timeboxed" }
+  - { id: demand,  name: Demand,     desc: "Only if needed: request and board", optional: true }
+  - { id: concept, name: Concept,    desc: "Design, data, approvals" }
+  - { id: build,   name: Build,      desc: "Access, build MVP" }
+  - { id: test,    name: Test,       desc: UAT with the business }
+  - { id: live,    name: Live,       desc: "Rollout, hypercare" }
+  - { id: run,     name: Operations, desc: "Monitoring, measure value" }
+  - { id: parked,  name: Parked,     desc: "No-go, dropped or later", parked: true }
+
+# kind: box | gate | term (term is never a valid use-case position)
+steps:
+  - { id: start,   kind: term, col: 0,  lane: fb,  label: Start }
+  - { id: need,    kind: box,  col: 1,  lane: fb,  phase: idea,    label: Report need,      sub: Problem and volume }
+  - { id: pilot,   kind: box,  col: 2,  lane: me,  phase: pilot,   label: Pilot / quick PoC, sub: "Feasible? 2-4 weeks" }
+  - { id: g1,      kind: gate, col: 3,  lane: me,  phase: pilot,   code: G1, label: "Pursue?", hint: "Pilot shows feasibility and value" }
+  - { id: parked,  kind: box,  col: 3,  lane: fb,  phase: parked,  label: Parked,           sub: No-go or later, parked: true }
+  - { id: wd,      kind: gate, col: 4,  lane: me,  phase: demand,  code: Switch, label: "Demand needed?", hint: "Yes for budget, other teams or core systems; no for self-build" }
+  - { id: demand,  kind: box,  col: 5,  lane: gov, phase: demand,  label: Demand,           sub: "Request, business case", optional: true }
+  - { id: g2,      kind: gate, col: 6,  lane: gov, phase: demand,  code: G2, label: "Demand ok?", hint: "Board releases budget or capacity", optional: true }
+  - { id: concept, kind: box,  col: 7,  lane: me,  phase: concept, label: Concept,          sub: "Design, data, operations" }
+  - { id: g3,      kind: gate, col: 8,  lane: gov, phase: concept, code: G3, label: "Approvals ok?", hint: "Privacy, IT security, AI governance for AI" }
+  - { id: infra,   kind: box,  col: 9,  lane: it,  phase: build,   label: Access & infra,   sub: "Permissions, environments" }
+  - { id: build,   kind: box,  col: 10, lane: me,  phase: build,   label: Build,            sub: "MVP, production-ready" }
+  - { id: uat,     kind: box,  col: 11, lane: fb,  phase: test,    label: Test (UAT),       sub: with real cases }
+  - { id: g4,      kind: gate, col: 12, lane: fb,  phase: test,    code: G4, label: "Accepted?", hint: "Business accepts, handover to operations" }
+  - { id: live,    kind: box,  col: 13, lane: it,  phase: live,    label: Go-live,          sub: "Rollout, hypercare" }
+  - { id: run,     kind: box,  col: 14, lane: it,  phase: run,     label: Operations,       sub: "Monitoring, value" }
+  - { id: end,     kind: term, col: 15, lane: it,  label: End }
+
+phase_default_step:
+  idea: need
+  pilot: pilot
+  demand: wd
+  concept: concept
+  build: build
+  test: uat
+  live: live
+  run: run
+  parked: parked
+
+board_gates:
+  pilot: g1
+  demand: g2
+  concept: g3
+  test: g4
+
+# route: h | hv | hvh | vu | over. Label starting with "No" = negative branch.
+edges:
+  - { from: start,   to: need,    route: h }
+  - { from: need,    to: pilot,   route: hv }
+  - { from: pilot,   to: g1,      route: h }
+  - { from: g1,      to: parked,  route: vu,   label: "No" }
+  - { from: g1,      to: wd,      route: h,    label: "Yes" }
+  - { from: wd,      to: concept, route: h,    label: "No, self-build", label_dx: 22 }
+  - { from: wd,      to: demand,  route: hvh,  label: "Yes" }
+  - { from: demand,  to: g2,      route: h }
+  - { from: g2,      to: demand,  route: over, label: "No, rework" }
+  - { from: g2,      to: concept, route: hv,   label: "Yes", offset: -22 }
+  - { from: concept, to: g3,      route: hv }
+  - { from: g3,      to: concept, route: hv,   label: "No", offset: 22 }
+  - { from: g3,      to: infra,   route: hv,   label: "Yes" }
+  - { from: infra,   to: build,   route: hv }
+  - { from: build,   to: uat,     route: hv }
+  - { from: uat,     to: g4,      route: h }
+  - { from: g4,      to: build,   route: over, label: "No, rework" }
+  - { from: g4,      to: live,    route: hv,   label: "Yes" }
+  - { from: live,    to: run,     route: h }
+  - { from: run,     to: end,     route: h }
+
+statuses:
+  - { id: active,  label: Active }
+  - { id: waiting, label: Waiting }
+  - { id: blocked, label: Blocked }
+  - { id: on_hold, label: On hold }
+  - { id: stable,  label: Stable }
+
+types:
+  - { id: ai,     label: AI }
+  - { id: hybrid, label: Hybrid }
+  - { id: rule,   label: Rule-based }
+
+areas: [Finance, Customer Service, Sales, Operations, Data & Reporting]
+
+stale_after_days: 21

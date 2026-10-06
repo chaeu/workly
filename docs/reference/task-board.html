@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workly – Task-Board (Referenz)</title>
+<!-- Reference only: the app bundles the fonts locally instead of loading Google Fonts -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../design/tokens.css">
+<link rel="stylesheet" href="../design/components.css">
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--w-bg); }
+  /* task detail modal (board-specific parts) */
+  .t-head { padding: 16px 22px 14px; display: grid; gap: 10px; border-bottom: 1px solid var(--w-line); }
+  .t-meta { display: flex; align-items: center; gap: 8px; }
+  .t-x { margin-left: auto; width: 30px; height: 30px; border: 0; border-radius: 6px; background: none; color: var(--w-muted); cursor: pointer; font-size: 15px; }
+  .t-x:hover { background: var(--w-tray); color: var(--w-ink); }
+  .t-title { margin: 0; font-family: var(--w-font-label); font-size: 22px; font-weight: 600; line-height: 1.2; }
+  .t-status { display: flex; flex-wrap: wrap; gap: 6px; }
+  .t-status button { border: 0; border-radius: var(--w-r-pill); padding: 3px 11px; font-size: 12.5px; cursor: pointer; background: var(--w-tray); color: var(--w-muted); }
+  .t-status button[aria-pressed="true"] { background: var(--w-ink); color: var(--w-bg); font-weight: 600; }
+  .t-body { overflow-y: auto; padding: 18px 22px 20px; display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 18px 28px; }
+  .t-desc h3 { margin: 14px 0 4px; font-family: var(--w-font-label); font-size: var(--w-fs-title); font-weight: 600; }
+  .t-desc h3:first-child { margin-top: 0; }
+  .t-desc p, .t-desc ul { margin: 0; line-height: 1.5; }
+  .t-desc ul { padding-left: 18px; }
+  .t-side { display: grid; gap: 16px; align-content: start; border-left: 1px solid var(--w-line); padding-left: 24px; }
+  .t-kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: var(--w-fs-small); }
+  .t-kv dt { color: var(--w-muted); }
+  .t-kv dd { margin: 0; display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .t-updates { display: grid; gap: 8px; }
+  .t-update { background: var(--w-sunk); border-radius: var(--w-r-md); padding: 8px 10px; font-size: var(--w-fs-small); line-height: 1.45; }
+  .t-update .w-mono { display: block; color: var(--w-muted); margin-bottom: 2px; }
+  .t-compose { width: 100%; box-sizing: border-box; border: 0; border-radius: var(--w-r-md); background: var(--w-tray); padding: 8px 10px; resize: vertical; min-height: 60px; font-size: var(--w-fs-small); }
+  .t-compose:focus { outline: none; box-shadow: 0 0 0 2px var(--w-accent-soft); }
+  .t-foot { display: flex; align-items: center; gap: 8px; padding: 12px 22px; background: var(--w-sunk); border-top: 1px solid var(--w-line); }
+  .t-foot .w-btn--primary { margin-left: auto; }
+  @media (max-width: 680px) { .t-body { grid-template-columns: 1fr; } .t-side { border-left: 0; padding-left: 0; } }
+</style>
+</head>
+<body>
+<div class="w-app">
+  <nav class="w-sidebar" aria-label="Navigation">
+    <div class="w-brand"><svg class="w-brand-mark" viewBox="160 160 704 704" aria-hidden="true"><rect x="272" y="272" width="480" height="480" rx="64" fill="var(--w-accent)" transform="rotate(45 512 512)"/><path d="M336 436 L424 624 L512 500 L600 624 L688 436" fill="none" stroke="var(--w-on-accent)" stroke-width="84" stroke-linecap="round" stroke-linejoin="round"/></svg>Workly</div>
+    <div class="w-nav">
+      <a class="w-nav-item" href="#">Heute<span class="w-count w-mono">3</span></a>
+      <a class="w-nav-item" href="#" aria-current="page">Tasks<span class="w-count w-mono" id="navCount">8</span></a>
+      <a class="w-nav-item" href="#">Use Cases</a>
+      <a class="w-nav-item" href="#">Wochenreview</a>
+    </div>
+    <div class="w-nav" id="projNav">
+      <div class="w-caps" style="padding: 0 10px 6px">Projekte</div>
+    </div>
+    <div class="w-sidebar-foot w-mono">~/work/workspace/pm</div>
+  </nav>
+
+  <main class="w-main">
+    <header class="w-page-head">
+      <div>
+        <h1 class="w-h1">Alle Tasks</h1>
+        <div class="w-sub" id="subline"></div>
+      </div>
+      <div class="w-toolbar">
+        <label class="w-search">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="color: var(--w-muted)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="q" type="search" placeholder="Titel, Projekt oder Tag" aria-label="Tasks durchsuchen">
+        </label>
+        <div class="w-seg" role="group" aria-label="Gruppierung" id="seg">
+          <button type="button" data-v="status">Nach Status</button>
+          <button type="button" data-v="project">Nach Projekt</button>
+        </div>
+        <button type="button" class="w-btn" id="focusShow" hidden>Fokus einblenden · 3</button>
+        <button type="button" class="w-btn w-btn--primary">+ Neuer Task</button>
+      </div>
+    </header>
+
+    <section class="w-focus" id="focus" aria-label="Fokus heute">
+      <div class="w-focus-head">
+        <span class="w-caps">Fokus heute</span>
+        <span class="w-sub" style="font-size: 12px">3 Tasks, in dieser Reihenfolge</span>
+        <button type="button" class="w-btn w-btn--quiet" id="focusHide">Ausblenden</button>
+      </div>
+      <ol class="w-focus-list" id="focusList"></ol>
+    </section>
+
+    <div class="w-board-scroll"><div id="board"></div></div>
+  </main>
+</div>
+
+<div class="w-scrim" id="scrim" hidden></div>
+<div class="w-modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle" hidden></div>
+
+<script>
+const PROJECTS = [
+  { id: 'kfz', name: 'KFZ-Listenpreis', color: 'var(--w-proj-1)' },
+  { id: 'lh',  name: 'Operations Lighthouse', color: 'var(--w-proj-2)' },
+  { id: 'so',  name: 'Sonstiges', color: 'var(--w-proj-3)' }
+];
+const STATUSES = [
+  { id: 'backlog', name: 'Backlog' },
+  { id: 'todo',    name: 'Zu tun' },
+  { id: 'doing',   name: 'In Arbeit', limit: 3 },
+  { id: 'review',  name: 'Review' },
+  { id: 'done',    name: 'Erledigt' }
+];
+const TASKS = [
+  { id: 'T-034', title: 'Kostenabschätzung Azure-Betrieb', p: 'lh', s: 'backlog' },
+  { id: 'T-035', title: 'Datenquellen für Listenpreise sichten', p: 'kfz', s: 'backlog' },
+  { id: 'T-031', title: 'Azure Launch vorbereiten', p: 'lh', s: 'todo', prio: 1, due: '10.10.', focus: 1 },
+  { id: 'T-029', title: 'Struktur für Pilot brainstormen', p: 'kfz', s: 'todo', tags: ['#pilot', '#brainstorming'],
+    desc: [['Kontext', 'Eine kurze, reviewbare Struktur für einen KFZ-Listenpreis-Piloten erarbeiten, ohne nicht belegte Produktannahmen zu treffen.'],
+           ['Gewünschtes Ergebnis', 'Ein kurzer Vorschlag für die Pilotstruktur mit tragfähigen Optionen, offenen Fragen und einem empfohlenen nächsten Schritt.'],
+           ['Akzeptanzkriterien', ['Kompakte Pilotstruktur mit klaren Abschnitten ist dokumentiert.', 'Mindestens zwei Strukturvarianten sind beschrieben.', 'Offene Fragen und Annahmen sind getrennt aufgeführt.', 'Ein empfohlener nächster Schritt ist begründet.']]] },
+  { id: 'T-032', title: 'Pilot-Datenmodell entwerfen', p: 'kfz', s: 'doing', prio: 2, agent: 'Codex arbeitet · 14 min', focus: 2 },
+  { id: 'T-030', title: 'Monitoring-Alerts einrichten', p: 'lh', s: 'doing' },
+  { id: 'T-027', title: 'Deployment-Pipeline für Lighthouse', p: 'lh', s: 'review', commit: 'commit a3f9c1 · Codex', focus: 3,
+    updates: [['06.10. 09:12 · Codex', 'Pipeline läuft grün auf dev. Secrets aus Key Vault, Deploy per Workflow-Dispatch.']] },
+  { id: 'T-021', title: 'Time Tracker', p: 'so', s: 'done', done: '5. Okt.' }
+];
+
+let group = 'status', focusOn = true, projFilter = null, query = '', openId = null;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const proj = id => PROJECTS.find(p => p.id === id);
+const visible = t => (!projFilter || t.p === projFilter) && (!query || (t.title + ' ' + proj(t.p).name + ' ' + (t.tags || []).join(' ')).toLowerCase().includes(query));
+
+function card(t, showProject = true) {
+  const cls = ['w-card', t.s === 'done' ? 'w-card--done' : '', t.agent ? 'w-card--active' : '', visible(t) ? '' : 'is-dim'].join(' ');
+  return `<article class="${cls}" tabindex="0" data-id="${t.id}" aria-label="${esc(t.id + ' ' + t.title)}">
+    <div class="w-card-meta w-mono"><span>${t.id}${t.done ? ' · ' + t.done : ''}</span>${t.prio ? `<span class="w-prio w-prio--${t.prio}">P${t.prio}</span>` : ''}</div>
+    <div class="w-card-title">${esc(t.title)}</div>
+    ${t.tags ? `<div class="w-tag">${t.tags.join('  ')}</div>` : ''}
+    ${t.agent ? `<div class="w-card-agent">${esc(t.agent)}</div>` : ''}
+    ${t.commit ? `<div class="w-card-code">${esc(t.commit)}</div>` : ''}
+    ${showProject || t.due ? `<div class="w-card-foot">${showProject ? `<span class="w-proj-mark" style="--c:${proj(t.p).color}"></span><span class="w-card-proj">${esc(proj(t.p).name)}</span>` : ''}${t.due ? `<span class="w-mono">bis ${t.due}</span>` : ''}</div>` : ''}
+  </article>`;
+}
+const count = s => { const n = TASKS.filter(t => t.s === s.id).length; return s.limit ? `${n} / ${s.limit}` : `${n}`; };
+
+function render() {
+  const open = TASKS.filter(t => t.s !== 'done');
+  $('#subline').textContent = `${open.length} offen · ${TASKS.filter(t => t.s === 'doing').length} in Arbeit · ${TASKS.filter(t => t.s === 'review').length} wartet auf Review`;
+  $('#projNav').innerHTML = '<div class="w-caps" style="padding: 0 10px 6px">Projekte</div>' + PROJECTS.map(p =>
+    `<button type="button" class="w-nav-item" data-proj="${p.id}" ${projFilter === p.id ? 'aria-current="page"' : ''}><span class="w-proj-mark" style="--c:${p.color}"></span>${esc(p.name)}<span class="w-count w-mono">${TASKS.filter(t => t.p === p.id && t.s !== 'done').length}</span></button>`).join('');
+  document.querySelectorAll('#seg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === group));
+  $('#focus').hidden = !focusOn; $('#focusShow').hidden = focusOn;
+  $('#focusList').innerHTML = TASKS.filter(t => t.focus).sort((a, b) => a.focus - b.focus).map(t =>
+    `<li class="w-focus-item"><span class="w-focus-num">${t.focus}</span><div style="min-width:0"><strong>${esc(t.title)}</strong><span class="w-mono" style="color: var(--w-muted)">${t.id}${t.prio ? ' · P' + t.prio : ''}${t.due ? ' · bis ' + t.due : ''} · ${esc(proj(t.p).name)}</span></div></li>`).join('');
+
+  if (group === 'status') {
+    $('#board').innerHTML = `<div class="w-board">${STATUSES.map(s => `
+      <section class="w-tray w-col ${s.id === 'done' ? 'w-col--done' : ''}" data-drop="${s.id}">
+        <div class="w-col-head"><h2 class="w-h2">${s.name}</h2><span class="w-mono">${count(s)}</span></div>
+        ${TASKS.filter(t => t.s === s.id).map(t => card(t)).join('')}
+      </section>`).join('')}</div>`;
+  } else {
+    $('#board').innerHTML = `<div class="w-board" style="display:flex; flex-direction:column; gap:12px">
+      <div class="w-group-cells" style="padding: 0 8px">${STATUSES.map(s => `<div class="w-col-head"><h2 class="w-h2">${s.name}</h2><span class="w-mono">${count(s)}</span></div>`).join('')}</div>
+      ${PROJECTS.map(p => `
+        <section class="w-tray">
+          <div class="w-group-head"><span class="w-proj-mark" style="--c:${p.color}"></span><h2 class="w-h2">${esc(p.name)}</h2><span class="w-sub" style="font-size:12px">${TASKS.filter(t => t.p === p.id && t.s !== 'done').length} offen</span></div>
+          <div class="w-group-cells">${STATUSES.map(s => `<div class="w-group-cell" data-drop="${s.id}" data-proj="${p.id}">${TASKS.filter(t => t.p === p.id && t.s === s.id).map(t => card(t, false)).join('')}</div>`).join('')}</div>
+        </section>`).join('')}
+    </div>`;
+  }
+  if (openId) renderModal();
+}
+
+function renderModal() {
+  const t = TASKS.find(x => x.id === openId); const p = proj(t.p);
+  const desc = t.desc ? t.desc.map(([h, b]) => `<h3>${esc(h)}</h3>${Array.isArray(b) ? `<ul>${b.map(li => `<li>${esc(li)}</li>`).join('')}</ul>` : `<p>${esc(b)}</p>`}`).join('') : '<p class="w-sub">Keine Beschreibung.</p>';
+  $('#modal').innerHTML = `
+    <div class="t-head">
+      <div class="t-meta"><span class="w-mono" style="color: var(--w-muted)">${t.id}</span><span class="w-proj-mark" style="--c:${p.color}"></span><span class="w-sub" style="font-size:12.5px">${esc(p.name)}</span><button type="button" class="t-x" data-close aria-label="Schließen">✕</button></div>
+      <h2 class="t-title" id="mTitle">${esc(t.title)}</h2>
+      <div class="t-status" role="group" aria-label="Status">${STATUSES.map(s => `<button type="button" data-set="${s.id}" aria-pressed="${t.s === s.id}">${s.name}</button>`).join('')}</div>
+    </div>
+    <div class="t-body">
+      <div class="t-desc">${desc}</div>
+      <div class="t-side">
+        <dl class="t-kv">
+          <dt>Priorität</dt><dd>${t.prio ? `<span class="w-prio w-prio--${t.prio}" style="margin:0">P${t.prio}</span>` : '–'}</dd>
+          <dt>Fällig</dt><dd>${t.due ? 'bis ' + t.due : '–'}</dd>
+          <dt>Tags</dt><dd><span class="w-tag">${t.tags ? t.tags.join('  ') : '–'}</span></dd>
+          <dt>Fokus</dt><dd>${t.focus ? 'heute, Platz ' + t.focus : '–'}</dd>
+        </dl>
+        <div class="t-updates">
+          <span class="w-caps">Updates · ${(t.updates || []).length}</span>
+          ${(t.updates || []).map(([m, txt]) => `<div class="t-update"><span class="w-mono">${esc(m)}</span>${esc(txt)}</div>`).join('')}
+          <textarea class="t-compose" aria-label="Update hinzufügen" placeholder="Update, Entscheidung oder Abschlussnotiz"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="t-foot"><button type="button" class="w-btn w-btn--quiet">In VS Code öffnen</button><button type="button" class="w-btn w-btn--primary">Update speichern</button></div>`;
+}
+function openModal(id) { openId = id; renderModal(); $('#modal').hidden = false; $('#scrim').hidden = false; }
+function closeModal() { openId = null; $('#modal').hidden = true; $('#scrim').hidden = true; }
+
+$('#seg').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { group = b.dataset.v; render(); } });
+$('#focusHide').addEventListener('click', () => { focusOn = false; render(); });
+$('#focusShow').addEventListener('click', () => { focusOn = true; render(); });
+$('#q').addEventListener('input', e => { query = e.target.value.trim().toLowerCase(); render(); });
+$('#projNav').addEventListener('click', e => { const b = e.target.closest('[data-proj]'); if (b) { projFilter = projFilter === b.dataset.proj ? null : b.dataset.proj; render(); } });
+$('#scrim').addEventListener('click', closeModal);
+$('#modal').addEventListener('click', e => {
+  if (e.target.closest('[data-close]')) return closeModal();
+  const s = e.target.closest('[data-set]'); if (s) { TASKS.find(t => t.id === openId).s = s.dataset.set; render(); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && openId) closeModal();
+  const c = e.target.closest?.('.w-card'); if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openModal(c.dataset.id); }
+});
+
+/* drag & drop: pointer events, 5px threshold, click opens details */
+let drag = null;
+$('#board').addEventListener('pointerdown', e => { const c = e.target.closest('.w-card'); if (c && e.button === 0) drag = { el: c, id: c.dataset.id, sx: e.clientX, sy: e.clientY }; });
+addEventListener('pointermove', e => {
+  if (!drag) return;
+  if (!drag.ghost) {
+    if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 5) return;
+    const r = drag.el.getBoundingClientRect(); drag.ox = drag.sx - r.left; drag.oy = drag.sy - r.top;
+    drag.ghost = drag.el.cloneNode(true); drag.ghost.classList.add('w-drag-ghost'); drag.ghost.style.width = r.width + 'px';
+    document.body.appendChild(drag.ghost); drag.el.classList.add('is-dragging');
+  }
+  drag.ghost.style.transform = `translate(${e.clientX - drag.ox}px, ${e.clientY - drag.oy}px)`;
+  const t = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-drop]') || null;
+  if (t !== drag.over) { drag.over?.classList.remove('is-over'); t?.classList.add('is-over'); drag.over = t; }
+});
+addEventListener('pointerup', () => {
+  if (!drag) return; const d = drag; drag = null;
+  if (!d.ghost) return openModal(d.id);
+  d.ghost.remove(); d.el.classList.remove('is-dragging'); d.over?.classList.remove('is-over');
+  if (d.over) { const t = TASKS.find(x => x.id === d.id); t.s = d.over.dataset.drop; if (d.over.dataset.proj) t.p = d.over.dataset.proj; render(); }
+});
+
+render();
+</script>
+</body>
+</html>
