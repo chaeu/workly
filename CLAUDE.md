@@ -56,12 +56,16 @@ docs/                 spec, design, prototypes, prompts
 
 ```
 pnpm install
-pnpm tauri dev            # run the app against WORKLY_WORKSPACE or the settings workspace
-pnpm check                # svelte-check + tsc
-cargo test --workspace    # core + cli tests
-cargo run -p wly -- task list --workspace fixtures/workspace
-pnpm tauri build          # .app bundle
+pnpm tauri dev                          # run the app (workspace loading arrives in M1)
+pnpm check                              # svelte-kit sync + svelte-check
+cargo test --workspace                  # core + cli tests
+cargo clippy --workspace -- -D warnings
+cargo run -p wly -- --version
+pnpm tauri build                        # -> target/release/bundle/macos/Workly.app
+pnpm tauri icon docs/design/icon/workly-icon-1024.png  # regenerate icons (delete non-macOS output)
 ```
+
+Cargo uses one workspace `target/` at the repo root, not `src-tauri/target/`.
 
 Keep this section up to date when scripts change.
 
