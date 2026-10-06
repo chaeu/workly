@@ -34,6 +34,12 @@
 
   function onkeydown(e: KeyboardEvent) {
     if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
+    // Hidden debug view.
+    if (e.key === "0") {
+      e.preventDefault();
+      goto("/debug");
+      return;
+    }
     const view = views[Number(e.key) - 1];
     if (view) {
       e.preventDefault();

@@ -19,11 +19,17 @@ impl OwnWrites {
         self.0.lock().unwrap().insert(path.to_path_buf(), state);
     }
 
-    /// True when `path` is in the state we left it in. Consumes the entry,
-    /// so a later external change to the same path is never swallowed.
+    /// True when `path` is still in the state we left it in. The entry stays
+    /// while it matches (FSEvents may report one write in several batches) and
+    /// is dropped on the first mismatch, so later external changes always show.
     pub fn consume(&self, path: &Path) -> bool {
-        let Some(expected) = self.0.lock().unwrap().remove(path) else { return false };
-        expected == fs::read(path).ok().map(|b| hash(&b))
+        let mut map = self.0.lock().unwrap();
+        let Some(expected) = map.get(path) else { return false };
+        let ours = *expected == fs::read(path).ok().map(|b| hash(&b));
+        if !ours {
+            map.remove(path);
+        }
+        ours
     }
 }
 

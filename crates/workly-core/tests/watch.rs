@@ -60,4 +60,10 @@ fn external_changes_arrive_own_writes_do_not() {
     fs::remove_file(ws.root().join("inbox/IN-1-workshop-date.md")).unwrap();
     let batch = rx.recv_timeout(Duration::from_secs(1)).expect("no removal event");
     assert!(batch.contains(&Change::Removed("inbox/IN-1-workshop-date.md".into())), "{batch:?}");
+
+    // A file we wrote earlier still reports external edits.
+    let wr8 = ws.root().join("projects/website-relaunch/tasks/WR-8-content-migration.md");
+    fs::write(&wr8, fs::read_to_string(&wr8).unwrap().replace("status: doing", "status: review")).unwrap();
+    let batch = rx.recv_timeout(Duration::from_secs(1)).expect("external edit after own write not seen");
+    assert!(batch.contains(&Change::Changed("projects/website-relaunch/tasks/WR-8-content-migration.md".into())), "{batch:?}");
 }
