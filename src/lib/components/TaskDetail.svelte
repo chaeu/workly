@@ -8,6 +8,7 @@
     updateTaskField,
     addTaskUpdate,
     deleteTask,
+    moveTask,
     setFocus,
     openUrl,
     openInObsidian,
@@ -22,6 +23,7 @@
 
   const t = $derived(workspace.index?.tasks.find((x) => x.id === id));
   const project = $derived(t && projectOf(t));
+  const projects = $derived(workspace.index?.projects.filter((p) => p.status !== "archived" || p.key === project?.key) ?? []);
   const statuses = $derived(workspace.index?.config.task_statuses ?? []);
   const focusAt = $derived(focusIds.indexOf(id));
 
@@ -69,6 +71,13 @@
     }
   }
 
+  /** Move the file; the select then shows whatever the index says, also after a refused move. */
+  async function changeProject(e: Event & { currentTarget: HTMLSelectElement }) {
+    const select = e.currentTarget;
+    await moveTask(id, select.value || null);
+    select.value = project?.key ?? "";
+  }
+
   const toggleFocus = () => setFocus(focusAt >= 0 ? focusIds.filter((x) => x !== id) : [...focusIds, id]);
 
   // Links in the description open outside; they never navigate the app window.
@@ -91,7 +100,12 @@
       <div class="t-meta">
         <span class="w-mono">{t.id}</span>
         <span class="w-proj-mark" style:--c={project ? projColor(project.color) : "var(--w-line)"}></span>
-        <span class="w-sub">{project?.title ?? "Inbox"}</span>
+        {#key t.path}
+          <select class="project" value={project?.key ?? ""} aria-label="Project" onchange={changeProject}>
+            <option value="">Inbox</option>
+            {#each projects as p (p.key)}<option value={p.key}>{p.title}</option>{/each}
+          </select>
+        {/key}
         <button type="button" class="t-x" onclick={onclose} aria-label="Close">✕</button>
       </div>
       {#key t.title}
@@ -276,6 +290,20 @@
     align-items: center;
     gap: var(--w-s-2);
     color: var(--w-muted);
+  }
+  .project {
+    border: 0;
+    border-radius: var(--w-r-sm);
+    background: none;
+    color: var(--w-muted);
+    font-size: var(--w-fs-small);
+    padding: 2px 4px;
+    margin-left: -4px;
+    cursor: pointer;
+  }
+  .project:hover {
+    background: var(--w-tray);
+    color: var(--w-ink);
   }
   .t-x {
     margin-left: auto;

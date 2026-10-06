@@ -87,7 +87,7 @@
 .w-card-agent { display: flex; align-items: center; gap: 7px; font-size: var(--w-fs-caption); font-weight: 500; color: var(--w-accent); }
 .w-card-agent::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--w-accent); box-shadow: 0 0 0 3px var(--w-accent-soft); }
 .w-card-code { font-family: var(--w-font-mono); font-size: var(--w-fs-micro); color: var(--w-muted); background: var(--w-sunk); border-radius: var(--w-r-sm); padding: 3px 7px; }
-.w-card--active { box-shadow: var(--w-ring-active); }
+.w-card--active, .w-card--active:hover { box-shadow: var(--w-ring-active); }
 .w-card--done { background: color-mix(in srgb, var(--w-surface) 50%, transparent); box-shadow: none; }
 .w-card--done .w-card-title { color: var(--w-muted); text-decoration: line-through; }
 .w-card--blocked { background: var(--w-danger-soft); box-shadow: inset 0 0 0 1px var(--w-danger); }
