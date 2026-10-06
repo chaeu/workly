@@ -1,0 +1,15 @@
+[package]
+name = "workly-app"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "workly_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+workly-core = { path = "../crates/workly-core" }
