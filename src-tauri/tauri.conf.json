@@ -19,7 +19,8 @@
         "minWidth": 960,
         "minHeight": 600,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {
@@ -28,8 +29,12 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app"],
-    "macOS": { "minimumSystemVersion": "13.0" },
+    "targets": [
+      "app"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

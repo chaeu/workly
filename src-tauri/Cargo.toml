@@ -14,3 +14,5 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 workly-core = { path = "../crates/workly-core" }
 serde_json = "1"
+tauri-plugin-dialog = "2"
+serde = { version = "1.0.229", features = ["derive"] }
