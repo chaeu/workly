@@ -501,3 +501,75 @@ fn create_usecase_starts_at_first_phase() {
     assert!(matches!(ws.create_project(&n, "app"), Err(Error::Invalid(_))));
     assert!(!root.join("projects/other").exists());
 }
+
+// ------------------------------------------------------------------ agents (M5)
+
+#[test]
+fn start_and_review_are_lossless_and_logged() {
+    let (_tmp, root) = fixture();
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    let n = log_lines(&root).len();
+    ws.start_task("WR-8", Some("codex"), "agent:codex").unwrap();
+    let after = fs::read_to_string(root.join(WR8)).unwrap();
+    // Only status changes in place; the new agent block is appended to the frontmatter.
+    let (head, tail) = after.split_once("agent:\n").unwrap();
+    assert_eq!(head, before.split_once("---\nBody").unwrap().0.replace("status: backlog\n", "status: doing\n"));
+    assert!(tail.starts_with("  active: codex\n  since: 20") && tail.contains("---\nBody with trailing spaces   \n"), "{tail}");
+    let a = ws.index.task("WR-8").unwrap().task.agent.clone().unwrap();
+    assert_eq!(a.active.as_deref(), Some("codex"));
+    let lines = log_lines(&root);
+    assert_eq!(lines.len(), n + 3);
+    assert!(lines[n..].iter().all(|l| l["actor"] == "agent:codex" && l["id"] == "WR-8"));
+
+    ws.review_task("WR-8", Some("A3F9C1E"), "agent:codex").unwrap();
+    let t = ws.index.task("WR-8").unwrap().task.clone();
+    let a = t.agent.unwrap();
+    assert_eq!((t.status.as_str(), a.active, a.since, a.commit.as_deref()), ("review", None, None, Some("a3f9c1e")));
+    assert!(a.last_run.is_some());
+    let reviewed = fs::read_to_string(root.join(WR8)).unwrap();
+    assert!(reviewed.ends_with("- [x] list b") && reviewed.contains("# Kept by hand, do not reorder\n"));
+}
+
+#[test]
+fn transition_rules() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    // WR-3 is doing, WR-1 done: no start. WR-5 is todo: no review.
+    assert!(matches!(ws.start_task("WR-3", Some("codex"), "cli"), Err(Error::InvalidTransition(_))));
+    assert!(matches!(ws.start_task("WR-1", None, "cli"), Err(Error::InvalidTransition(_))));
+    assert!(matches!(ws.review_task("WR-5", None, "cli"), Err(Error::InvalidTransition(_))));
+    assert!(matches!(ws.start_task("XX-1", None, "cli"), Err(Error::NotFound(_))));
+    assert!(matches!(ws.start_task("WR-5", Some("a b"), "cli"), Err(Error::Invalid(_))));
+    assert!(matches!(ws.review_task("WR-3", Some("not-a-sha"), "cli"), Err(Error::Invalid(_))));
+    // Without an agent name only the status changes; review from review restarts.
+    ws.start_task("WR-7", None, "cli").unwrap();
+    let t = &ws.index.task("WR-7").unwrap().task;
+    assert_eq!((t.status.as_str(), t.agent.as_ref().unwrap().active.as_deref()), ("doing", None));
+    ws.review_task("WR-3", None, "agent:codex").unwrap();
+    assert_eq!(ws.index.task("WR-3").unwrap().task.agent.as_ref().unwrap().active, None);
+}
+
+#[test]
+fn agent_context_and_agents_md() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let ctx = ws.agent_context(Some("WR")).unwrap();
+    assert!(ctx.global.unwrap().content.starts_with("# Global agent rules"));
+    assert_eq!(ctx.project.unwrap().path, "projects/website-relaunch/agent/AGENTS.md");
+    assert_eq!(ctx.skills.len(), 1);
+    let s = &ctx.skills[0];
+    assert_eq!((s.name.as_str(), s.path.as_str()), ("release-check", "projects/website-relaunch/agent/skills/release-check/SKILL.md"));
+    assert!(s.description.starts_with("Checks a build"));
+    // Inbox task: global rules only.
+    let inbox = ws.agent_context(None).unwrap();
+    assert!(inbox.global.is_some() && inbox.project.is_none() && inbox.skills.is_empty());
+
+    let ie = ws.agent_context(Some("IE")).unwrap();
+    assert!(ie.project.is_none() && ie.skills.is_empty());
+    let path = ws.create_agents_md("IE", "app").unwrap();
+    assert_eq!(path, "projects/invoice-extraction/agent/AGENTS.md");
+    assert!(fs::read_to_string(root.join(&path)).unwrap().starts_with("# Invoice Extraction"));
+    assert!(matches!(ws.create_agents_md("IE", "app"), Err(Error::Invalid(_))));
+    assert_eq!(log_lines(&root).pop().unwrap()["kind"], "project.agents_md");
+}

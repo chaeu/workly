@@ -1,5 +1,6 @@
 //! All file logic for Workly workspaces. App and CLI only call into this crate.
 
+pub mod agent;
 pub mod frontmatter;
 pub mod ids;
 pub mod model;
@@ -160,6 +161,32 @@ impl Workspace {
             let done_at = if *value == "done" { Value::from(today()) } else { Value::Null };
             self.update_task_field(id, "done_at", &done_at, actor)?;
         }
+        Ok(())
+    }
+
+    /// Set several fields of a task in one write; one log line per changed field.
+    /// Callers check the rules; unchanged fields are skipped.
+    fn set_task_fields(&mut self, id: &str, changes: &[(&str, Value)], actor: &str) -> Result<()> {
+        let file = self.task_path(id)?;
+        let src = fs::read_to_string(&file)?;
+        let mut out = src.clone();
+        let mut changed = Vec::new();
+        for (field, value) in changes {
+            let path: Vec<&str> = field.split('.').collect();
+            let from = patch::get_field(&out, &path).map_err(Error::Invalid)?;
+            if &from != value {
+                out = patch::set_field(&out, &path, value).map_err(Error::Invalid)?;
+                changed.push((*field, from, value));
+            }
+        }
+        if changed.is_empty() {
+            return Ok(());
+        }
+        atomic_write(&file, &out, &self.own)?;
+        for (field, from, to) in changed {
+            log(&self.root, &LogEntry::new(actor, "task.update", id, Some(field), from, to.clone()))?;
+        }
+        self.rescan();
         Ok(())
     }
 

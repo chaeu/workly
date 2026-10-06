@@ -37,7 +37,7 @@ const MOVE_FIELDS: [&str; 3] = ["usecase.step", "usecase.step_since", "usecase.d
 /// Folders the project detail shows as a tree.
 pub const DOC_DIRS: [&str; 4] = ["docs", "notes", "decisions", "agent"];
 
-const AGENTS_TEMPLATE: &str = "# {{title}} – agent instructions\n\n\
+pub(crate) const AGENTS_TEMPLATE: &str = "# {{title}} – agent instructions\n\n\
     Project rules for agents, on top of the workspace rules in `.workly/agent/AGENTS.md`.\n\n- \n";
 
 /// True when `path` already is a workspace.
@@ -95,7 +95,7 @@ pub fn check_key(key: &str) -> Result<()> {
 }
 
 impl Workspace {
-    fn project_dir(&self, key: &str) -> Result<PathBuf> {
+    pub(crate) fn project_dir(&self, key: &str) -> Result<PathBuf> {
         let p = self.index.project(key).ok_or_else(|| Error::NotFound(format!("project {key} not found")))?;
         Ok(self.root.join(&p.path))
     }
