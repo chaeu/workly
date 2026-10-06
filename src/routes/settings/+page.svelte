@@ -1,6 +1,17 @@
 <script lang="ts">
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
-  import { workspace, saveSettings, openWorkspace, chooseWorkspace, createWorkspace, tilde, expandHome } from "$lib/stores/workspace.svelte";
+  import {
+    workspace,
+    saveSettings,
+    openWorkspace,
+    chooseWorkspace,
+    createWorkspace,
+    tilde,
+    expandHome,
+    agentsEnabled,
+    cliLink,
+    installCli,
+  } from "$lib/stores/workspace.svelte";
 
   const themes = ["system", "light", "dark"] as const;
   const detailModes = [["popup", "Popup"], ["panel", "Side panel"]] as const;
@@ -12,6 +23,21 @@
     const start = settings?.repos_dir;
     const path = await openDialog({ directory: true, title: "Folder with your repos", defaultPath: start ? expandHome(start) : undefined });
     if (typeof path === "string") await saveSettings({ repos_dir: tilde(path) });
+  }
+
+  let cli = $state<string | null>(null);
+  let cliError = $state<string | null>(null);
+  $effect(() => {
+    if (agentsEnabled()) cliLink().then((t) => (cli = t));
+  });
+  async function install() {
+    try {
+      await installCli();
+      cli = await cliLink();
+      cliError = null;
+    } catch (e) {
+      cliError = String(e);
+    }
   }
 
   const remove = (path: string) => saveSettings({ workspaces: settings!.workspaces.filter((w) => w.path !== path) });
@@ -95,6 +121,29 @@
       </div>
     </div>
   </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2 class="w-h2">Agent features</h2>
+        <p class="w-sub">Agents view, agent fields on cards and tasks, agent files in projects. Off hides them; files and wly keep working.</p>
+      </div>
+      <div class="w-toolbar">
+        <div class="w-seg" role="group" aria-label="Agent features">
+          <button type="button" aria-pressed={agentsEnabled()} onclick={() => saveSettings({ agents_enabled: true })}>On</button>
+          <button type="button" aria-pressed={!agentsEnabled()} onclick={() => saveSettings({ agents_enabled: false })}>Off</button>
+        </div>
+      </div>
+    </div>
+    {#if agentsEnabled()}
+      <div class="row">
+        <span class="name">wly</span>
+        <span class="w-mono path" title={cli ?? undefined}>{cli ? `~/.local/bin/wly → ${tilde(cli)}` : "Not installed. Links ~/.local/bin/wly to this app, no admin rights needed."}</span>
+        <button class="w-btn" onclick={install}>{cli ? "Reinstall CLI" : "Install CLI"}</button>
+      </div>
+      {#if cliError}<p class="w-sub cli-error">{cliError}</p>{/if}
+    {/if}
+  </section>
 {/if}
 
 <style>
@@ -134,6 +183,9 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .cli-error {
+    color: var(--w-danger);
   }
   .current {
     color: var(--w-accent);

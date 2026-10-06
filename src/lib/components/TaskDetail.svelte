@@ -3,6 +3,7 @@
   import { renderMarkdown } from "$lib/markdown";
   import {
     workspace,
+    agentsEnabled,
     projColor,
     readMarkdown,
     updateTaskField,
@@ -192,44 +193,46 @@
           {/if}
         </dl>
 
-        <div class="t-group">
-          <span class="w-caps">Agent</span>
-          <dl class="t-kv">
-            <dt>Ready</dt>
-            <dd>
-              <input type="checkbox" checked={t.agent?.ready ?? false} aria-label="Ready for an agent" onchange={(e) => save("agent.ready", e.currentTarget.checked)} />
-            </dd>
-            <dt>Runner</dt>
-            <dd>
-              <select class="field" value={t.agent?.runner ?? "auto"} aria-label="Runner" onchange={(e) => save("agent.runner", e.currentTarget.value)}>
-                {#each RUNNERS as r (r)}<option value={r}>{r === "auto" ? "auto" : agentName(r)}</option>{/each}
-              </select>
-            </dd>
-            <dt>Model</dt>
-            <dd>
-              {#key t.agent?.model}
-                <input
-                  class="field"
-                  value={t.agent?.model ?? "auto"}
-                  aria-label="Model"
-                  onchange={(e) => save("agent.model", e.currentTarget.value.trim() || "auto", e.currentTarget, t.agent?.model ?? "auto")}
-                />
-              {/key}
-            </dd>
-            <dt>Effort</dt>
-            <dd>
-              <select class="field" value={t.agent?.effort ?? "auto"} aria-label="Effort" onchange={(e) => save("agent.effort", e.currentTarget.value)}>
-                {#each EFFORTS as x (x)}<option value={x}>{x}</option>{/each}
-              </select>
-            </dd>
-            <dt>Active</dt>
-            <dd>{t.agent?.active ? agentName(t.agent.active) : "–"}</dd>
-            <dt>Since</dt>
-            <dd class="w-mono">{stamp(t.agent?.since ?? null)}</dd>
-            <dt>Commit</dt>
-            <dd class="w-mono">{t.agent?.commit ?? "–"}</dd>
-          </dl>
-        </div>
+        {#if agentsEnabled()}
+          <div class="t-group">
+            <span class="w-caps">Agent</span>
+            <dl class="t-kv">
+              <dt>Ready</dt>
+              <dd>
+                <input type="checkbox" checked={t.agent?.ready ?? false} aria-label="Ready for an agent" onchange={(e) => save("agent.ready", e.currentTarget.checked)} />
+              </dd>
+              <dt>Runner</dt>
+              <dd>
+                <select class="field" value={t.agent?.runner ?? "auto"} aria-label="Runner" onchange={(e) => save("agent.runner", e.currentTarget.value)}>
+                  {#each RUNNERS as r (r)}<option value={r}>{r === "auto" ? "auto" : agentName(r)}</option>{/each}
+                </select>
+              </dd>
+              <dt>Model</dt>
+              <dd>
+                {#key t.agent?.model}
+                  <input
+                    class="field"
+                    value={t.agent?.model ?? "auto"}
+                    aria-label="Model"
+                    onchange={(e) => save("agent.model", e.currentTarget.value.trim() || "auto", e.currentTarget, t.agent?.model ?? "auto")}
+                  />
+                {/key}
+              </dd>
+              <dt>Effort</dt>
+              <dd>
+                <select class="field" value={t.agent?.effort ?? "auto"} aria-label="Effort" onchange={(e) => save("agent.effort", e.currentTarget.value)}>
+                  {#each EFFORTS as x (x)}<option value={x}>{x}</option>{/each}
+                </select>
+              </dd>
+              <dt>Active</dt>
+              <dd>{t.agent?.active ? agentName(t.agent.active) : "–"}</dd>
+              <dt>Since</dt>
+              <dd class="w-mono">{stamp(t.agent?.since ?? null)}</dd>
+              <dt>Commit</dt>
+              <dd class="w-mono">{t.agent?.commit ?? "–"}</dd>
+            </dl>
+          </div>
+        {/if}
 
         <div class="t-group">
           <span class="w-caps">Updates · {parts.updates.length}</span>

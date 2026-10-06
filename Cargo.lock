@@ -4683,6 +4683,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+ "wly",
  "workly-core",
 ]
 

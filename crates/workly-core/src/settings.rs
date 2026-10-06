@@ -82,6 +82,25 @@ impl Settings {
     }
 }
 
+/// Where Settings → Install CLI puts the `wly` link.
+pub fn cli_link_path() -> PathBuf {
+    home().join(".local/bin/wly")
+}
+
+/// Point `link` at `exe`. Replaces an older link, never a real file.
+pub fn link_cli(exe: &Path, link: &Path) -> io::Result<()> {
+    if let Ok(meta) = fs::symlink_metadata(link) {
+        if !meta.file_type().is_symlink() {
+            return Err(io::Error::other(format!("{} exists and is not a link. Remove it first.", tilde(link))));
+        }
+        fs::remove_file(link)?;
+    }
+    if let Some(dir) = link.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    std::os::unix::fs::symlink(exe, link)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,5 +132,18 @@ mod tests {
         assert_eq!(expand_home("/abs"), PathBuf::from("/abs"));
         assert_eq!(tilde(&h.join("repos/a")), "~/repos/a");
         assert_eq!(tilde(Path::new("/opt/x")), "/opt/x");
+    }
+
+    #[test]
+    fn cli_link_replaces_links_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("bin/wly");
+        link_cli(Path::new("/a/workly-app"), &link).unwrap();
+        link_cli(Path::new("/b/workly-app"), &link).unwrap();
+        assert_eq!(fs::read_link(&link).unwrap(), Path::new("/b/workly-app"));
+        fs::remove_file(&link).unwrap();
+        fs::write(&link, "mine").unwrap();
+        assert!(link_cli(Path::new("/b/workly-app"), &link).is_err());
+        assert_eq!(fs::read_to_string(&link).unwrap(), "mine");
     }
 }

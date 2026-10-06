@@ -14,21 +14,29 @@
     openRepo,
     openUrl,
     reveal,
+    agentsEnabled,
+    agentContext,
+    createAgentsMd,
+    type AgentContext,
   } from "$lib/stores/workspace.svelte";
 
-  const DOC_DIRS = ["docs", "notes", "decisions", "agent"];
+  // agent/ has its own section below, behind the agent switch.
+  const DOC_DIRS = ["docs", "notes", "decisions"];
 
   const project = $derived(workspace.index?.projects.find((p) => p.key === page.params.key) ?? null);
   const overview = $derived(project ? `${project.path}/_project.md` : "");
 
   let files = $state<string[]>([]);
+  let agent = $state<AgentContext | null>(null);
   let selected = $state<string | null>(null);
   let editing = $state(false);
   let html = $state("");
   let previewError = $state<string | null>(null);
 
-  // Selection from another project falls back to its overview.
-  const current = $derived(project && selected?.startsWith(project.path + "/") ? selected : overview);
+  // Selection from another project, or an agent file with agent features off, falls back to the overview.
+  const current = $derived(
+    project && selected?.startsWith(project.path + "/") && (agentsEnabled() || !selected.startsWith(project.path + "/agent/")) ? selected : overview,
+  );
   const isMarkdown = $derived(current.endsWith(".md"));
 
   // Reload tree and preview on every index change, so edits in Obsidian show up live.
@@ -40,6 +48,20 @@
       () => (files = []),
     );
   });
+
+  $effect(() => {
+    void workspace.reloads;
+    if (!project || !agentsEnabled()) return;
+    agentContext(project.key).then(
+      (c) => (agent = c),
+      () => (agent = null),
+    );
+  });
+
+  async function createAgents() {
+    const path = await createAgentsMd(project!.key);
+    if (path) selected = path;
+  }
 
   $effect(() => {
     void workspace.reloads;
@@ -120,6 +142,21 @@
           <button class="file" aria-current={current === f ? "true" : undefined} title={f} onclick={() => (selected = f)}>{inGroup(dir, f)}</button>
         {/each}
       {/each}
+
+      {#if agentsEnabled() && agent}
+        <div class="w-caps group">Agent</div>
+        {#if agent.project}
+          {@const md = agent.project.path}
+          <button class="file" aria-current={current === md ? "true" : undefined} title={md} onclick={() => (selected = md)}>AGENTS.md</button>
+        {:else}
+          <button class="file add" onclick={createAgents}>Create AGENTS.md</button>
+        {/if}
+        {#each agent.skills as s (s.path)}
+          <button class="file skill" aria-current={current === s.path ? "true" : undefined} title={s.path} onclick={() => (selected = s.path)}
+            >{s.name}{#if s.description}<span class="desc">{s.description}</span>{/if}</button
+          >
+        {/each}
+      {/if}
 
       {#if project.repos.length}
         <div class="w-caps group">Repos</div>
@@ -208,6 +245,16 @@
     background: var(--w-surface);
     box-shadow: var(--w-shadow-raised);
     font-weight: 500;
+  }
+  .add {
+    color: var(--w-accent);
+  }
+  .skill .desc {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--w-muted);
+    font-size: var(--w-fs-micro);
   }
   .file.w-mono {
     font-size: var(--w-fs-micro);

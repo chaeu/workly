@@ -103,8 +103,14 @@ export type Settings = {
   focus_hidden?: boolean;
   task_detail?: "popup" | "panel";
   usecase_compact?: boolean;
+  /** Missing = on. */
+  agents_enabled?: boolean;
   [key: string]: unknown;
 };
+// Mirrors agent::AgentContext; paths relative to the workspace.
+export type AgentFile = { path: string; content: string };
+export type Skill = { name: string; description: string; path: string };
+export type AgentContext = { global: AgentFile | null; project: AgentFile | null; skills: Skill[] };
 
 export const workspace = $state({
   index: null as Snapshot | null,
@@ -218,6 +224,18 @@ export function nextColor() {
 
 /** CSS colour for a project's `color` field; unknown values fall back to muted. */
 export const projColor = (color: string | null) => (color && COLORS.includes(color) ? `var(--w-${color})` : "var(--w-muted)");
+
+// ----------------------------------------------------------------- agents
+
+/** The one switch every agent UI checks (device setting `agents_enabled`, default on). */
+export const agentsEnabled = () => workspace.settings?.agents_enabled !== false;
+
+export const agentContext = (key: string | null) => invoke<AgentContext>("agent_context", { key });
+export const createAgentsMd = (key: string) => run<string>("create_agents_md", { key });
+/** Target of ~/.local/bin/wly, or null. */
+export const cliLink = () => invoke<string | null>("cli_link");
+/** Throws, so Settings can show the reason next to the button. */
+export const installCli = () => invoke<string>("install_cli");
 
 // ------------------------------------------------------- open elsewhere
 

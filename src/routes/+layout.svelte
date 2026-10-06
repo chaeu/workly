@@ -19,18 +19,21 @@
     chooseWorkspace,
     createWorkspace,
     openWorkspace,
+    agentsEnabled,
   } from "$lib/stores/workspace.svelte";
 
   startWorkspace();
 
   let { children } = $props();
 
-  const views = [
+  const ALL_VIEWS = [
     { href: "/tasks", label: "Tasks" },
     { href: "/projects", label: "Projects" },
     { href: "/use-cases", label: "Use cases" },
     { href: "/agents", label: "Agents" },
   ];
+  // Agent features off: no Agents item and no ⌘4.
+  const views = $derived(ALL_VIEWS.filter((v) => v.href !== "/agents" || agentsEnabled()));
 
   const theme = $derived(workspace.settings?.theme ?? "system");
   const sidebarProjects = $derived(workspace.index?.projects.filter((p) => p.status !== "archived") ?? []);

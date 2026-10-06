@@ -1,14 +1,15 @@
 <script lang="ts">
-  import { projColor, type TaskEntry } from "$lib/stores/workspace.svelte";
+  import { agentsEnabled, projColor, type TaskEntry } from "$lib/stores/workspace.svelte";
   import { agentBadge, agentName, isOverdue, projectOf, shortDate } from "$lib/tasks.svelte";
 
   let { task: t, showProject = true, dim = false, dragging = false }: { task: TaskEntry; showProject?: boolean; dim?: boolean; dragging?: boolean } =
     $props();
 
   const done = $derived(t.status === "done");
-  const badge = $derived(agentBadge(t));
+  const agents = $derived(agentsEnabled());
+  const badge = $derived(agents ? agentBadge(t) : null);
   const project = $derived(projectOf(t));
-  const commit = $derived(t.agent?.commit ? `commit ${t.agent.commit.slice(0, 7)}` : null);
+  const commit = $derived(agents && t.agent?.commit ? `commit ${t.agent.commit.slice(0, 7)}` : null);
   const commitBy = $derived(t.agent?.runner && t.agent.runner !== "auto" ? ` · ${agentName(t.agent.runner)}` : "");
 </script>
 

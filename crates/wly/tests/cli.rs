@@ -161,3 +161,22 @@ fn errors_and_exit_codes() {
     assert_eq!(code(&wly(None, &["task", "list"])), 1);
     assert_eq!(code(&wly(None, &["--workspace", root.join("projects").to_str().unwrap(), "task", "list"])), 2);
 }
+
+/// What the open app sees: the CLI's write arrives through the watcher, as an external change.
+#[test]
+fn app_watcher_sees_cli_writes() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+    let (_tmp, root) = fixture();
+    let mut app = workly_core::Workspace::open(&root).unwrap();
+    let (tx, rx) = mpsc::channel();
+    let _watcher = app.watch(move |changes| tx.send(changes).unwrap()).unwrap();
+    while rx.recv_timeout(Duration::from_millis(400)).is_ok() {} // settle events from the copy
+
+    assert_eq!(code(&wly(Some(&root), &["task", "start", "WR-5", "--agent", "codex"])), 0);
+    let batch = rx.recv_timeout(Duration::from_secs(1)).expect("no watcher event within 1 s");
+    assert_eq!(batch, [workly_core::watch::Change::Changed(WR5.into())]);
+    app.rescan();
+    let t = &app.index.task("WR-5").unwrap().task;
+    assert_eq!((t.status.as_str(), t.agent.as_ref().unwrap().active.as_deref()), ("doing", Some("codex")));
+}

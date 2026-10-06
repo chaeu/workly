@@ -4,6 +4,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
+use workly_core::agent::AgentContext;
 use workly_core::model::{Config, Process};
 use workly_core::project::{NewProject, init_workspace, is_workspace};
 use workly_core::scan::Index;
@@ -134,6 +135,33 @@ fn project_files(state: State<AppState>, key: String) -> Result<Vec<String>, Str
 #[tauri::command]
 fn read_markdown(state: State<AppState>, path: String) -> Result<String, String> {
     with_ws(&state, |ws| ws.read_markdown(&path))
+}
+
+// ----------------------------------------------------------------- agents
+
+#[tauri::command]
+fn agent_context(state: State<AppState>, key: Option<String>) -> Result<AgentContext, String> {
+    with_ws(&state, |ws| ws.agent_context(key.as_deref()))
+}
+
+#[tauri::command]
+fn create_agents_md(app: AppHandle, state: State<AppState>, key: String) -> Result<String, String> {
+    changed(&app, with_ws(&state, |ws| ws.create_agents_md(&key, ACTOR)))
+}
+
+/// Where `~/.local/bin/wly` points, if it is a link.
+#[tauri::command]
+fn cli_link() -> Option<String> {
+    std::fs::read_link(settings::cli_link_path()).ok().map(|p| p.display().to_string())
+}
+
+/// Link `~/.local/bin/wly` to this binary, which runs the CLI when started as `wly`.
+#[tauri::command]
+fn install_cli() -> Result<String, String> {
+    let exe = std::env::current_exe().and_then(|p| p.canonicalize()).map_err(|e| e.to_string())?;
+    let link = settings::cli_link_path();
+    settings::link_cli(&exe, &link).map_err(|e| e.to_string())?;
+    Ok(settings::tilde(&link))
 }
 
 // ------------------------------------------------------- open elsewhere
@@ -281,6 +309,10 @@ pub fn run() {
             delete_project,
             project_files,
             read_markdown,
+            agent_context,
+            create_agents_md,
+            cli_link,
+            install_cli,
             open_url,
             open_in_vscode,
             open_project_in_vscode,
