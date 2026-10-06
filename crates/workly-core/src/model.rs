@@ -19,6 +19,8 @@ pub struct Task {
     pub tags: Vec<String>,
     pub focus: Option<String>,
     pub focus_order: Option<u8>,
+    /// Manual position inside a board column; missing = after the ordered ones.
+    pub order: Option<i64>,
     pub created: Option<String>,
     pub done_at: Option<String>,
     pub agent: Option<AgentState>,

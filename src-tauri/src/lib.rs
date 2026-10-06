@@ -60,8 +60,23 @@ fn update_task_field(app: AppHandle, state: State<AppState>, id: String, field: 
 }
 
 #[tauri::command]
-fn create_task(app: AppHandle, state: State<AppState>, title: String, project: Option<String>) -> Result<String, String> {
-    changed(&app, with_ws(&state, |ws| ws.create_task(&title, project.as_deref(), ACTOR)))
+fn create_task(app: AppHandle, state: State<AppState>, title: String, project: Option<String>, priority: Option<u8>) -> Result<String, String> {
+    changed(&app, with_ws(&state, |ws| ws.create_task(&title, project.as_deref(), priority, ACTOR)))
+}
+
+#[tauri::command]
+fn reorder_tasks(app: AppHandle, state: State<AppState>, ids: Vec<String>) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.reorder_tasks(&ids, ACTOR)))
+}
+
+#[tauri::command]
+fn set_focus(app: AppHandle, state: State<AppState>, ids: Vec<String>) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.set_focus(&ids, ACTOR)))
+}
+
+#[tauri::command]
+fn add_task_update(app: AppHandle, state: State<AppState>, id: String, text: String) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.add_task_update(&id, &text, ACTOR)))
 }
 
 #[tauri::command]
@@ -247,6 +262,9 @@ pub fn run() {
             get_index,
             update_task_field,
             create_task,
+            reorder_tasks,
+            set_focus,
+            add_task_update,
             move_task,
             delete_task,
             restore,

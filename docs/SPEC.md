@@ -127,6 +127,7 @@ due: 2026-10-10
 tags: [frontend]
 focus: 2026-10-06             # on the focus strip when equal to today
 focus_order: 1                # 1-3
+order: 2                      # optional, manual position in its board column
 created: 2026-10-06
 done_at: null
 agent:                        # optional
@@ -150,7 +151,11 @@ Description and acceptance criteria.
 - **IDs:** Nächste Nummer = höchste vorhandene Nummer dieses Keys im Workspace + 1 (inklusive Papierkorb), kein gespeicherter Zähler. Eine ID bleibt beim Verschieben in ein anderes Projekt unverändert.
 - **Keys:** Vorschlag aus dem Titel: ist das erste Wort ein Kürzel in Großbuchstaben, wird es übernommen; sonst Anfangsbuchstaben der ersten bis zu drei Wörter; bei einem Wort die ersten drei Buchstaben. Bei Kollision Ziffer anhängen. `IN` ist reserviert.
 - **Verlustfreies Schreiben:** Nur betroffene Felder ändern. Unbekannte Felder, Reihenfolge, Kommentare, Leerzeilen und Body bleiben byte-gleich. Wichtigster Test im Projekt.
-- **Updates** werden als Zeile unter `## Updates` im Body angehängt (Abschnitt wird bei Bedarf angelegt).
+- **Updates** werden als Zeile unter `## Updates` im Body angehängt (Abschnitt wird bei Bedarf angelegt). Format `- JJJJ-MM-TT HH:MM · <wer>: <Text>`; `wer` = Agent-Name, `me` für die App.
+- **Board-Reihenfolge:** In einer Spalte sortiert nach `order`, dann Priorität, dann ID; Tasks ohne `order` stehen hinten. Ziehen in eine andere Spalte ändert nur `status`; erst Umsortieren innerhalb einer Spalte schreibt `order` 1..n für die Tasks dieser Spalte (bzw. Zelle in der Projekt-Gruppierung).
+- **`done_at`** folgt dem Status: wird beim Wechsel auf `done` auf das heutige Datum gesetzt, beim Verlassen von `done` auf `null`.
+- **Fokus:** höchstens drei Tasks. Hinzufügen setzt `focus: <heute>` und `focus_order`; Entfernen löscht beide Zeilen. Werte von anderen Tagen bleiben liegen und werden ignoriert.
+- **Tasks-Board:** Tasks archivierter Projekte erscheinen nicht. In der Gruppierung nach Projekt hat die Inbox eine eigene Bahn; Ziehen in eine andere Bahn verschiebt die Datei (ID bleibt). Filter „Diese Woche“ = fällig bis einschließlich Sonntag, „Überfällig“ = fällig vor heute und nicht `done`.
 - **Löschen** verschiebt nach `.workly/trash/` (Pfad erhalten), wiederherstellbar.
 - **Log:** Jede Änderung als JSON-Zeile in `.workly/log/JJJJ-MM.jsonl`: `{ts, actor, kind, id, field, from, to}`. `actor` = `app`, `cli`, `agent:<name>`.
 - **Dateinamen:** `<ID>-<slug>.md`; Titeländerungen benennen die Datei nicht um (stabil für Links).

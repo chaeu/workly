@@ -127,13 +127,13 @@ fn create_tasks() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
     // Project without a tasks/ folder.
-    let id = ws.create_task("Collect volume: numbers", Some("ST"), "app").unwrap();
+    let id = ws.create_task("Collect volume: numbers", Some("ST"), None, "app").unwrap();
     assert_eq!(id, "ST-1");
     let src = fs::read_to_string(root.join("projects/support-triage/tasks/ST-1-collect-volume-numbers.md")).unwrap();
     assert!(src.starts_with("---\nid: ST-1\ntitle: \"Collect volume: numbers\"\nstatus: todo\n"), "{src}");
-    assert_eq!(ws.create_task("Inbox thing", None, "app").unwrap(), "IN-4");
-    assert_eq!(ws.create_task("Next", Some("WR"), "app").unwrap(), "WR-10");
-    assert!(matches!(ws.create_task("x", Some("NOPE"), "app"), Err(Error::NotFound(_))));
+    assert_eq!(ws.create_task("Inbox thing", None, None, "app").unwrap(), "IN-4");
+    assert_eq!(ws.create_task("Next", Some("WR"), None, "app").unwrap(), "WR-10");
+    assert!(matches!(ws.create_task("x", Some("NOPE"), None, "app"), Err(Error::NotFound(_))));
     assert_eq!(log_lines(&root).iter().filter(|l| l["kind"] == "task.create").count(), 3);
 }
 
@@ -216,7 +216,7 @@ fn empty_folder_becomes_workspace() {
     assert_eq!(ws.suggest_key("Test Alpha"), "TA");
     let new = NewProject { title: "Test Alpha".into(), key: "TA".into(), color: "proj-1".into(), repos: vec![] };
     assert_eq!(ws.create_project(&new, "app").unwrap(), "projects/test-alpha");
-    assert_eq!(ws.create_task("First", Some("TA"), "app").unwrap(), "TA-1");
+    assert_eq!(ws.create_task("First", Some("TA"), None, "app").unwrap(), "TA-1");
 }
 
 #[test]
@@ -320,4 +320,94 @@ fn project_files_and_preview() {
     fs::write(root.parent().unwrap().join("outside.md"), "x").unwrap();
     assert!(matches!(ws.read_markdown("../outside.md"), Err(Error::Invalid(_))));
     assert!(matches!(ws.read_markdown("projects/../../outside.md"), Err(Error::Invalid(_))));
+}
+
+#[test]
+fn done_stamps_and_clears_done_at() {
+    let (_tmp, root) = fixture();
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    ws.update_task_field("WR-8", "status", &json!("done"), "app").unwrap();
+    let today = workly_core::today();
+    let done = before.replace("status: backlog\n", "status: done\n").replace("done_at: null\n", &format!("done_at: {today}\n"));
+    assert_eq!(fs::read_to_string(root.join(WR8)).unwrap(), done);
+    ws.update_task_field("WR-8", "status", &json!("backlog"), "app").unwrap();
+    assert_eq!(fs::read_to_string(root.join(WR8)).unwrap(), before);
+}
+
+#[test]
+fn reorder_tasks_adds_one_line() {
+    let (_tmp, root) = fixture();
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    ws.reorder_tasks(&["WR-8".into(), "NA-1".into()], "app").unwrap();
+    assert_eq!(fs::read_to_string(root.join(WR8)).unwrap(), before.replace("done_at: null\n---", "done_at: null\norder: 1\n---"));
+    assert_eq!(ws.index.task("NA-1").unwrap().task.order, Some(2));
+    // Unchanged orders are not rewritten.
+    let n = log_lines(&root).len();
+    ws.reorder_tasks(&["WR-8".into()], "app").unwrap();
+    assert_eq!(log_lines(&root).len(), n);
+    assert!(matches!(ws.reorder_tasks(&["XX-1".into()], "app"), Err(Error::NotFound(_))));
+}
+
+#[test]
+fn focus_sets_and_removes_lines() {
+    let (_tmp, root) = fixture();
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    let today = workly_core::today();
+    let ids = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    ws.set_focus(&ids(&["IN-1", "WR-8", "IN-2"]), "app").unwrap();
+    let focused = before.replace("done_at: null\n---", &format!("done_at: null\nfocus: {today}\nfocus_order: 2\n---"));
+    assert_eq!(fs::read_to_string(root.join(WR8)).unwrap(), focused);
+    // Fixture tasks focused on another day are not today's strip.
+    let strip = |ws: &Workspace| {
+        let mut t: Vec<_> = ws.index.tasks.iter().filter(|t| t.task.focus.as_deref() == Some(today.as_str())).collect();
+        t.sort_by_key(|t| t.task.focus_order);
+        t.iter().map(|t| t.task.id.clone()).collect::<Vec<_>>()
+    };
+    let fixture_today: Vec<String> = Workspace::open(FIXTURE).unwrap().index.tasks.iter()
+        .filter(|t| t.task.focus.as_deref() == Some(today.as_str())).map(|t| t.task.id.clone()).collect();
+    if fixture_today.is_empty() {
+        assert_eq!(strip(&ws), ["IN-1", "WR-8", "IN-2"]);
+    }
+    // Reorder, then drop WR-8: its lines go, the file is as before.
+    ws.set_focus(&ids(&["WR-8", "IN-1"]), "app").unwrap();
+    assert_eq!(fs::read_to_string(root.join(WR8)).unwrap(), focused.replace("focus_order: 2", "focus_order: 1"));
+    ws.set_focus(&ids(&["IN-1"]), "app").unwrap();
+    assert_eq!(fs::read_to_string(root.join(WR8)).unwrap(), before);
+    assert_eq!(strip(&ws), ["IN-1"]);
+    assert!(!fs::read_to_string(root.join("inbox/IN-2-read-article.md")).unwrap().contains("focus"));
+    assert!(matches!(ws.set_focus(&ids(&["IN-1", "IN-2", "WR-8", "WR-5"]), "app"), Err(Error::Invalid(_))));
+    assert!(matches!(ws.set_focus(&ids(&["IN-1", "IN-1"]), "app"), Err(Error::Invalid(_))));
+    assert!(matches!(ws.set_focus(&ids(&["XX-1"]), "app"), Err(Error::NotFound(_))));
+}
+
+#[test]
+fn update_note_appends_to_body_only() {
+    let (_tmp, root) = fixture();
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    let notes = |root: &Path| log_lines(root).iter().filter(|l| l["kind"] == "task.note").count();
+    let n = notes(&root);
+    ws.add_task_update("WR-8", "Asked the client\nabout URLs", "app").unwrap();
+    let after = fs::read_to_string(root.join(WR8)).unwrap();
+    let added = after.strip_prefix(before.as_str()).expect("original bytes kept");
+    assert!(added.starts_with("\n\n## Updates\n- 20") && added.ends_with(" · me: Asked the client about URLs\n"), "{added:?}");
+    ws.add_task_update("WR-7", "Checked", "agent:codex").unwrap();
+    assert!(fs::read_to_string(root.join("projects/website-relaunch/tasks/WR-7-lighthouse-audit.md")).unwrap().trim_end().ends_with(" · codex: Checked"));
+    assert!(matches!(ws.add_task_update("WR-8", "  ", "app"), Err(Error::Invalid(_))));
+    assert_eq!(notes(&root), n + 2);
+}
+
+#[test]
+fn create_task_with_priority() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let id = ws.create_task("  Urgent thing ", Some("WR"), Some(1), "app").unwrap();
+    let t = ws.index.task(&id).unwrap();
+    assert_eq!((t.task.title.as_str(), t.task.priority), ("Urgent thing", Some(1)));
+    assert!(t.path.ends_with("WR-10-urgent-thing.md"));
+    assert!(matches!(ws.create_task(" ", None, None, "app"), Err(Error::Invalid(_))));
+    assert!(matches!(ws.create_task("x", None, Some(5), "app"), Err(Error::Invalid(_))));
 }

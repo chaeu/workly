@@ -53,6 +53,14 @@ impl From<std::io::Error> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Today on this Mac, `YYYY-MM-DD`.
+pub fn today() -> String {
+    chrono::Local::now().format("%Y-%m-%d").to_string()
+}
+
+/// Most tasks on the focus strip.
+pub const FOCUS_MAX: usize = 3;
+
 pub struct Workspace {
     root: PathBuf,
     pub config: Config,
@@ -145,7 +153,92 @@ impl Workspace {
         }
         let out = patch::set_field(&src, &path, value).map_err(Error::Invalid)?;
         atomic_write(&file, &out, &self.own)?;
-        log(&self.root, &LogEntry::new(actor, "task.update", id, Some(field), from, value.clone()))?;
+        log(&self.root, &LogEntry::new(actor, "task.update", id, Some(field), from.clone(), value.clone()))?;
+        self.rescan();
+        // `done_at` follows the status: stamped on done, cleared when leaving done.
+        if field == "status" && (*value == "done" || from == "done") {
+            let done_at = if *value == "done" { Value::from(today()) } else { Value::Null };
+            self.update_task_field(id, "done_at", &done_at, actor)?;
+        }
+        Ok(())
+    }
+
+    /// Remove a field's line(s) from a task. Missing field = no-op.
+    pub fn remove_task_field(&mut self, id: &str, field: &str, actor: &str) -> Result<()> {
+        let path: Vec<&str> = field.split('.').collect();
+        if field == "id" {
+            return Err(Error::Invalid("the id of a task cannot change".into()));
+        }
+        let file = self.task_path(id)?;
+        let src = fs::read_to_string(&file)?;
+        let from = patch::get_field(&src, &path).map_err(Error::Invalid)?;
+        let out = patch::remove_field(&src, &path).map_err(Error::Invalid)?;
+        if out == src {
+            return Ok(());
+        }
+        atomic_write(&file, &out, &self.own)?;
+        log(&self.root, &LogEntry::new(actor, "task.update", id, Some(field), from, Value::Null))?;
+        self.rescan();
+        Ok(())
+    }
+
+    /// Write `order` 1..n in the given id order. Unchanged orders are not touched.
+    pub fn reorder_tasks(&mut self, ids: &[String], actor: &str) -> Result<()> {
+        for (i, id) in ids.iter().enumerate() {
+            let order = i as i64 + 1;
+            if self.index.task(id).ok_or_else(|| Error::NotFound(format!("task {id} not found")))?.task.order != Some(order) {
+                self.update_task_field(id, "order", &Value::from(order), actor)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Today's focus strip, in order. Listed tasks get `focus: <today>` and
+    /// `focus_order` 1..n; tasks that drop off lose both lines.
+    pub fn set_focus(&mut self, ids: &[String], actor: &str) -> Result<()> {
+        if ids.len() > FOCUS_MAX {
+            return Err(Error::Invalid(format!("the focus strip holds at most {FOCUS_MAX} tasks")));
+        }
+        for (i, id) in ids.iter().enumerate() {
+            if ids[..i].contains(id) {
+                return Err(Error::Invalid(format!("{id} is listed twice")));
+            }
+            self.task_path(id)?;
+        }
+        let today = today();
+        let dropped: Vec<String> = (self.index.tasks.iter())
+            .filter(|t| t.task.focus.as_deref() == Some(today.as_str()) && !ids.contains(&t.task.id))
+            .map(|t| t.task.id.clone())
+            .collect();
+        for id in dropped {
+            self.remove_task_field(&id, "focus", actor)?;
+            self.remove_task_field(&id, "focus_order", actor)?;
+        }
+        for (i, id) in ids.iter().enumerate() {
+            self.update_task_field(id, "focus", &Value::from(today.as_str()), actor)?;
+            self.update_task_field(id, "focus_order", &Value::from(i + 1), actor)?;
+        }
+        Ok(())
+    }
+
+    /// Append `- YYYY-MM-DD HH:MM · <who>: <text>` under `## Updates` in the body.
+    pub fn add_task_update(&mut self, id: &str, text: &str, actor: &str) -> Result<()> {
+        // One list item: line breaks would end it.
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        if text.is_empty() {
+            return Err(Error::Invalid("an update needs text".into()));
+        }
+        let who = match actor {
+            "app" => "me",
+            a => a.strip_prefix("agent:").unwrap_or(a),
+        };
+        let line = format!("{} · {who}: {text}", chrono::Local::now().format("%Y-%m-%d %H:%M"));
+        let file = self.task_path(id)?;
+        let src = fs::read_to_string(&file)?;
+        let p = crate::frontmatter::split(&src);
+        let out = [p.head, p.frontmatter, p.fence, &crate::frontmatter::append_update(p.body, &line)].concat();
+        atomic_write(&file, &out, &self.own)?;
+        log(&self.root, &LogEntry::new(actor, "task.note", id, Some("updates"), Value::Null, line.into()))?;
         self.rescan();
         Ok(())
     }
@@ -171,14 +264,21 @@ impl Workspace {
     }
 
     /// New task from `_templates/task.md`. `project` is a key; `None` = inbox.
-    pub fn create_task(&mut self, title: &str, project: Option<&str>, actor: &str) -> Result<String> {
+    pub fn create_task(&mut self, title: &str, project: Option<&str>, priority: Option<u8>, actor: &str) -> Result<String> {
+        if title.trim().is_empty() {
+            return Err(Error::Invalid("a task needs a title".into()));
+        }
+        let title = title.trim();
         let dir = self.tasks_dir(project)?;
         let id = self.next_id(project.unwrap_or(ids::INBOX_KEY));
         let file = dir.join(format!("{id}-{}.md", ids::slug(title)));
         let template = fs::read_to_string(self.root.join("_templates/task.md")).unwrap_or_else(|_| DEFAULT_TASK_TEMPLATE.into());
         let title_yaml = patch::emit(&Value::from(title)).map_err(Error::Invalid)?;
-        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
-        let content = template.replace("{{id}}", &id).replace("{{title}}", &title_yaml).replace("{{date}}", &today);
+        let mut content = template.replace("{{id}}", &id).replace("{{title}}", &title_yaml).replace("{{date}}", &today());
+        if let Some(p) = priority {
+            self.check_update("priority", &Value::from(p), actor)?;
+            content = patch::set_field(&content, &["priority"], &Value::from(p)).map_err(Error::Invalid)?;
+        }
         let rel_path = rel(&self.root, &file);
         match parse_file::<Task>(&rel_path, &content) {
             Ok(t) if t.id == id && t.title == title => {}

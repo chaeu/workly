@@ -50,7 +50,7 @@ fn external_changes_arrive_own_writes_do_not() {
 
     // Own writes of every kind: nothing comes back.
     ws.update_task_field("WR-8", "status", &json!("doing"), "app").unwrap();
-    ws.create_task("Fresh", Some("WR"), "app").unwrap();
+    ws.create_task("Fresh", Some("WR"), None, "app").unwrap();
     ws.move_task("WR-5", Some("IE"), "app").unwrap();
     ws.delete_task("WR-7", "app").unwrap();
     ws.restore("projects/website-relaunch/tasks/WR-7-lighthouse-audit.md", "app").unwrap();
