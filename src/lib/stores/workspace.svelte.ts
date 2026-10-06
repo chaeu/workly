@@ -40,15 +40,56 @@ export type ProjectEntry = {
   order: number | null;
   repos: string[];
   links: Link[];
-  usecase: { step: string | null; status: string | null } | null;
+  usecase: UseCase | null;
   [field: string]: unknown;
 };
+export type Decision = { date: string | null; gate: string | null; text: string };
+export type UseCase = {
+  type: string | null;
+  area: string | null;
+  step: string | null;
+  step_since: string | null;
+  status: string | null;
+  blocked_by: string | null;
+  next_step: string | null;
+  current_state: string | null;
+  decisions: Decision[];
+};
 export type ParseError = { path: string; line: number | null; message: string };
-export type Step = { id: string; label: string; kind: string };
+// Mirrors model::Process: `.workly/process.yml`.
+export type Labelled = { id: string; label: string };
+export type Lane = { id: string; label: string; sub: string | null };
+export type Phase = { id: string; name: string; desc: string | null; optional: boolean; parked: boolean };
+export type Step = {
+  id: string;
+  kind: string; // box | gate | term
+  col: number;
+  lane: string;
+  phase: string | null;
+  label: string;
+  sub: string | null;
+  code: string | null;
+  hint: string | null;
+  optional: boolean;
+  parked: boolean;
+};
+export type Edge = { from: string; to: string; route: string; label: string | null; label_dx: number | null; offset: number | null };
+export type Process = {
+  lanes: Lane[];
+  phases: Phase[];
+  steps: Step[];
+  phase_default_step: Record<string, string>;
+  board_gates: Record<string, string>;
+  edges: Edge[];
+  statuses: Labelled[];
+  types: Labelled[];
+  areas: string[];
+  stale_after_days: number | null;
+};
 export type Snapshot = {
   root: string;
   config: { task_statuses: { id: string; label: string; wip_limit: number | null }[] };
-  process: { steps: Step[] } | null;
+  process: Process | null;
   projects: ProjectEntry[];
   tasks: TaskEntry[];
   trash: string[];
@@ -144,6 +185,16 @@ export const suggestKey = (title: string) => invoke<string>("suggest_key", { tit
 export const createProject = (project: NewProject) => invoke<string>("create_project", { project });
 export const updateProjectField = (key: string, field: string, value: unknown) =>
   invoke("update_project_field", { key, field, value });
+/** The one move for every path (board, map, decision button). False when refused. */
+export async function moveUseCase(key: string, step: string) {
+  try {
+    await invoke("move_usecase", { key, step });
+    return true;
+  } catch (e) {
+    workspace.error = String(e);
+    return false;
+  }
+}
 export const reorderProjects = (keys: string[]) => run("reorder_projects", { keys });
 export const deleteProject = (key: string) => run("delete_project", { key });
 export const projectFiles = (key: string) => invoke<string[]>("project_files", { key });

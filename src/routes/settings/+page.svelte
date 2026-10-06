@@ -85,9 +85,9 @@
 
   <section class="panel">
     <div class="panel-head">
-      <h2 class="w-h2">Task details</h2>
+      <h2 class="w-h2">Detail cards</h2>
       <div class="w-toolbar">
-        <div class="w-seg" role="group" aria-label="Task details">
+        <div class="w-seg" role="group" aria-label="Detail cards">
           {#each detailModes as [mode, label] (mode)}
             <button type="button" aria-pressed={(settings.task_detail ?? "popup") === mode} onclick={() => saveSettings({ task_detail: mode })}>{label}</button>
           {/each}
