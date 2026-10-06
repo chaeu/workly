@@ -190,3 +190,134 @@ fn broken_config_and_process_are_reported() {
     // Defaults keep the app usable.
     assert_eq!(ws.index.projects.len(), 6);
 }
+
+// ---------------------------------------------------------------- projects (M2)
+
+use workly_core::project::{NewProject, init_workspace, is_workspace};
+
+#[test]
+fn empty_folder_becomes_workspace() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("new ws");
+    assert!(!is_workspace(&root));
+    init_workspace(&root).unwrap();
+    assert!(is_workspace(&root));
+    for p in ["_templates/project.md", "_templates/task.md", "inbox", "projects", "knowledge", ".workly/process.yml", ".workly/agent/AGENTS.md", ".workly/trash"] {
+        assert!(root.join(p).exists(), "{p}");
+    }
+    assert_eq!(fs::read_to_string(root.join(".workly/config.yml")).unwrap(), fs::read_to_string(Path::new(FIXTURE).join(".workly/config.yml")).unwrap());
+    // Existing files are never overwritten.
+    fs::write(root.join(".workly/agent/AGENTS.md"), "mine").unwrap();
+    init_workspace(&root).unwrap();
+    assert_eq!(fs::read_to_string(root.join(".workly/agent/AGENTS.md")).unwrap(), "mine");
+
+    let mut ws = Workspace::open(&root).unwrap();
+    assert!(ws.index.errors.is_empty() && ws.index.projects.is_empty(), "{:?}", ws.index.errors);
+    assert_eq!(ws.suggest_key("Test Alpha"), "TA");
+    let new = NewProject { title: "Test Alpha".into(), key: "TA".into(), color: "proj-1".into(), repos: vec![] };
+    assert_eq!(ws.create_project(&new, "app").unwrap(), "projects/test-alpha");
+    assert_eq!(ws.create_task("First", Some("TA"), "app").unwrap(), "TA-1");
+}
+
+#[test]
+fn create_project_builds_structure() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let repo = workly_core::settings::home().join("repos/alpha");
+    let new = NewProject { title: "Über: Alpha".into(), key: "UA".into(), color: "proj-3".into(), repos: vec!["~/repos/alpha".into()] };
+    let dir = ws.create_project(&new, "app").unwrap();
+    assert_eq!(dir, "projects/ueber-alpha");
+    let d = root.join(&dir);
+    for sub in ["tasks", "docs", "notes", "decisions", "agent/AGENTS.md"] {
+        assert!(d.join(sub).exists(), "{sub}");
+    }
+    let p = &ws.index.project("UA").unwrap().project;
+    assert_eq!((p.title.as_str(), p.status.as_str(), p.color.as_deref(), p.order), ("Über: Alpha", "active", Some("proj-3"), Some(7)));
+    assert_eq!(p.repos, ["~/repos/alpha"]);
+    let src = fs::read_to_string(d.join("_project.md")).unwrap();
+    assert!(src.contains("title: \"Über: Alpha\"\n") && src.contains("repos: [~/repos/alpha]\n") && src.contains("## Goal"), "{src}");
+    let cw: Value = serde_json::from_str(&fs::read_to_string(d.join("UA.code-workspace")).unwrap()).unwrap();
+    assert_eq!(cw["folders"], json!([{ "path": "." }, { "path": repo }]));
+    assert_eq!(log_lines(&root).pop().unwrap()["kind"], "project.create");
+
+    let mut bad = |key: &str, title: &str, color: &str| {
+        let n = NewProject { title: title.into(), key: key.into(), color: color.into(), repos: vec![] };
+        matches!(ws.create_project(&n, "app"), Err(Error::Invalid(_)))
+    };
+    assert!(bad("WR", "Other", "proj-1"), "key taken");
+    assert!(bad("IN", "Other", "proj-1"), "reserved");
+    assert!(bad("ab", "Other", "proj-1"), "lowercase");
+    assert!(bad("ZZ", "Über: Alpha", "proj-1"), "folder exists");
+    assert!(bad("ZZ", "  ", "proj-1"), "no title");
+    assert!(bad("ZZ", "Other", "#fff"), "colour");
+}
+
+#[test]
+fn update_project_is_lossless() {
+    let (_tmp, root) = fixture();
+    let file = root.join("projects/website-relaunch/_project.md");
+    let before = fs::read_to_string(&file).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    ws.update_project_field("WR", "title", &json!("Site Relaunch"), "app").unwrap();
+    ws.update_project_field("WR", "status", &json!("paused"), "app").unwrap();
+    let after = fs::read_to_string(&file).unwrap();
+    assert_eq!(after, before.replace("title: Website Relaunch\n", "title: Site Relaunch\n").replace("status: active\n", "status: paused\n"));
+    let last = log_lines(&root).pop().unwrap();
+    assert_eq!((&last["kind"], &last["id"], &last["field"]), (&json!("project.update"), &json!("WR"), &json!("status")));
+
+    ws.update_project_field("WR", "repos", &json!(["~/repos/website", "/opt/api"]), "app").unwrap();
+    let cw = fs::read_to_string(root.join("projects/website-relaunch/WR.code-workspace")).unwrap();
+    assert!(cw.contains("/opt/api"), "{cw}");
+
+    for (field, value) in [("key", json!("XX")), ("status", json!("done")), ("color", json!("red")), ("title", json!(""))] {
+        assert!(matches!(ws.update_project_field("WR", field, &value, "app"), Err(Error::Invalid(_))), "{field}");
+    }
+}
+
+#[test]
+fn reorder_writes_order() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let keys: Vec<String> = ["IE", "WR", "OPS", "NA", "ST", "OI"].map(String::from).into();
+    let n = log_lines(&root).len();
+    ws.reorder_projects(&keys, "app").unwrap();
+    assert_eq!(log_lines(&root).len(), n + 2, "only IE and WR changed");
+    let order: Vec<&str> = ws.index.projects.iter().map(|p| p.project.key.as_str()).collect();
+    assert_eq!(order, ["IE", "WR", "OPS", "NA", "ST", "OI"]);
+}
+
+#[test]
+fn delete_project_moves_folder_to_trash() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    ws.delete_project("OI", "app").unwrap();
+    assert!(!root.join("projects/archive/old-intranet").exists());
+    assert!(root.join(".workly/trash/projects/archive/old-intranet/_project.md").is_file());
+    assert!(ws.index.project("OI").is_none() && ws.index.task("OI-1").is_none());
+    // Ids keep counting through the trash.
+    assert_eq!(ws.next_id("OI"), "OI-2");
+    assert_eq!(log_lines(&root).pop().unwrap()["kind"], "project.delete");
+}
+
+#[test]
+fn project_files_and_preview() {
+    let (_tmp, root) = fixture();
+    let ws = Workspace::open(&root).unwrap();
+    assert_eq!(
+        ws.project_files("WR").unwrap(),
+        [
+            "projects/website-relaunch/agent/AGENTS.md",
+            "projects/website-relaunch/agent/skills/release-check/SKILL.md",
+            "projects/website-relaunch/decisions/0001-hosting.md",
+            "projects/website-relaunch/docs/architecture.md",
+            "projects/website-relaunch/notes/2026-09-15-kickoff.md",
+        ]
+    );
+    assert!(ws.project_files("ST").unwrap().is_empty());
+    let body = ws.read_markdown("projects/website-relaunch/_project.md").unwrap();
+    assert!(body.starts_with("Relaunch of the portfolio site"), "{body}");
+    assert!(matches!(ws.read_markdown("../outside.md"), Err(Error::NotFound(_))));
+    fs::write(root.parent().unwrap().join("outside.md"), "x").unwrap();
+    assert!(matches!(ws.read_markdown("../outside.md"), Err(Error::Invalid(_))));
+    assert!(matches!(ws.read_markdown("projects/../../outside.md"), Err(Error::Invalid(_))));
+}

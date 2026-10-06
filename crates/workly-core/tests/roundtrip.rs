@@ -73,6 +73,26 @@ fn golden_wr8_remove() {
     assert_eq!(diff(WR8, &out).0, ["tags:", "  - content", "  - \"needs-input\""]);
 }
 
+const WR_PROJECT: &str = include_str!("../../../fixtures/workspace/projects/website-relaunch/_project.md");
+
+#[test]
+fn golden_list_of_maps() {
+    // New key on WR-8: one added line at the end of the frontmatter.
+    let links = json!([{ "label": "Spec: v2", "url": "https://example.com/a?b=c" }]);
+    let out = set_field(WR8, &["links"], &links).unwrap();
+    assert_eq!(diff(WR8, &out), (vec![], vec!["links: [{ label: \"Spec: v2\", url: https://example.com/a?b=c }]".into()]));
+    assert_eq!(get_field(&out, &["links"]).unwrap(), links);
+
+    // Block list of flow maps: the kept item line stays byte-identical, the new one follows.
+    let staging = json!({ "label": "Staging", "url": "https://staging.example.com" });
+    let more = json!([staging, { "label": "Docs", "url": "https://docs.example.com" }]);
+    let out = set_field(WR_PROJECT, &["links"], &more).unwrap();
+    assert_eq!(diff(WR_PROJECT, &out), (vec![], vec!["  - { label: Docs, url: https://docs.example.com }".into()]));
+    assert_eq!(set_field(&out, &["links"], &json!([staging])).unwrap(), WR_PROJECT);
+
+    assert!(set_field(WR8, &["links"], &json!([{ "a": [1] }])).is_err());
+}
+
 #[test]
 fn wr8_there_and_back() {
     let cases = [

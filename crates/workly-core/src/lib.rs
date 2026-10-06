@@ -4,7 +4,9 @@ pub mod frontmatter;
 pub mod ids;
 pub mod model;
 pub mod patch;
+pub mod project;
 pub mod scan;
+pub mod settings;
 pub mod watch;
 pub mod write;
 

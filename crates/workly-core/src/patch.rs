@@ -114,10 +114,21 @@ pub fn emit(v: &Value) -> Result<String, String> {
     })
 }
 
+/// List items: scalars, or flat maps of scalars as `{ label: a, url: b }`.
 fn emit_item(in_flow: bool) -> impl Fn(&Value) -> Result<String, String> {
     move |v| match v {
         Value::String(s) => Ok(scalar(s, in_flow)),
-        Value::Array(_) | Value::Object(_) => Err("lists may only contain scalars".into()),
+        Value::Object(map) => {
+            let fields: Result<Vec<_>, String> = map
+                .iter()
+                .map(|(k, v)| match v {
+                    Value::Array(_) | Value::Object(_) => Err("list items may only be scalars or flat maps".into()),
+                    _ => Ok(format!("{}: {}", scalar(k, true), emit_item(true)(v)?)),
+                })
+                .collect();
+            Ok(format!("{{ {} }}", fields?.join(", ")))
+        }
+        Value::Array(_) => Err("lists may only contain scalars or flat maps".into()),
         _ => emit(v),
     }
 }
