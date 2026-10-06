@@ -56,7 +56,7 @@ docs/                 spec, design, prototypes, prompts
 
 ```
 pnpm install
-pnpm tauri dev                          # run the app on $WORKLY_WORKSPACE (settings arrive in M2)
+pnpm tauri dev                          # run the app on the active workspace from device settings ($WORKLY_WORKSPACE overrides, not saved)
 pnpm dev:fixture                        # run the app on a fresh copy of the fixture in /tmp/workly-dev; ⌘0 = debug view
 pnpm check                              # svelte-kit sync + svelte-check
 cargo test --workspace                  # core + cli tests

@@ -154,6 +154,10 @@ Description and acceptance criteria.
 - **Löschen** verschiebt nach `.workly/trash/` (Pfad erhalten), wiederherstellbar.
 - **Log:** Jede Änderung als JSON-Zeile in `.workly/log/JJJJ-MM.jsonl`: `{ts, actor, kind, id, field, from, to}`. `actor` = `app`, `cli`, `agent:<name>`.
 - **Dateinamen:** `<ID>-<slug>.md`; Titeländerungen benennen die Datei nicht um (stabil für Links).
+- **Projekt-Keys:** 2–6 Zeichen, Großbuchstaben, Ziffern erst nach dem ersten Buchstaben (Kollisionsziffer, z. B. `WR2`).
+- **Neue Projekte** liegen in `<new_projects_dir>/<slug>/`; existiert der Ordner schon, schlägt das Anlegen fehl. Projekt löschen verschiebt den ganzen Ordner in den Papierkorb.
+- **`<key>.code-workspace`** ist generiert: beim Anlegen und bei jeder Änderung von `repos` neu geschrieben (absolute Pfade, pro Mac). Repos stehen im Frontmatter als `~/…`.
+- **Workspace anlegen:** Ein Ordner ohne `.workly/config.yml` bekommt die fehlenden Teile aus den eingebauten Vorlagen; vorhandene Dateien werden nie überschrieben.
 
 ## 4. Dokumentation
 
