@@ -84,7 +84,7 @@
 
   /* Layout */
   --w-sidebar-w: 236px;
-  --w-bar-h: 124px;           /* bar under the page head: focus strip, project tabs */
+  --w-bar-h: 56px;            /* bar under the page head: focus strip, project tabs */
   --w-col-min: 216px;
 
   /* Motion */

@@ -90,7 +90,6 @@
   );
   const focusIds = $derived(focus.map((t) => t.id));
   const focusHidden = $derived(workspace.settings?.focus_hidden ?? false);
-  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
   // --------------------------------------------------------------- board
 
@@ -294,31 +293,35 @@
     {@render bar()}
   {:else if !focusHidden}
     <section class="w-focus" class:is-over={isOver("focus")} data-drop="focus" aria-label="Focus today">
-      <div class="w-focus-head">
-        <span class="w-caps">Focus today</span>
-        <span class="w-sub hint">{focus.length ? `${plural(focus.length, "task")}, in this order` : "Drag up to three cards here"}</span>
-        <button type="button" class="w-btn w-btn--quiet" onclick={() => saveSettings({ focus_hidden: true })}>Hide</button>
-      </div>
+      <span class="w-caps">Focus today</span>
       {#if focus.length}
         <ol class="w-focus-list">
           {#each focus as t, i (t.id)}
             {@const p = projectOf(t)}
+            <!-- One line: the rest of the card is in the tooltip and the detail card. -->
             <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-            <li class="w-focus-item" class:is-dragging={dragFromFocus && dragId === t.id} data-id={t.id} role="button" tabindex="0" aria-label="{i + 1}. {t.id} {t.title}">
+            <li
+              class="w-focus-item"
+              class:is-dragging={dragFromFocus && dragId === t.id}
+              data-id={t.id}
+              role="button"
+              tabindex="0"
+              aria-label="{i + 1}. {t.id} {t.title}"
+              title={[t.title, [t.id, t.priority && `P${t.priority}`, t.due && `due ${shortDate(t.due)}`, p?.title ?? "Inbox"].filter(Boolean).join(" · ")].join("\n")}
+            >
               <span class="w-focus-num">{i + 1}</span>
-              <div class="fi-text">
-                <strong title={t.title}>{t.title}</strong>
-                <span class="w-mono"
-                  >{[t.id, t.priority && `P${t.priority}`, t.due && `due ${shortDate(t.due)}`, p?.title ?? "Inbox"].filter(Boolean).join(" · ")}</span
-                >
-              </div>
+              <span class="w-proj-mark" style:--c={p ? projColor(p.color) : "var(--w-line)"}></span>
+              <strong>{t.title}</strong>
               <button type="button" class="fi-x" aria-label="Remove {t.id} from focus" onclick={() => setFocus(focusIds.filter((x) => x !== t.id))}
                 >✕</button
               >
             </li>
           {/each}
         </ol>
+      {:else}
+        <span class="w-sub hint">Drag up to three cards here</span>
       {/if}
+      <button type="button" class="w-btn w-btn--quiet" onclick={() => saveSettings({ focus_hidden: true })}>Hide</button>
     </section>
   {/if}
 
@@ -419,24 +422,11 @@
   .w-focus-item.is-dragging {
     opacity: 0.3;
   }
-  .fi-text {
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-  .fi-text .w-mono {
-    color: var(--w-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
   .fi-x {
-    margin-left: auto;
     flex: none;
-    width: 28px;
-    height: 28px;
-    margin: -6px -6px 0 auto;
+    width: 24px;
+    height: 24px;
+    margin: -4px -6px -4px auto;
     border: 0;
     border-radius: var(--w-r-sm);
     background: none;

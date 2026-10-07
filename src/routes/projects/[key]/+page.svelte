@@ -73,7 +73,4 @@
     border-radius: var(--w-r-sm);
     vertical-align: middle;
   }
-  .w-bar .w-seg {
-    align-self: flex-start;
-  }
 </style>
