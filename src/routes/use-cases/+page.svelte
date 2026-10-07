@@ -8,6 +8,8 @@
   import {
     ui,
     daysInStep,
+    fmtFte,
+    savedFte,
     isStale,
     knownAreas,
     label,
@@ -201,6 +203,7 @@
   {@const st = stepOf(p!, u.usecase.step)}
   {@const status = u.usecase.status}
   {@const days = daysInStep(u)}
+  {@const fte = savedFte(u)}
   {@const next = status === "blocked" && u.usecase.blocked_by ? u.usecase.blocked_by : u.usecase.next_step}
   <div
     class="card"
@@ -215,6 +218,7 @@
   >
     <div class="c-top">
       <span class="w-mono c-id">{u.key}</span>
+      {#if fte}<span class="fte w-mono" title="Expected saving">{fmtFte(fte)} FTE</span>{/if}
       {#if u.usecase.type}<span class="w-type" class:w-type--ki={u.usecase.type === "ai"} class:hybrid={u.usecase.type === "hybrid"}
           >{label(p!.types, u.usecase.type)}</span
         >{/if}
@@ -693,9 +697,15 @@
   }
   .c-id {
     color: var(--w-muted);
+    margin-right: auto;
   }
-  .c-top .w-type {
-    margin-left: auto;
+  .fte {
+    font-size: var(--w-fs-micro);
+    color: var(--w-muted);
+    box-shadow: inset 0 0 0 1px var(--w-line);
+    border-radius: var(--w-r-pill);
+    padding: 0 6px;
+    white-space: nowrap;
   }
   .w-type.hybrid {
     color: var(--w-accent);

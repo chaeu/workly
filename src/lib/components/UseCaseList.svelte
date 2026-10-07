@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Process } from "$lib/stores/workspace.svelte";
-  import { daysInStep, isStale, label, phaseIndex, phaseOf, statusColor, stepName, stepOf, type UC } from "$lib/usecases.svelte";
+  import { daysInStep, fmtFte, isStale, label, phaseIndex, phaseOf, savedFte, statusColor, stepName, stepOf, type UC } from "$lib/usecases.svelte";
 
   let { process: p, ucs, onopen }: { process: Process; ucs: UC[]; onopen: (key: string) => void } = $props();
 
@@ -18,19 +18,24 @@
     ["step", "Phase / step", stepRank],
     ["status", "Status", (u: UC) => p.statuses.findIndex((s) => s.id === u.usecase.status)],
     ["days", "Days", (u: UC) => daysInStep(u) ?? -1],
+    ["fte", "FTE", savedFte],
   ] as const;
+  const NUM: string[] = ["days", "fte"];
   type Col = (typeof COLS)[number][0];
 
   let sort = $state<{ col: Col; dir: 1 | -1 }>({ col: "step", dir: 1 });
   const rows = $derived.by(() => {
-    const get = COLS.find(([c]) => c === sort.col)![2] as (u: UC) => string | number;
+    const get = COLS.find(([c]) => c === sort.col)![2] as (u: UC) => string | number | null;
     return [...ucs].sort((a, b) => {
       const [x, y] = [get(a), get(b)];
+      // Empty (no savings) sorts last in both directions.
+      if (x === null || y === null) return x === y ? a.key.localeCompare(b.key, undefined, { numeric: true }) : x === null ? 1 : -1;
       const c = typeof x === "number" ? x - (y as number) : x.localeCompare(y as string);
       return (c || a.key.localeCompare(b.key, undefined, { numeric: true })) * sort.dir;
     });
   });
-  const by = (col: Col) => (sort = { col, dir: sort.col === col ? (-sort.dir as 1 | -1) : 1 });
+  // FTE starts with the biggest saving.
+  const by = (col: Col) => (sort = { col, dir: sort.col === col ? (-sort.dir as 1 | -1) : col === "fte" ? -1 : 1 });
 </script>
 
 <div class="list">
@@ -38,7 +43,7 @@
     <thead>
       <tr>
         {#each COLS as [col, text] (col)}
-          <th aria-sort={sort.col === col ? (sort.dir === 1 ? "ascending" : "descending") : "none"} class:num={col === "days"}>
+          <th aria-sort={sort.col === col ? (sort.dir === 1 ? "ascending" : "descending") : "none"} class:num={NUM.includes(col)}>
             <button type="button" onclick={() => by(col)}>{text}{#if sort.col === col}<span class="arrow">{sort.dir === 1 ? "↑" : "↓"}</span>{/if}</button>
           </th>
         {/each}
@@ -51,6 +56,7 @@
         {@const ph = p.phases.find((x) => x.id === phaseOf(p, u))}
         {@const status = u.usecase.status}
         {@const days = daysInStep(u)}
+        {@const fte = savedFte(u)}
         {@const next = status === "blocked" && u.usecase.blocked_by ? u.usecase.blocked_by : u.usecase.next_step}
         <!-- Like the board card: the step counts only when it says more than the phase. -->
         {@const hint = !st
@@ -77,6 +83,7 @@
             >
           </td>
           <td class="num w-mono" class:stale={isStale(p, u)}>{days ?? "–"}</td>
+          <td class="num w-mono">{fte === null ? "" : fmtFte(fte)}</td>
           <td class="next" title={next}>{next ?? ""}</td>
         </tr>
       {:else}
