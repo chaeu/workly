@@ -58,7 +58,7 @@ Ein Workspace ist ein Ordner, zugleich Obsidian-Vault und Git-Repo. Menschenlesb
 
 | Ebene | Ort | Inhalt |
 | --- | --- | --- |
-| Gerät | `~/Library/Application Support/Workly/settings.json` | Workspaces (Name + Pfad, mehrere, umschaltbar), Repos-Ordner, Theme, Fenster, UI-Präferenzen, Agent-Funktionen an/aus |
+| Gerät | `~/Library/Application Support/Workly/settings.json` | Workspaces (Name + Pfad, mehrere, umschaltbar), Repos-Ordner, Theme, Fenster, UI-Präferenzen, Agent-Funktionen an/aus, Stunden pro FTE und Jahr |
 | Workspace | `<workspace>/.workly/config.yml` | Ordner für neue Projekte und Inbox, Scan-Ausschlüsse, Task-Status, WIP-Limits, Agent-Standards |
 | Workspace | `<workspace>/.workly/process.yml` | Use-Case-Prozess (Phasen, Schritte, Gates, Kanten) |
 
@@ -112,6 +112,9 @@ usecase:                      # optional, only for use cases
   current_state: Pilot with 20 invoices running
   decisions:                  # gate decisions, newest last
     - { date: 2026-09-10, gate: G1, text: "Yes, pursue" }
+  savings:                    # optional, activities the use case takes over
+    - { what: Capture invoice, count: 1200, per: month, minutes: 6 }   # per: year | month | week | day
+  savings_note: "Volume from the department, sample 09/2026"
 ---
 Short description in Markdown, shown as overview in the app.
 ```
@@ -161,6 +164,7 @@ Description and acceptance criteria.
 - **Tasks-Board:** Tasks archivierter Projekte erscheinen nicht. In der Gruppierung nach Projekt hat die Inbox eine eigene Bahn; Ziehen in eine andere Bahn verschiebt die Datei (ID bleibt). Filter „Diese Woche“ = fällig bis einschließlich Sonntag, „Überfällig“ = fällig vor heute und nicht `done`.
 - **Löschen** verschiebt nach `.workly/trash/` (Pfad erhalten), wiederherstellbar. Ein gelöschtes Projekt ist ein Eintrag; seine vorher einzeln gelöschten Tasks bleiben beim Wiederherstellen im Papierkorb. **Papierkorb leeren** verschiebt alles in den macOS-Papierkorb (dort noch wiederherstellbar) und schreibt jede ID ins Log.
 - **Log:** Jede Änderung als JSON-Zeile in `.workly/log/JJJJ-MM.jsonl`: `{ts, actor, kind, id, field, from, to}`. `actor` = `app`, `cli`, `agent:<name>`.
+- **Ersparnis (`usecase.savings`):** Stunden und FTE werden berechnet, nie gespeichert. Stunden/Jahr = Σ `count` × Faktor(`per`) × `minutes` / 60 mit Faktor year 1, month 12, week 46, day 220 (Arbeitswochen/-tage, Konstanten in der App); FTE = Stunden / `fte_hours_per_year` (Geräte-Einstellung, Standard 1720). Die App schreibt immer die ganze Liste und prüft dabei: `what` nicht leer, `count` und `minutes` Zahlen ≥ 0, `per` aus der Liste. Ungültige Einträge von Hand stehen unter Problems, der Use Case lädt trotzdem. Anzeige: Tabelle in der Detailkarte, sortierbare Spalte FTE in der Liste (leer = hinten), Pill auf der Board-Karte bei > 0. Keine Summe im Cockpit, kein Automatisierungsgrad, keine Geldbeträge.
 - **Dateinamen:** `<ID>-<slug>.md`; Titeländerungen benennen die Datei nicht um (stabil für Links).
 - **Projekt-Keys:** 2–6 Zeichen, Großbuchstaben, Ziffern erst nach dem ersten Buchstaben (Kollisionsziffer, z. B. `WR2`).
 - **Neue Projekte** liegen in `<new_projects_dir>/<slug>/`; existiert der Ordner schon, schlägt das Anlegen fehl. Projekt löschen verschiebt den ganzen Ordner in den Papierkorb.
