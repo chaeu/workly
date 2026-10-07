@@ -251,8 +251,8 @@
       <input bind:value={query} type="search" placeholder="Search key or title" aria-label="Search use cases" />
     </label>
     <div class="w-seg" role="group" aria-label="View">
-      <button type="button" aria-pressed={ui.view === "board"} onclick={() => (ui.view = "board")}>Board</button>
       <button type="button" aria-pressed={ui.view === "list"} onclick={() => (ui.view = "list")}>List</button>
+      <button type="button" aria-pressed={ui.view === "board"} onclick={() => (ui.view = "board")}>Board</button>
       <button type="button" aria-pressed={ui.view === "map"} onclick={() => (ui.view = "map")}>Process map</button>
     </div>
     {#if p && !processErrors.length}
