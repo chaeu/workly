@@ -87,7 +87,7 @@ Kopf: Name (15/600) und Zahl rechts (Mono). WIP-Limit als `2 / 3`. „Erledigt�
 
 ### Gruppierung nach Projekt
 
-Spaltenköpfe einmal oben. Je Projekt eine Ablage mit Kopf (Farbquadrat, Name, „n offen“) und fünf Zellen. Umschaltung über Segment „Nach Status / Nach Projekt“.
+Spaltenköpfe einmal oben. Je Projekt eine Ablage mit Kopf (Farbquadrat, Name, „n offen“) als schmale Zeile mit Haarlinie (`line`) darunter, dann fünf Zellen. Die Linie hält eine einzelne Karte in einer rechten Spalte als Zeile zusammen. Umschaltung über Segment „Nach Status / Nach Projekt“.
 
 ### Fokus-Streifen
 

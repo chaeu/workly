@@ -98,7 +98,9 @@
 .w-drag-ghost { position: fixed; left: 0; top: 0; z-index: 50; pointer-events: none; box-shadow: var(--w-shadow-pop); rotate: 1.5deg; }
 
 /* ---------- Project grouping ---------- */
-.w-group-head { display: flex; align-items: center; gap: 9px; padding: 2px 8px; }
+/* A thin row with a hairline, so a lone card in a right column does not read as an empty box. */
+.w-group-head { display: flex; align-items: center; gap: 9px; margin: -2px 0; padding: 0 8px 5px; border-bottom: 1px solid var(--w-line); }
+.w-group-head .w-sub { font-size: var(--w-fs-caption); }
 .w-group-cells { display: grid; grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr)); gap: 8px; }
 .w-group-cell { display: flex; flex-direction: column; gap: 8px; min-height: 40px; border-radius: var(--w-r-md); }
 
