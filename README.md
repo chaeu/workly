@@ -7,12 +7,22 @@ Lokale macOS-App für Tasks, Projekte und Use Cases auf Markdown-Dateien, plus C
 Voraussetzungen: Xcode Command Line Tools (`xcode-select --install`), Rust (`rustup`), Node 22+, pnpm.
 
 ```
-git clone <repo-url> ~/Projects/personal/workly
+git clone https://github.com/chaeu/workly.git ~/Projects/personal/workly
 cd ~/Projects/personal/workly
 scripts/install.sh
 ```
 
 Das Skript baut die App (ad-hoc signiert, ca. 2 min), kopiert sie nach `/Applications/Workly.app` und verlinkt `~/.local/bin/wly` auf die App. `~/.local/bin` muss im `PATH` sein; sonst sagt das Skript, was zu tun ist. Aktualisieren: `git pull`, Workly beenden, `scripts/install.sh` erneut.
+
+## Showcase mit Beispieldaten
+
+`fixtures/workspace/` ist ein Beispiel-Workspace mit neutralen Daten (Projekte, Tasks, Use Cases, Prozess). Für eine Demo eine Kopie davon öffnen, nie den Ordner im Repo selbst, weil Workly in den Workspace schreibt:
+
+```
+cp -R fixtures/workspace ~/Workly-Demo
+```
+
+Dann in Workly **Choose folder…** → `~/Workly-Demo`. Weitere Workspaces (z. B. der echte) kommen in Settings dazu, der Wechsel geht dort. Die verlinkten Repos der Beispielprojekte fehlen auf jedem Mac; das zeigt die Problems-Ansicht, ist für die Demo aber egal.
 
 ## Auf einen anderen Mac umziehen
 
