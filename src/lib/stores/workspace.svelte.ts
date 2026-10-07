@@ -190,6 +190,9 @@ export const createTask = (title: string, project: string | null, priority: numb
 export const reorderTasks = (ids: string[]) => run("reorder_tasks", { ids });
 export const setFocus = (ids: string[]) => run("set_focus", { ids });
 export const addTaskUpdate = (id: string, text: string) => run("add_task_update", { id, text });
+/** true = saved, false = changed outside since `expected` was read (nothing written). */
+export const setDescription = (id: string, text: string, expected: string) =>
+  run<boolean>("set_description", { id, text, expected });
 export const moveTask = (id: string, project: string | null) => run("move_task", { id, project });
 export const deleteTask = (id: string) => run("delete_task", { id });
 export const restore = (path: string) => run("restore", { path });

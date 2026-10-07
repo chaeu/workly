@@ -102,6 +102,18 @@ fn add_task_update(app: AppHandle, state: State<AppState>, id: String, text: Str
     changed(&app, with_ws(&state, |ws| ws.add_task_update(&id, &text, ACTOR)))
 }
 
+/// True when saved, false when the description changed outside (nothing written).
+#[tauri::command]
+fn set_description(app: AppHandle, state: State<AppState>, id: String, text: String, expected: String) -> Result<bool, String> {
+    changed(
+        &app,
+        with_ws(&state, |ws| match ws.set_description(&id, &text, &expected, ACTOR) {
+            Err(workly_core::Error::Conflict(_)) => Ok(false),
+            r => r.map(|()| true),
+        }),
+    )
+}
+
 #[tauri::command]
 fn move_task(app: AppHandle, state: State<AppState>, id: String, project: Option<String>) -> Result<(), String> {
     changed(&app, with_ws(&state, |ws| ws.move_task(&id, project.as_deref(), ACTOR)))
@@ -351,6 +363,7 @@ pub fn run() {
             reorder_tasks,
             set_focus,
             add_task_update,
+            set_description,
             move_task,
             delete_task,
             restore,
