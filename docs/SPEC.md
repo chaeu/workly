@@ -16,7 +16,7 @@ Workly ist eine eigenständige, leichte macOS-App. Dateien sind die Quelle der W
 | IDs | Projekt-Key + Nummer (`WR-12`); Key wird aus dem Namen vorgeschlagen, beim Anlegen änderbar, danach fest; Inbox-Tasks nutzen den reservierten Key `IN` | Lesbar in Commits und Branches |
 | Einstellungen | Pfade pro Gerät in der App, Regeln pro Workspace in `.workly/config.yml` | Standalone-fähig; derselbe Workspace funktioniert auf mehreren Macs |
 | Agents | CLI `wly` als einzige Schreibschnittstelle für Agents; Ausführung durch Runner-Adapter (Codex CLI, Copilot in VS Code), erst nach dem Probebetrieb | Workly koordiniert und protokolliert, Agents arbeiten in ihren eigenen Werkzeugen |
-| Agent-Funktionen | Abschaltbar per Geräte-Einstellung `agents_enabled` (Standard: an). Aus = Basisversion ohne Agent-Oberfläche; Felder in den Dateien und die CLI bleiben | Workly bleibt ohne Agents ein schlankes PM-Werkzeug; ob „Start agent“ gebaut wird, entscheidet der Probebetrieb |
+| Agent-Funktionen | Abschaltbar per Geräte-Einstellung `agents_enabled` (Standard: aus). Aus = Basisversion ohne Agent-Oberfläche; Felder in den Dateien und die CLI bleiben | Workly bleibt ohne Agents ein schlankes PM-Werkzeug; ob „Start agent“ gebaut wird, entscheidet der Probebetrieb |
 | Sprache | UI-Labels Englisch, Deutsch später als zweite Sprache; Datei-IDs immer Englisch | |
 | Name | Workly (Bundle-ID z. B. `dev.chaeu.workly`, CLI `wly`, Ordner `.workly/`) | |
 | Design | Workly Design System (`docs/design/`) | Steht bereits, inklusive Prototypen |
@@ -224,7 +224,7 @@ Claude Code folgt als weiterer Adapter.
 
 ### Schalter Agent-Funktionen
 
-`agents_enabled` in den Geräte-Einstellungen (Standard: an). Aus blendet jede Agent-Oberfläche aus: Ansicht und Menüpunkt „Agents“, Agent-Bereich der Task-Detailkarte, Agent-Badge, -Ring und Commit auf Karten, Agent-Dateien in der Projektansicht, „Install CLI“ und später „Start agent“. Nichts wird gelöscht: `agent:`-Felder bleiben in den Dateien, `wly` funktioniert weiter. Jede neue Agent-Oberfläche hängt an diesem einen Schalter.
+`agents_enabled` in den Geräte-Einstellungen (Standard: aus). Aus blendet jede Agent-Oberfläche aus: Ansicht und Menüpunkt „Agents“, Agent-Bereich der Task-Detailkarte, Agent-Badge, -Ring und Commit auf Karten, Agent-Dateien in der Projektansicht, „Install CLI“ und später „Start agent“. Nichts wird gelöscht: `agent:`-Felder bleiben in den Dateien, `wly` funktioniert weiter. Jede neue Agent-Oberfläche hängt an diesem einen Schalter.
 
 ### Stufen
 

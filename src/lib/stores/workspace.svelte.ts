@@ -244,8 +244,8 @@ export const projColor = (color: string | null) => (color && COLORS.includes(col
 
 // ----------------------------------------------------------------- agents
 
-/** The one switch every agent UI checks (device setting `agents_enabled`, default on). */
-export const agentsEnabled = () => workspace.settings?.agents_enabled !== false;
+/** The one switch every agent UI checks (device setting `agents_enabled`, default off). */
+export const agentsEnabled = () => workspace.settings?.agents_enabled === true;
 
 export const agentContext = (key: string | null) => invoke<AgentContext>("agent_context", { key });
 export const createAgentsMd = (key: string) => run<string>("create_agents_md", { key });
