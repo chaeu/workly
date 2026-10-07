@@ -1,5 +1,6 @@
 <script lang="ts">
   import UseCaseMap from "$lib/components/UseCaseMap.svelte";
+  import UseCaseList from "$lib/components/UseCaseList.svelte";
   import UseCaseDetail from "$lib/components/UseCaseDetail.svelte";
   import ProjectForm from "$lib/components/ProjectForm.svelte";
   import { workspace, moveUseCase, updateProjectField, saveSettings, openInVscode } from "$lib/stores/workspace.svelte";
@@ -11,7 +12,6 @@
     label,
     moveMessage,
     phaseOf,
-    reworkNote,
     statusColor,
     stepName,
     stepOf,
@@ -238,7 +238,9 @@
     <div class="w-sub">
       {ui.view === "board"
         ? "Phases left to right, lanes by choice. Drag a card to change phase or lane; click opens the details."
-        : "Lanes show who has the ball; diamonds are decisions. Drag a use case onto the step it is in."}
+        : ui.view === "list"
+          ? "All use cases in one table. Click a column to sort, a row to open the details."
+          : "Lanes show who has the ball; diamonds are decisions. Drag a use case onto the step it is in."}
     </div>
   </div>
   <div class="w-toolbar">
@@ -250,6 +252,7 @@
     </label>
     <div class="w-seg" role="group" aria-label="View">
       <button type="button" aria-pressed={ui.view === "board"} onclick={() => (ui.view = "board")}>Board</button>
+      <button type="button" aria-pressed={ui.view === "list"} onclick={() => (ui.view = "list")}>List</button>
       <button type="button" aria-pressed={ui.view === "map"} onclick={() => (ui.view = "map")}>Process map</button>
     </div>
     {#if p && !processErrors.length}
@@ -348,19 +351,20 @@
     </p>
   {/if}
 
+  {#if ui.view === "list"}
+    <UseCaseList process={p} ucs={ucs.filter(matches)} onopen={(key) => (openKey = key)} />
+  {:else}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroll" class:map-wrap={ui.view === "map"} {onpointerdown}>
     {#if ui.view === "board"}
       <div class="board" class:compact style:--n={p.phases.length}>
         <div class="corner w-caps">{LANE_MODES.find(([m]) => m === ui.lanes)![1]} / phase</div>
         {#each p.phases as ph, i (ph.id)}
-          {@const rework = reworkNote(p, ph.id)}
           <div class="ph" class:parked={ph.parked} class:optional={ph.optional}>
             {#if !ph.parked}<span class="num w-mono">{i + 1}</span>{/if}
             <div>
               <strong>{ph.name}{#if ph.optional}<span class="opt">optional</span>{/if}</strong>
               {#if ph.desc}<small>{ph.desc}</small>{/if}
-              {#if rework}<div class="rework w-mono">{rework}</div>{/if}
             </div>
             <span class="cnt w-mono">{ucs.filter((u) => phaseOf(p, u) === ph.id).length}</span>
           </div>
@@ -399,6 +403,7 @@
       <UseCaseMap process={p} {ucs} {dim} {dragKey} {over} />
     {/if}
   </div>
+  {/if}
 
   <div class="legend">
     {#each p.statuses as s (s.id)}
@@ -561,10 +566,6 @@
     color: var(--w-muted);
     font-size: var(--w-fs-caption);
     line-height: 1.35;
-  }
-  .ph .rework {
-    color: var(--w-warn);
-    margin-top: 3px;
   }
   .ph .cnt {
     margin-left: auto;

@@ -6,7 +6,7 @@ import { today } from "$lib/tasks.svelte";
 export type UC = ProjectEntry & { usecase: UseCase };
 
 /** View state that survives switching pages (not saved: no file needs it). */
-export const ui = $state({ view: "board" as "board" | "map", lanes: "area" as "area" | "type" | "status" });
+export const ui = $state({ view: "board" as "board" | "list" | "map", lanes: "area" as "area" | "type" | "status" });
 
 export const stepOf = (p: Process, id: string | null | undefined): Step | undefined => p.steps.find((s) => s.id === id);
 export const stepName = (s: Step) => (s.kind === "gate" && s.code ? `${s.code} ${s.label}` : s.label);
@@ -47,18 +47,6 @@ export function nextMoves(p: Process, stepId: string | null) {
   return p.edges
     .filter((e) => e.from === stepId && stepOf(p, e.to) && stepOf(p, e.to)!.kind !== "term")
     .map((e) => ({ to: e.to, verdict: e.label ? e.label.split(",")[0] : "Next", text: stepName(stepOf(p, e.to)!), neg: isNegative(e.label) }));
-}
-
-/** "↺ No, rework → Build" under a phase whose negative edges lead back to an earlier phase. */
-export function reworkNote(p: Process, phaseId: string) {
-  const i = phaseIndex(p, phaseId);
-  const back = p.edges.find((e) => {
-    const [a, b] = [stepOf(p, e.from), stepOf(p, e.to)];
-    return a?.phase === phaseId && isNegative(e.label) && b && !b.parked && phaseIndex(p, b.phase) < i;
-  });
-  if (!back) return null;
-  const target = p.phases[phaseIndex(p, stepOf(p, back.to)!.phase)];
-  return `↺ ${back.label} → ${target.name}`;
 }
 
 /** Toast after a move, from the process data only. */
