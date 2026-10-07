@@ -130,7 +130,7 @@
         <a
           class="w-nav-item"
           href={view.href}
-          aria-current={page.url.pathname.startsWith(view.href) ? "page" : undefined}>{view.label}</a
+          aria-current={page.url.pathname === view.href ? "page" : undefined}>{view.label}</a
         >
       {/each}
     </div>

@@ -156,6 +156,7 @@ Description and acceptance criteria.
 - **Board-Reihenfolge:** In einer Spalte sortiert nach `order`, dann Priorität, dann ID; Tasks ohne `order` stehen hinten. Ziehen in eine andere Spalte ändert nur `status`; erst Umsortieren innerhalb einer Spalte schreibt `order` 1..n für die Tasks dieser Spalte (bzw. Zelle in der Projekt-Gruppierung).
 - **`done_at`** folgt dem Status: wird beim Wechsel auf `done` auf das heutige Datum gesetzt, beim Verlassen von `done` auf `null`.
 - **Fokus:** höchstens drei Tasks. Hinzufügen setzt `focus: <heute>` und `focus_order`; Entfernen löscht beide Zeilen. Werte von anderen Tagen bleiben liegen und werden ignoriert.
+- **Projekt-Board** (Tab Tasks): ohne Projektfilter und Gruppierung; Spalten zeigen die Anzahl im Projekt ohne WIP-Limit (das gilt für den ganzen Workspace). Der Fokus-Streifen zeigt den Teil der drei Fokus-Tasks, der zum Projekt gehört, und nennt die Anzahl in anderen Projekten; Umsortieren lässt deren Plätze unverändert.
 - **Tasks-Board:** Tasks archivierter Projekte erscheinen nicht. In der Gruppierung nach Projekt hat die Inbox eine eigene Bahn; Ziehen in eine andere Bahn verschiebt die Datei (ID bleibt). Filter „Diese Woche“ = fällig bis einschließlich Sonntag, „Überfällig“ = fällig vor heute und nicht `done`.
 - **Löschen** verschiebt nach `.workly/trash/` (Pfad erhalten), wiederherstellbar. Ein gelöschtes Projekt ist ein Eintrag; seine vorher einzeln gelöschten Tasks bleiben beim Wiederherstellen im Papierkorb. **Papierkorb leeren** verschiebt alles in den macOS-Papierkorb (dort noch wiederherstellbar) und schreibt jede ID ins Log.
 - **Log:** Jede Änderung als JSON-Zeile in `.workly/log/JJJJ-MM.jsonl`: `{ts, actor, kind, id, field, from, to}`. `actor` = `app`, `cli`, `agent:<name>`.
@@ -240,7 +241,7 @@ Claude Code folgt als weiterer Adapter.
 | --- | --- | --- |
 | Settings | Workspace wählen oder anlegen (mehrere, umschaltbar), Repos-Ordner, Theme, Agent-Funktionen an/aus | Leerer Ordner wird mit `_templates/` und `.workly/` zum Workspace |
 | Projects | Liste, anlegen aus Vorlage, bearbeiten, Farbe, Sortierung per Drag, archivieren, löschen (Papierkorb) | Neues Projekt erzeugt Ordnerstruktur; Änderungen in Obsidian erscheinen ohne Neustart |
-| Project detail | Übersicht, Ordnerbaum, Markdown-Vorschau, öffnen in Obsidian/VS Code/Finder, Repos verknüpfen | Alle Links öffnen das richtige Ziel |
+| Project detail | Klick in der Sidebar öffnet das Projekt. Tab **Tasks**: Board nur mit den Tasks des Projekts, Layout wie das Tasks-Board, neue Tasks landen im Projekt. Tab **Files**: Übersicht, Ordnerbaum, Markdown-Vorschau, öffnen in Obsidian/VS Code/Finder, Repos verknüpfen, Bearbeiten | Alle Links öffnen das richtige Ziel; Wechsel zwischen Tasks-Board und Projekt-Tab verschiebt nichts im Layout |
 | Tasks | Board, Gruppierung nach Projekt, Filter, Suche, Drag & Drop, Schnelleingabe, bearbeiten, löschen | Jede Änderung landet verlustfrei in der Datei |
 | Detail card | Popup oder Seitenleiste, Status, Priorität, Fälligkeit, Tags, Beschreibung, Updates | Wie im Design System |
 | Focus | Streifen mit bis zu drei Tasks, ein- und ausblendbar | `focus`, `focus_order` gesetzt |
