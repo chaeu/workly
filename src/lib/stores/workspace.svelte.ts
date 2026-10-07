@@ -44,6 +44,8 @@ export type ProjectEntry = {
   [field: string]: unknown;
 };
 export type Decision = { date: string | null; gate: string | null; text: string };
+/** A hand-written field that is missing or invalid arrives as null (listed under Problems). Unknown keys ride along. */
+export type Saving = { what: string | null; count: number | null; per: string | null; minutes: number | null; [key: string]: unknown };
 export type UseCase = {
   type: string | null;
   area: string | null;
@@ -54,6 +56,8 @@ export type UseCase = {
   next_step: string | null;
   current_state: string | null;
   decisions: Decision[];
+  savings: Saving[];
+  savings_note: string | null;
 };
 export type ParseError = { path: string; line: number | null; message: string };
 // Mirrors model::Process: `.workly/process.yml`.
@@ -107,6 +111,8 @@ export type Settings = {
   usecase_compact?: boolean;
   /** Missing = on. */
   agents_enabled?: boolean;
+  /** Missing = 1720. */
+  fte_hours_per_year?: number;
   [key: string]: unknown;
 };
 // Mirrors agent::AgentContext; paths relative to the workspace.

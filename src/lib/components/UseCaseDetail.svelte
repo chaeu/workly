@@ -2,8 +2,25 @@
   import { goto } from "$app/navigation";
   import { grow } from "$lib/grow";
   import { renderMarkdown } from "$lib/markdown";
-  import { workspace, readMarkdown, updateProjectField, updateTaskField, createTask, type Process } from "$lib/stores/workspace.svelte";
-  import { daysInStep, isStale, knownAreas, label, nextMoves, phaseIndex, statusColor, stepName, stepOf, type UC } from "$lib/usecases.svelte";
+  import { workspace, readMarkdown, updateProjectField, updateTaskField, createTask, type Process, type Saving } from "$lib/stores/workspace.svelte";
+  import {
+    daysInStep,
+    fmtFte,
+    fmtHours,
+    fteHours,
+    isStale,
+    knownAreas,
+    label,
+    nextMoves,
+    PER_YEAR,
+    phaseIndex,
+    savedHours,
+    savingHours,
+    statusColor,
+    stepName,
+    stepOf,
+    type UC,
+  } from "$lib/usecases.svelte";
 
   let {
     key,
@@ -48,6 +65,32 @@
   }
   const text = (field: string) => (e: Event & { currentTarget: HTMLTextAreaElement | HTMLInputElement }) =>
     save(field, e.currentTarget.value.trim() || null);
+
+  // Savings: the whole list is written on every change. A new row stays a local draft until it is complete.
+  const PERS = Object.keys(PER_YEAR);
+  let draft = $state<Saving | null>(null);
+  const complete = (s: Saving) => !!s.what?.trim() && s.count != null && s.count >= 0 && s.minutes != null && s.minutes >= 0 && !!s.per;
+  const hours = $derived(u ? savedHours(u) : 0);
+  const saveSavings = (list: Saving[]) => save("usecase.savings", list);
+  /** Cell edit of row `i` (or the draft when i < 0). Invalid input falls back to the file's value. */
+  function cell(i: number, field: "what" | "count" | "per" | "minutes") {
+    return (e: Event & { currentTarget: HTMLInputElement | HTMLSelectElement }) => {
+      const el = e.currentTarget;
+      const value = field === "what" || field === "per" ? el.value.trim() : el.value === "" ? null : Number(el.value);
+      const row = { ...(i < 0 ? draft! : uc!.savings[i]), [field]: value };
+      if (i < 0) {
+        draft = row;
+        if (complete(row)) {
+          saveSavings([...uc!.savings, row]);
+          draft = null;
+        }
+      } else if (complete(row)) {
+        saveSavings(uc!.savings.map((s, j) => (j === i ? row : s)));
+      } else {
+        el.value = String(uc!.savings[i][field] ?? "");
+      }
+    };
+  }
 
   // ponytail: unticking reopens as `todo` (or the first status); the task board covers other statuses.
   const reopen = $derived(workspace.index?.config.task_statuses.find((s) => s.id === "todo")?.id ?? workspace.index?.config.task_statuses[0]?.id ?? "todo");
@@ -121,6 +164,54 @@
       <div class="d-main">
         {@render area("next_step", "Next step", uc.next_step, "What happens next?")}
         {@render area("current_state", "Current state", uc.current_state, "Where does it stand?")}
+        <section class="savings">
+          <span class="w-caps">Savings</span>
+          {#if uc.savings.length || draft}
+            <table>
+              <thead>
+                <tr><th>Activity</th><th class="num">Count</th><th>Per</th><th class="num">Minutes</th><th class="num">h/yr</th><th></th></tr>
+              </thead>
+              <tbody>
+                {#each [...uc.savings, ...(draft ? [draft] : [])] as s, i (i)}
+                  {@const r = i < uc.savings.length ? i : -1}
+                  {@const h = savingHours(s)}
+                  <!-- {#key} resets the inputs to the file's values after every reload. -->
+                  {#key workspace.reloads}
+                    <tr>
+                      <td><input value={s.what ?? ""} placeholder="What is done by hand?" aria-label="Activity" onchange={cell(r, "what")} {@attach (el) => { if (r < 0 && !s.what) el.focus(); }} /></td>
+                      <td class="num"><input type="number" min="0" step="any" value={s.count ?? ""} aria-label="Count" onchange={cell(r, "count")} /></td>
+                      <td>
+                        <select value={s.per ?? ""} aria-label="Per" onchange={cell(r, "per")}>
+                          {#if !s.per}<option value="">–</option>{/if}
+                          {#each PERS as per (per)}<option value={per}>{per}</option>{/each}
+                        </select>
+                      </td>
+                      <td class="num"><input type="number" min="0" step="any" value={s.minutes ?? ""} aria-label="Minutes" onchange={cell(r, "minutes")} /></td>
+                      <td class="num w-mono">{h == null ? "–" : fmtHours(h)}</td>
+                      <td>
+                        <button type="button" class="rm" aria-label="Remove activity" onclick={() => (r < 0 ? (draft = null) : saveSavings(uc.savings.filter((_, j) => j !== r)))}>✕</button>
+                      </td>
+                    </tr>
+                  {/key}
+                {/each}
+              </tbody>
+            </table>
+            <div class="total">
+              <span><b>≈ {fmtFte(hours / fteHours())} FTE</b> · {fmtHours(hours)} h/yr</span>
+              <button type="button" class="w-btn w-btn--quiet" onclick={() => (draft ??= { what: "", count: null, per: "month", minutes: null })}>+ Add activity</button>
+            </div>
+            <p class="w-sub hint">
+              Per year: month × {PER_YEAR.month}, week × {PER_YEAR.week}, day × {PER_YEAR.day} · 1 FTE = {fmtHours(fteHours())} h (Settings)
+            </p>
+          {:else}
+            <button type="button" class="add-act" onclick={() => (draft = { what: "", count: null, per: "month", minutes: null })}>+ Add activity</button>
+          {/if}
+          {#if uc.savings.length || uc.savings_note}
+            {#key uc.savings_note}
+              <input class="note" value={uc.savings_note ?? ""} placeholder="Where do the numbers come from?" aria-label="Savings note" onchange={text("usecase.savings_note")} />
+            {/key}
+          {/if}
+        </section>
         <section class="txt">
           <span class="w-caps">Description</span>
           {#if body.trim()}
@@ -447,6 +538,110 @@
     border-color: var(--w-accent);
     background: var(--w-surface);
     outline: none;
+  }
+  .savings {
+    display: grid;
+    gap: 6px;
+  }
+  .savings table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--w-fs-small);
+  }
+  .savings th {
+    text-align: left;
+    font-weight: 500;
+    font-size: var(--w-fs-caption);
+    color: var(--w-muted);
+    padding: 0 4px 2px;
+    border-bottom: 1px solid var(--w-line);
+  }
+  .savings td {
+    padding: 1px 0;
+    border-bottom: 1px solid var(--w-line);
+  }
+  .savings .num {
+    text-align: right;
+    width: 64px;
+  }
+  .savings td.w-mono {
+    padding-right: 4px;
+    color: var(--w-muted);
+  }
+  .savings td:last-child {
+    width: 24px;
+  }
+  .savings input,
+  .savings select,
+  .note {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    border-radius: var(--w-r-sm);
+    padding: 3px 4px;
+    background: none;
+    font-size: var(--w-fs-small);
+    font-variant-numeric: tabular-nums;
+  }
+  .savings .num input {
+    text-align: right;
+  }
+  .savings input:hover,
+  .savings select:hover,
+  .note:hover {
+    border-color: var(--w-line);
+  }
+  .savings input:focus,
+  .savings select:focus,
+  .note:focus {
+    border-color: var(--w-accent);
+    background: var(--w-surface);
+    outline: none;
+  }
+  .rm {
+    border: 0;
+    background: none;
+    color: var(--w-muted);
+    cursor: pointer;
+    border-radius: var(--w-r-sm);
+    width: 22px;
+    height: 22px;
+  }
+  .rm:hover {
+    background: var(--w-tray);
+    color: var(--w-ink);
+  }
+  .total {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: var(--w-fs-small);
+    color: var(--w-muted);
+  }
+  .total b {
+    color: var(--w-ink);
+    font-weight: 600;
+  }
+  .hint {
+    margin: 0;
+    font-size: var(--w-fs-caption);
+  }
+  .add-act {
+    justify-self: start;
+    border: 0;
+    background: var(--w-tray);
+    border-radius: var(--w-r-sm);
+    padding: 5px 8px;
+    font-size: var(--w-fs-small);
+    color: var(--w-muted);
+    cursor: pointer;
+  }
+  .add-act:hover {
+    color: var(--w-ink);
+  }
+  .note {
+    margin-left: -4px;
+    color: var(--w-muted);
   }
   .md {
     font-size: var(--w-fs-body);

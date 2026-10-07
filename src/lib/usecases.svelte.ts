@@ -1,6 +1,6 @@
 // Use-case cockpit helpers. Every step, lane, phase and label comes from
 // `.workly/process.yml`; only the spec's fixed status and type ids pick colours.
-import { workspace, type Process, type ProjectEntry, type Step, type UseCase } from "$lib/stores/workspace.svelte";
+import { workspace, type Process, type ProjectEntry, type Saving, type Step, type UseCase } from "$lib/stores/workspace.svelte";
 import { today } from "$lib/tasks.svelte";
 
 export type UC = ProjectEntry & { usecase: UseCase };
@@ -74,3 +74,21 @@ export function moveMessage(p: Process, key: string, fromId: string | null, toId
   if (to.kind === "gate") return `${key} waits at ${stepName(to)}`;
   return `${key} → ${stepName(to)}, ball with ${p.lanes.find((l) => l.id === to.lane)?.label ?? to.lane}`;
 }
+
+// ---------------------------------------------------------------- savings
+
+// ponytail: working weeks/days per year as constants; move them to process.yml if another organisation counts differently.
+export const PER_YEAR: Record<string, number> = { year: 1, month: 12, week: 46, day: 220 };
+export const fteHours = () => workspace.settings?.fte_hours_per_year || 1720;
+
+/** Hours per year of one activity; null while a field is missing. */
+export const savingHours = (s: Saving) =>
+  s.count != null && s.minutes != null && s.per && PER_YEAR[s.per] ? (s.count * PER_YEAR[s.per] * s.minutes) / 60 : null;
+export const savedHours = (u: UC) => u.usecase.savings.reduce((sum, s) => sum + (savingHours(s) ?? 0), 0);
+/** FTE a use case saves; null when it has no savings. */
+export const savedFte = (u: UC) => (u.usecase.savings.length ? savedHours(u) / fteHours() : null);
+
+const fteFmt = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const hoursFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+export const fmtFte = (fte: number) => fteFmt.format(fte);
+export const fmtHours = (h: number) => hoursFmt.format(h);
