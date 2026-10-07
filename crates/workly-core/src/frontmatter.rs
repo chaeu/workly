@@ -61,7 +61,7 @@ pub fn append_update(body: &str, text: &str) -> String {
     let item = format!("- {text}");
     let lines: Vec<&str> = body.split_inclusive('\n').collect();
     let content = |l: &str| l.trim_end_matches(['\n', '\r']).to_string();
-    let Some(head) = lines.iter().position(|l| content(l).trim_end() == "## Updates") else {
+    let Some(head) = updates_head(&lines) else {
         let mut out = body.to_string();
         if !out.is_empty() {
             if !out.ends_with('\n') {
@@ -89,6 +89,42 @@ pub fn append_update(body: &str, text: &str) -> String {
     }
     out.push_str(&lines[last + 1..].concat());
     out
+}
+
+/// Line index of the `## Updates` heading.
+fn updates_head(lines: &[&str]) -> Option<usize> {
+    lines.iter().position(|l| l.trim_end() == "## Updates")
+}
+
+/// Byte offset where the description ends: the `## Updates` line, or the end of the body.
+pub fn description_end(body: &str) -> usize {
+    let lines: Vec<&str> = body.split_inclusive('\n').collect();
+    updates_head(&lines).map_or(body.len(), |h| lines[..h].concat().len())
+}
+
+/// The description as the user sees it: LF line ends, no trailing whitespace.
+pub fn normalize_description(text: &str) -> String {
+    text.replace("\r\n", "\n").trim_end().to_string()
+}
+
+/// Replace the description with `text`; everything from `## Updates` on stays
+/// byte-identical. The whitespace after the old description (blank line before
+/// the section, final newline or none) is kept.
+pub fn replace_description(body: &str, text: &str, eol: &str) -> String {
+    let (old, rest) = body.split_at(description_end(body));
+    let text = normalize_description(text).replace('\n', eol);
+    if text.is_empty() {
+        return rest.to_string();
+    }
+    let kept = old.trim_end();
+    let gap = if !kept.is_empty() {
+        old[kept.len()..].to_string()
+    } else if rest.is_empty() {
+        eol.to_string()
+    } else {
+        eol.repeat(2)
+    };
+    format!("{text}{gap}{rest}")
 }
 
 #[cfg(test)]
@@ -136,6 +172,22 @@ mod tests {
         assert_eq!(append_update("Text\n", "a"), "Text\n\n## Updates\n- a\n");
         assert_eq!(append_update("Text", "a"), "Text\n\n## Updates\n- a\n");
         assert_eq!(append_update("T\r\n", "a"), "T\r\n\r\n## Updates\r\n- a\r\n");
+    }
+
+    #[test]
+    fn replace_description_cases() {
+        let r = |b, t| replace_description(b, t, "\n");
+        assert_eq!(r("Old\n\n## Updates\n- a\n", "New\nlines \n\n"), "New\nlines\n\n## Updates\n- a\n");
+        assert_eq!(r("Old\n## Updates\n- a", "New"), "New\n## Updates\n- a");
+        assert_eq!(r("## Updates\n- a\n", "New"), "New\n\n## Updates\n- a\n");
+        assert_eq!(r("Old\n\n## Updates\n- a\n", ""), "## Updates\n- a\n");
+        assert_eq!(r("Old", "New"), "New");
+        assert_eq!(r("Old\n", "New"), "New\n");
+        assert_eq!(r("", "New"), "New\n");
+        assert_eq!(r("Old\n", " "), "");
+        let crlf = "Old\r\n\r\n## Updates\r\n- a\r\n";
+        assert_eq!(replace_description(crlf, "A\nB", "\r\n"), "A\r\nB\r\n\r\n## Updates\r\n- a\r\n");
+        assert_eq!(description_end(crlf), 7);
     }
 
     #[test]

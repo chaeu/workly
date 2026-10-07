@@ -402,6 +402,73 @@ fn update_note_appends_to_body_only() {
 }
 
 #[test]
+fn set_description_replaces_only_the_description() {
+    let (_tmp, root) = fixture();
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    let old = "Body with trailing spaces   \nand **markdown**.\n\n- [ ] list a\n- [x] list b";
+    let (fm, desc) = before.split_at(before.find("Body with").unwrap());
+    assert_eq!(desc, old);
+    let mut ws = Workspace::open(&root).unwrap();
+
+    // No Updates section, no final newline: stays without one.
+    ws.set_description("WR-8", "New plan\n\n- step one\n", old, "app").unwrap();
+    assert_eq!(fs::read_to_string(root.join(WR8)).unwrap(), format!("{fm}New plan\n\n- step one"));
+    let last = log_lines(&root).pop().unwrap();
+    assert_eq!((&last["kind"], &last["field"], &last["from"]), (&json!("task.update"), &json!("description"), &json!(old.trim_end())));
+
+    // With an Updates section: frontmatter and Updates stay byte-identical.
+    ws.add_task_update("WR-8", "Asked", "app").unwrap();
+    let with_updates = fs::read_to_string(root.join(WR8)).unwrap();
+    let updates = &with_updates[with_updates.find("## Updates").unwrap()..];
+    ws.set_description("WR-8", "Shorter", "New plan\n\n- step one", "app").unwrap();
+    assert_eq!(fs::read_to_string(root.join(WR8)).unwrap(), format!("{fm}Shorter\n\n{updates}"));
+
+    // Unchanged text: no write, no log line.
+    let n = log_lines(&root).len();
+    ws.set_description("WR-8", "Shorter\n", "Shorter", "app").unwrap();
+    assert_eq!(log_lines(&root).len(), n);
+}
+
+#[test]
+fn set_description_on_empty_body_and_back() {
+    let (_tmp, root) = fixture();
+    let file = root.join("inbox/IN-1-workshop-date.md");
+    let before = fs::read_to_string(&file).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    ws.set_description("IN-1", "Ask for Tuesday", "", "app").unwrap();
+    assert_eq!(fs::read_to_string(&file).unwrap(), format!("{before}Ask for Tuesday\n"));
+    ws.set_description("IN-1", "  \n", "Ask for Tuesday", "app").unwrap();
+    assert_eq!(fs::read_to_string(&file).unwrap(), before);
+}
+
+#[test]
+fn set_description_conflict_writes_nothing() {
+    let (_tmp, root) = fixture();
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    let n = log_lines(&root).len();
+    let r = ws.set_description("WR-8", "Mine", "What the card showed before", "app");
+    assert!(matches!(r, Err(Error::Conflict(_))), "{r:?}");
+    let r = ws.set_description("WR-8", "a\n## Updates\n- fake", &before[before.find("Body").unwrap()..], "app");
+    assert!(matches!(r, Err(Error::Invalid(_))), "{r:?}");
+    assert_eq!(fs::read_to_string(root.join(WR8)).unwrap(), before);
+    assert_eq!(log_lines(&root).len(), n);
+}
+
+#[test]
+fn set_description_keeps_crlf() {
+    let (_tmp, root) = fixture();
+    let file = root.join("inbox/IN-7-crlf.md");
+    let fm = "---\r\nid: IN-7\r\ntitle: Windows file\r\nstatus: todo\r\n---\r\n";
+    let updates = "## Updates\r\n- 2026-10-01 09:00 · me: x\r\n";
+    fs::write(&file, format!("{fm}Old\r\ntext\r\n\r\n{updates}")).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    // The textarea hands back LF; `expected` may still carry the file's CRLF.
+    ws.set_description("IN-7", "New\nlines", "Old\r\ntext", "app").unwrap();
+    assert_eq!(fs::read_to_string(&file).unwrap(), format!("{fm}New\r\nlines\r\n\r\n{updates}"));
+}
+
+#[test]
 fn create_task_with_priority() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();

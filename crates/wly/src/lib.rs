@@ -220,7 +220,7 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> i32 {
 
 fn fail(json: bool, e: &Error) -> i32 {
     let code = match e {
-        Error::Invalid(_) | Error::Io(_) => 1,
+        Error::Invalid(_) | Error::Conflict(_) | Error::Io(_) => 1,
         Error::NotFound(_) => 2,
         Error::InvalidTransition(_) => 3,
     };

@@ -33,13 +33,15 @@ pub enum Error {
     NotFound(String),
     /// Not allowed for this actor, e.g. an agent setting `done`. CLI exit 3.
     InvalidTransition(String),
+    /// The file changed outside since the caller read it; nothing written.
+    Conflict(String),
     Io(std::io::Error),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::Invalid(m) | Error::NotFound(m) | Error::InvalidTransition(m) => f.write_str(m),
+            Error::Invalid(m) | Error::NotFound(m) | Error::InvalidTransition(m) | Error::Conflict(m) => f.write_str(m),
             Error::Io(e) => write!(f, "{e}"),
         }
     }
@@ -282,6 +284,32 @@ impl Workspace {
         let out = [p.head, p.frontmatter, p.fence, &crate::frontmatter::append_update(p.body, &line)].concat();
         atomic_write(&file, &out, &self.own)?;
         log(&self.root, &LogEntry::new(actor, "task.note", id, Some("updates"), Value::Null, line.into()))?;
+        self.rescan();
+        Ok(())
+    }
+
+    /// Replace the description (body before `## Updates`). `expected` is the
+    /// description the caller started from; if the file has another one now,
+    /// nothing is written. The old text goes to the log.
+    pub fn set_description(&mut self, id: &str, text: &str, expected: &str, actor: &str) -> Result<()> {
+        use crate::frontmatter::{description_end, eol_of, normalize_description, replace_description, split};
+        let (text, expected) = (normalize_description(text), normalize_description(expected));
+        if text.lines().any(|l| l.trim_end() == "## Updates") {
+            return Err(Error::Invalid("the description cannot contain a '## Updates' line".into()));
+        }
+        let file = self.task_path(id)?;
+        let src = fs::read_to_string(&file)?;
+        let p = split(&src);
+        let from = normalize_description(&p.body[..description_end(p.body)]);
+        if from != expected {
+            return Err(Error::Conflict(format!("the description of {id} changed outside")));
+        }
+        if from == text {
+            return Ok(());
+        }
+        let out = [p.head, p.frontmatter, p.fence, &replace_description(p.body, &text, eol_of(&src))].concat();
+        atomic_write(&file, &out, &self.own)?;
+        log(&self.root, &LogEntry::new(actor, "task.update", id, Some("description"), from.into(), text.into()))?;
         self.rescan();
         Ok(())
     }
