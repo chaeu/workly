@@ -246,7 +246,7 @@ Claude Code folgt als weiterer Adapter.
 | Tasks | Board, Gruppierung nach Projekt, Filter, Suche, Drag & Drop, Schnelleingabe, bearbeiten, löschen | Jede Änderung landet verlustfrei in der Datei |
 | Detail card | Popup oder Seitenleiste, Status, Priorität, Fälligkeit, Tags, Beschreibung, Updates | Wie im Design System |
 | Focus | Streifen mit bis zu drei Tasks, ein- und ausblendbar | `focus`, `focus_order` gesetzt |
-| Use-case cockpit | Board und Prozesslandkarte, Detailkarte mit Entscheidungen, Filter | Wie im Prototyp, Prozess aus `process.yml` |
+| Use-case cockpit | Board, Liste (sortierbare Tabelle) und Prozesslandkarte, Detailkarte mit Entscheidungen, Filter | Wie im Prototyp, Prozess aus `process.yml` |
 | Agents | CLI `wly`, Agent-Dateien, Schalter, Live-Status; „Start agent“ (Codex, Copilot) nur nach Entscheidung im Probebetrieb | Ein Agent setzt einen Task über `wly` auf Review; Schalter aus zeigt keine Agent-Oberfläche |
 | Log | Jede Änderung in `.workly/log/` | |
 

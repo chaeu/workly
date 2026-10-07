@@ -330,11 +330,16 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* Chips sit in an inset well, so they read as items inside the step, not as part of it. */
   .ucs {
     display: flex;
     flex-direction: column;
     gap: 5px;
-    padding: 0 6px 6px;
+    margin: 0 6px 6px;
+    padding: 6px;
+    border-radius: var(--w-r-sm);
+    background: var(--w-sunk);
+    box-shadow: inset 0 0 0 1px var(--w-line);
   }
   .box.parked {
     border-style: dashed;
