@@ -72,7 +72,8 @@
     select.value = project?.key ?? "";
   }
 
-  const toggleFocus = () => setFocus(focusAt >= 0 ? focusIds.filter((x) => x !== id) : [...focusIds, id]);
+  const focusFull = $derived(focusAt < 0 && focusIds.length >= 3);
+  const toggleFocus = () => !focusFull && setFocus(focusAt >= 0 ? focusIds.filter((x) => x !== id) : [...focusIds, id]);
 
   // Links in the description open outside; they never navigate the app window.
   function onDescClick(e: MouseEvent) {
@@ -100,6 +101,20 @@
             {#each projects as p (p.key)}<option value={p.key}>{p.title}</option>{/each}
           </select>
         {/key}
+        <!-- aria-disabled, not disabled: WebKit shows no tooltip on a disabled button. -->
+        <button
+          type="button"
+          class="t-star"
+          class:on={focusAt >= 0}
+          aria-pressed={focusAt >= 0}
+          aria-disabled={focusFull}
+          aria-label={focusAt >= 0 ? `Focus #${focusAt + 1}, remove from focus` : "Add to today's focus"}
+          title={focusAt >= 0 ? `Focus #${focusAt + 1}` : focusFull ? "The focus strip already has three tasks" : "Add to today's focus"}
+          onclick={toggleFocus}
+          ><svg width="16" height="16" viewBox="0 0 24 24" fill={focusAt >= 0 ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"
+            ><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z" /></svg
+          ></button
+        >
         <button type="button" class="t-x" onclick={onclose} aria-label="Close">✕</button>
       </div>
       {#key t.title}
@@ -166,19 +181,6 @@
                 onchange={(e) => save("tags", parseTags(e.currentTarget.value), e.currentTarget, tagsText)}
               />
             {/key}
-          </dd>
-          <dt>Focus</dt>
-          <dd>
-            {#if focusAt >= 0}
-              <span>Today, #{focusAt + 1}</span>
-            {/if}
-            <button
-              type="button"
-              class="w-btn w-btn--quiet small"
-              disabled={focusAt < 0 && focusIds.length >= 3}
-              title={focusAt < 0 && focusIds.length >= 3 ? "The focus strip already has three tasks" : undefined}
-              onclick={toggleFocus}>{focusAt >= 0 ? "Remove" : "Add to focus"}</button
-            >
           </dd>
           {#if t.status === "done" && t.done_at}
             <dt>Done</dt>
@@ -301,8 +303,34 @@
     background: var(--w-tray);
     color: var(--w-ink);
   }
-  .t-x {
+  .t-star {
     margin-left: auto;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: var(--w-r-sm);
+    background: none;
+    color: var(--w-muted);
+    cursor: pointer;
+  }
+  .t-star:hover {
+    background: var(--w-tray);
+    color: var(--w-ink);
+  }
+  .t-star.on {
+    color: var(--w-accent);
+  }
+  .t-star[aria-disabled="true"] {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .t-star[aria-disabled="true"]:hover {
+    background: none;
+    color: var(--w-muted);
+  }
+  .t-x {
     width: 30px;
     height: 30px;
     border: 0;
@@ -432,10 +460,6 @@
   .field:focus {
     outline: none;
     box-shadow: 0 0 0 2px var(--w-accent-soft);
-  }
-  .small {
-    padding: 3px 8px;
-    font-size: var(--w-fs-caption);
   }
   .t-update {
     background: var(--w-sunk);
