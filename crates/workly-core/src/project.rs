@@ -244,6 +244,39 @@ impl Workspace {
         Ok(())
     }
 
+    /// Turn a project into a use case: the `usecase:` block goes to the end of the
+    /// frontmatter, starting at the first phase's default step.
+    pub fn make_usecase(&mut self, key: &str, uc: &NewUseCase, actor: &str) -> Result<()> {
+        let entry = self.index.project(key).ok_or_else(|| Error::NotFound(format!("project {key} not found")))?;
+        if entry.project.usecase.is_some() {
+            return Err(Error::Invalid(format!("{key} already is a use case")));
+        }
+        let file = self.root.join(&entry.path).join("_project.md");
+        let src = fs::read_to_string(&file)?;
+        let out = self.with_usecase(&src, uc, &crate::today())?;
+        let to = patch::get_field(&out, &["usecase"]).map_err(Error::Invalid)?;
+        atomic_write(&file, &out, &self.own)?;
+        log(&self.root, &LogEntry::new(actor, "usecase.create", key, Some("usecase"), Value::Null, to))?;
+        self.rescan();
+        Ok(())
+    }
+
+    /// Back to a plain project: removes the whole `usecase:` block. The log line keeps it in `from`.
+    pub fn remove_usecase(&mut self, key: &str, actor: &str) -> Result<()> {
+        let dir = self.project_dir(key)?;
+        let file = dir.join("_project.md");
+        let src = fs::read_to_string(&file)?;
+        let from = patch::get_field(&src, &["usecase"]).map_err(Error::Invalid)?;
+        if from.is_null() {
+            return Err(Error::Invalid(format!("{key} is not a use case")));
+        }
+        let out = patch::remove_field(&src, &["usecase"]).map_err(Error::Invalid)?;
+        atomic_write(&file, &out, &self.own)?;
+        log(&self.root, &LogEntry::new(actor, "usecase.remove", key, Some("usecase"), from, Value::Null))?;
+        self.rescan();
+        Ok(())
+    }
+
     /// `usecase:` block for a new use case, in the field order of the spec.
     fn with_usecase(&self, content: &str, uc: &NewUseCase, today: &str) -> Result<String> {
         let p = self.process.as_ref().ok_or_else(|| Error::Invalid("no valid .workly/process.yml".into()))?;

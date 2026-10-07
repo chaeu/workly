@@ -628,6 +628,68 @@ fn create_usecase_starts_at_first_phase() {
     assert!(!root.join("projects/other").exists());
 }
 
+// ------------------------------------------------ project <-> use case (P5)
+
+#[test]
+fn make_usecase_appends_block_and_remove_restores_bytes() {
+    let (_tmp, root) = fixture();
+    let file = root.join("projects/website-relaunch/_project.md");
+    let before = fs::read_to_string(&file).unwrap();
+    let wr8 = fs::read(root.join(WR8)).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    let uc = workly_core::project::NewUseCase { kind: "hybrid".into(), area: Some(" Marketing ".into()) };
+    ws.make_usecase("WR", &uc, "app").unwrap();
+    let today = workly_core::today();
+    let block = format!(
+        "usecase:\n  type: hybrid\n  area: Marketing\n  step: need\n  step_since: {today}\n  status: active\n  blocked_by: null\n  next_step: null\n  current_state: null\n"
+    );
+    let after = fs::read_to_string(&file).unwrap();
+    assert_eq!(after, before.replacen("created: 2026-09-15\n", &format!("created: 2026-09-15\n{block}"), 1));
+    assert_eq!(ws.index.project("WR").unwrap().project.usecase.as_ref().unwrap().step.as_deref(), Some("need"));
+    let last = log_lines(&root).pop().unwrap();
+    assert_eq!((&last["kind"], &last["field"], &last["from"], &last["to"]["step"]), (&json!("usecase.create"), &json!("usecase"), &Value::Null, &json!("need")));
+
+    // Already a use case / unknown type: refused, nothing written.
+    assert!(matches!(ws.make_usecase("WR", &uc, "app"), Err(Error::Invalid(_))));
+    let bad = workly_core::project::NewUseCase { kind: "ml".into(), area: None };
+    let ops = root.join("projects/ops-dashboard/_project.md");
+    let ops_before = fs::read(&ops).unwrap();
+    assert!(matches!(ws.make_usecase("OPS", &bad, "app"), Err(Error::Invalid(_))));
+    assert_eq!(fs::read(&ops).unwrap(), ops_before);
+
+    // And back: the file is byte-identical to before.
+    ws.remove_usecase("WR", "app").unwrap();
+    assert_eq!(fs::read_to_string(&file).unwrap(), before);
+    assert!(ws.index.project("WR").unwrap().project.usecase.is_none());
+    assert_eq!(fs::read(root.join(WR8)).unwrap(), wr8);
+}
+
+#[test]
+fn remove_usecase_keeps_project_tasks_and_logs_the_block() {
+    let (_tmp, root) = fixture();
+    let file = root.join("projects/invoice-extraction/_project.md");
+    let before = fs::read_to_string(&file).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    let old = ws.index.project("IE").unwrap().project.usecase.clone().unwrap();
+    let tasks = ws.index.tasks.iter().filter(|t| t.task.id.starts_with("IE-")).count();
+    assert!(tasks > 0);
+    ws.remove_usecase("IE", "app").unwrap();
+
+    let start = before.find("usecase:\n").unwrap();
+    let end = before.rfind("---\n").unwrap();
+    assert_eq!(fs::read_to_string(&file).unwrap(), format!("{}{}", &before[..start], &before[end..]));
+    let p = &ws.index.project("IE").unwrap().project;
+    assert!(p.usecase.is_none() && p.title == "Invoice Extraction");
+    assert_eq!(ws.index.tasks.iter().filter(|t| t.task.id.starts_with("IE-")).count(), tasks);
+    let last = log_lines(&root).pop().unwrap();
+    assert_eq!((&last["kind"], &last["field"], &last["to"]), (&json!("usecase.remove"), &json!("usecase"), &Value::Null));
+    assert_eq!(last["from"]["decisions"][0]["text"], json!(old.decisions[0].text));
+    assert_eq!(last["from"]["savings_note"], json!("Volume from the finance team, sample 09/2026"));
+
+    assert!(matches!(ws.remove_usecase("IE", "app"), Err(Error::Invalid(_))));
+    assert!(matches!(ws.remove_usecase("NOPE", "app"), Err(Error::NotFound(_))));
+}
+
 // ----------------------------------------------------------- savings (P4)
 
 #[test]
