@@ -350,6 +350,14 @@
       <span class="w-sub">{matchCount} {matchCount === 1 ? "match" : "matches"}</span>
       <button type="button" class="w-btn w-btn--quiet clear" onclick={clearFilters}>Clear</button>
     {/if}
+    <!-- Same switch and setting as the use-case cockpit. -->
+    <div class="details">
+      <span class="w-caps">Details</span>
+      <div class="w-seg" role="group" aria-label="Detail cards">
+        <button type="button" aria-pressed={detailMode === "popup"} onclick={() => saveSettings({ task_detail: "popup" })}>Popup</button>
+        <button type="button" aria-pressed={detailMode === "panel"} onclick={() => saveSettings({ task_detail: "panel" })}>Side panel</button>
+      </div>
+    </div>
   </div>
 
   <div class="w-board-scroll">
@@ -452,6 +460,19 @@
   }
   .clear {
     padding: 4px 8px;
+  }
+  .details {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  /* Chip height, so the switch does not push the board down. */
+  .details .w-seg {
+    padding: 2px;
+  }
+  .details .w-seg button {
+    padding: 2px 10px;
   }
   select.w-chip {
     padding-right: 6px;
