@@ -183,7 +183,7 @@ Jedes Projekt hat genau ein Zuhause: seinen Projektordner. Das Repo enthält nur
 
 - **Obsidian** liest und schreibt Doku; `.workly/` bleibt dort unsichtbar.
 - **VS Code:** Workly erzeugt pro Projekt `<projekt>/<key>.code-workspace` mit Projektordner und Repos; „Open in VS Code“ öffnet diese Datei.
-- **Workly** zeigt Struktur und Status, Markdown-Vorschau, öffnet Dateien in Obsidian (`obsidian://open?path=…`), VS Code oder Finder. Kein eigener Editor in v1.
+- **Workly** zeigt Struktur und Status, Markdown-Vorschau, öffnet Dateien in Obsidian (`obsidian://open?path=…`), VS Code oder Finder. Kein Markdown-Editor; die Task-Beschreibung ist ein einfaches Textfeld.
 - **Vorlagen** in `_templates/` werden von App und Obsidian genutzt.
 - **Git** macht der Nutzer; Workly committet nicht.
 
