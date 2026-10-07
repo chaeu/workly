@@ -9,6 +9,7 @@
     PROJECT_STATUSES,
     suggestKey,
     createProject,
+    makeUseCase,
     updateProjectField,
     deleteProject,
     nextColor,
@@ -38,6 +39,11 @@
   const process = $derived(workspace.index?.process);
   let ucType = $state(workspace.index?.process?.types[0]?.id ?? "");
   let ucArea = $state("");
+  // Edit form: "Make use case…" reveals type + area; Save then writes the usecase block.
+  let makeUc = $state(false);
+  const ucFields = $derived(!!process && (p ? makeUc : usecase));
+  // Title whose folder already exists without _project.md: offer to use it.
+  let existsFor = $state<string | null>(null);
   let error = $state<string | null>(null);
   let busy = $state(false);
 
@@ -67,18 +73,27 @@
   const linkValue = (ls: { label: string | null; url: string }[]): Link[] =>
     ls.filter((l) => l.url.trim()).map((l) => (l.label?.trim() ? { label: l.label.trim(), url: l.url.trim() } : { url: l.url.trim() }) as Link);
 
-  async function save(e: SubmitEvent) {
-    e.preventDefault();
+  const ucValue = () => ({ type: ucType, area: ucArea.trim() || null });
+
+  async function create(adopt: boolean) {
+    const dir = await createProject({ title: title.trim(), key, color, repos: $state.snapshot(repos), usecase: usecase ? ucValue() : null, adopt });
+    if (dir === null) {
+      existsFor = title.trim();
+      return;
+    }
+    onclose();
+    if (oncreated) oncreated(key);
+    else goto(`/projects/${key}`);
+  }
+
+  async function save(e: SubmitEvent | null, adopt = false) {
+    e?.preventDefault();
     if (!canSave) return;
     busy = true;
     error = null;
     try {
       if (!p) {
-        const uc = usecase ? { type: ucType, area: ucArea.trim() || null } : null;
-        await createProject({ title: title.trim(), key, color, repos: $state.snapshot(repos), usecase: uc });
-        onclose();
-        if (oncreated) oncreated(key);
-        else goto(`/projects/${key}`);
+        await create(adopt);
         return;
       }
       const changes: [string, unknown, unknown][] = [
@@ -91,6 +106,7 @@
       for (const [field, before, after] of changes) {
         if (JSON.stringify(before) !== JSON.stringify(after)) await updateProjectField(p.key, field, after);
       }
+      if (makeUc) await makeUseCase(p.key, ucValue());
       onclose();
     } catch (err) {
       error = String(err);
@@ -164,7 +180,14 @@
         </div>
       </div>
 
-      {#if usecase && !p && process}
+      {#if p && !p.usecase && process && !makeUc}
+        <div class="field">
+          <span class="w-caps">Use case</span>
+          <div><button type="button" class="w-btn" onclick={() => (makeUc = true)}>Make use case…</button></div>
+        </div>
+      {/if}
+
+      {#if ucFields && process}
         <div class="field">
           <span class="w-caps">Type</span>
           <div class="w-seg" role="group" aria-label="Type">
@@ -216,6 +239,12 @@
         </div>
       {/if}
 
+      {#if !p && existsFor && existsFor === title.trim()}
+        <div class="exists" role="alert">
+          <p class="hint">A folder for “{existsFor}” already exists and is not a project yet. Existing files stay untouched.</p>
+          <div><button type="button" class="w-btn" disabled={!canSave} onclick={() => save(null, true)}>Use existing folder</button></div>
+        </div>
+      {/if}
       {#if error}<p class="hint bad" role="alert">{error}</p>{/if}
     </div>
 
@@ -275,6 +304,11 @@
   .bad,
   .danger {
     color: var(--w-danger);
+  }
+  .exists {
+    display: flex;
+    flex-direction: column;
+    gap: var(--w-s-2);
   }
   .swatches {
     display: flex;

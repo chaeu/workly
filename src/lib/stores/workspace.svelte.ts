@@ -211,11 +211,15 @@ export const emptyTrash = () => run<number>("empty_trash");
 export const COLORS = ["proj-1", "proj-2", "proj-3", "proj-4", "proj-5", "proj-6"];
 export const PROJECT_STATUSES = ["active", "paused", "archived"];
 
-export type NewProject = { title: string; key: string; color: string; repos: string[]; usecase?: { type: string; area: string | null } | null };
+export type NewUseCase = { type: string; area: string | null };
+export type NewProject = { title: string; key: string; color: string; repos: string[]; usecase?: NewUseCase | null; adopt?: boolean };
 
 export const suggestKey = (title: string) => invoke<string>("suggest_key", { title });
-/** Throws, so the form can show the error next to its fields. */
-export const createProject = (project: NewProject) => invoke<string>("create_project", { project });
+/** Throws, so the form can show the error next to its fields. Null = the folder exists without
+ *  _project.md; nothing was written, `adopt: true` uses it. */
+export const createProject = (project: NewProject) => invoke<string | null>("create_project", { project });
+export const makeUseCase = (key: string, usecase: NewUseCase) => invoke("make_usecase", { key, usecase });
+export const removeUseCase = (key: string) => run("remove_usecase", { key });
 export const updateProjectField = (key: string, field: string, value: unknown) =>
   invoke("update_project_field", { key, field, value });
 /** The one move for every path (board, map, decision button). False when refused. */

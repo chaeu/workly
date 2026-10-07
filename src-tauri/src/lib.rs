@@ -7,7 +7,7 @@ use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
 use workly_core::agent::AgentContext;
 use workly_core::model::{Config, Process};
-use workly_core::project::{MissingRepo, NewProject, init_workspace, is_workspace};
+use workly_core::project::{MissingRepo, NewProject, NewUseCase, init_workspace, is_workspace};
 use workly_core::scan::Index;
 use workly_core::settings::{self, Settings, expand_home};
 use workly_core::trash::TrashItem;
@@ -147,14 +147,31 @@ fn suggest_key(state: State<AppState>, title: String) -> Result<String, String> 
     with_ws(&state, |ws| Ok(ws.suggest_key(&title)))
 }
 
+/// The new folder, or None when a folder without `_project.md` is in the way (nothing written; retry with `adopt`).
 #[tauri::command]
-fn create_project(app: AppHandle, state: State<AppState>, project: NewProject) -> Result<String, String> {
-    changed(&app, with_ws(&state, |ws| ws.create_project(&project, ACTOR)))
+fn create_project(app: AppHandle, state: State<AppState>, project: NewProject) -> Result<Option<String>, String> {
+    changed(
+        &app,
+        with_ws(&state, |ws| match ws.create_project(&project, ACTOR) {
+            Err(workly_core::Error::Conflict(_)) => Ok(None),
+            r => r.map(Some),
+        }),
+    )
 }
 
 #[tauri::command]
 fn update_project_field(app: AppHandle, state: State<AppState>, key: String, field: String, value: Value) -> Result<(), String> {
     changed(&app, with_ws(&state, |ws| ws.update_project_field(&key, &field, &value, ACTOR)))
+}
+
+#[tauri::command]
+fn make_usecase(app: AppHandle, state: State<AppState>, key: String, usecase: NewUseCase) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.make_usecase(&key, &usecase, ACTOR)))
+}
+
+#[tauri::command]
+fn remove_usecase(app: AppHandle, state: State<AppState>, key: String) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.remove_usecase(&key, ACTOR)))
 }
 
 #[tauri::command]
@@ -373,6 +390,8 @@ pub fn run() {
             suggest_key,
             create_project,
             update_project_field,
+            make_usecase,
+            remove_usecase,
             move_usecase,
             reorder_projects,
             delete_project,

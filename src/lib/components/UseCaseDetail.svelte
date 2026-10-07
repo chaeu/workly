@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { ask } from "@tauri-apps/plugin-dialog";
   import { goto } from "$app/navigation";
   import { grow } from "$lib/grow";
   import { renderMarkdown } from "$lib/markdown";
-  import { workspace, readMarkdown, updateProjectField, updateTaskField, createTask, type Process, type Saving } from "$lib/stores/workspace.svelte";
+  import { workspace, readMarkdown, updateProjectField, updateTaskField, createTask, removeUseCase, type Process, type Saving } from "$lib/stores/workspace.svelte";
   import {
     daysInStep,
     fmtFte,
@@ -90,6 +91,17 @@
         el.value = String(uc!.savings[i][field] ?? "");
       }
     };
+  }
+
+  // Back to a plain project; the effect above closes the card once the index drops the use case.
+  async function removeFromCockpit() {
+    const n = uc?.decisions.length ?? 0;
+    const ok = await ask(`Removes the use-case fields including ${n} decision${n === 1 ? "" : "s"} from _project.md. The log keeps a copy.`, {
+      title: `Remove ${key} from cockpit`,
+      kind: "warning",
+      okLabel: "Remove",
+    });
+    if (ok) await removeUseCase(key);
   }
 
   // ponytail: unticking reopens as `todo` (or the first status); the task board covers other statuses.
@@ -287,6 +299,7 @@
         {/each}
       {/if}
       <button type="button" class="w-btn w-btn--quiet open" onclick={() => goto(`/projects/${u.key}`)}>Open project</button>
+      <button type="button" class="w-btn w-btn--quiet danger" onclick={removeFromCockpit}>Remove from cockpit…</button>
     </div>
   </div>
 {/if}
@@ -785,6 +798,9 @@
   }
   .open {
     margin-left: auto;
+  }
+  .danger {
+    color: var(--w-danger);
   }
   @media (max-width: 680px) {
     .d-body {
