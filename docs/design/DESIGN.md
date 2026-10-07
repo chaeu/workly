@@ -93,6 +93,8 @@ Spaltenköpfe einmal oben. Je Projekt eine Ablage mit Kopf (Farbquadrat, Name, �
 
 Weißes Panel über dem Board, drei nummerierte Einträge (Reihenfolge = Priorität, Nummer in Mono und Akzent). „Ausblenden“ rechts im Kopf; ausgeblendet erscheint in der Toolbar „Fokus einblenden · 3“. Zustand als UI-Präferenz speichern. Befüllung: Tasks mit `focus: <heutiges Datum>` im Frontmatter, Reihenfolge über `focus_order`.
 
+Der Streifen hat eine feste Höhe (`--w-bar-h`), leer wie voll; Titel bleiben einzeilig mit Auslassung. In der Projektansicht steht an seiner Stelle eine gleich hohe Leiste (`.w-bar`) mit den Tabs „Tasks | Files“, damit Board und Inhalt in jeder Ansicht auf derselben Höhe beginnen.
+
 ### Steuerelemente
 
 - **Primär-Button:** Akzent, 9 px Radius, eine pro Ansicht.

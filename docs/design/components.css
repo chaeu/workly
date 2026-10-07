@@ -103,13 +103,14 @@
 .w-group-cell { display: flex; flex-direction: column; gap: 8px; min-height: 40px; border-radius: var(--w-r-md); }
 
 /* ---------- Focus strip ---------- */
-.w-focus { background: var(--w-surface); border-radius: var(--w-r-lg); box-shadow: var(--w-shadow-panel); padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 10px; }
+/* Fixed height, so the board below starts at the same y in every view. */
+.w-focus, .w-bar { box-sizing: border-box; height: var(--w-bar-h); background: var(--w-surface); border-radius: var(--w-r-lg); box-shadow: var(--w-shadow-panel); padding: 14px 18px 16px; display: flex; flex-direction: column; gap: 10px; }
 .w-focus-head { display: flex; align-items: center; gap: 10px; }
 .w-focus-head .w-btn--quiet { margin-left: auto; padding: 4px 8px; font-size: 12.5px; }
 .w-focus-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
 .w-focus-item { display: flex; gap: 12px; align-items: flex-start; background: var(--w-sunk); border-radius: var(--w-r-md); padding: 10px 12px; min-width: 0; }
 .w-focus-num { font-family: var(--w-font-mono); font-size: 22px; font-weight: 500; line-height: 1; color: var(--w-accent); }
-.w-focus-item strong { display: block; font-weight: 600; }
+.w-focus-item strong { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- Gate marker ---------- */
 .w-gate { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
