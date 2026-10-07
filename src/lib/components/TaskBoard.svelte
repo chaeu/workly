@@ -10,6 +10,7 @@
     moveTask,
     reorderTasks,
     setFocus,
+    type ProjectEntry,
     type TaskEntry,
   } from "$lib/stores/workspace.svelte";
   import {
@@ -26,18 +27,23 @@
     today,
   } from "$lib/tasks.svelte";
 
-  /** `title` is the left side of the page head above the subline. */
-  let { title }: { title: Snippet } = $props();
+  /**
+   * `title` is the left side of the page head above the subline.
+   * With `project` the board shows only that project's tasks: no project filter,
+   * no grouping, no WIP limits (they count the whole workspace), new tasks go there.
+   */
+  let { title, project = null }: { title: Snippet; project?: ProjectEntry | null } = $props();
 
   startClock();
 
   const statuses = $derived(workspace.index?.config.task_statuses ?? []);
   const projects = $derived(workspace.index?.projects.filter((p) => p.status !== "archived") ?? []);
-  // Tasks of archived projects stay off the board.
-  const tasks = $derived.by(() => {
-    const live = new Set(projects.map((p) => p.path));
-    return (workspace.index?.tasks ?? []).filter((t) => !t.project || live.has(t.project)).sort(byBoardOrder);
+  // Tasks of archived projects stay off the board, unless it is that project's board.
+  const live = $derived.by(() => {
+    const paths = new Set(projects.map((p) => p.path));
+    return (workspace.index?.tasks ?? []).filter((t) => !t.project || paths.has(t.project));
   });
+  const tasks = $derived([...(project ? (workspace.index?.tasks ?? []).filter((t) => t.project === project.path) : live)].sort(byBoardOrder));
   const lanes = $derived([
     ...projects.map((p) => ({ key: p.key, title: p.title, color: projColor(p.color) })),
     { key: "", title: "Inbox", color: "var(--w-line)" },
@@ -72,16 +78,20 @@
   const clearFilters = () => ([query, fProject, fPrio, fTag, fDue] = ["", "", null, "", ""]);
   // ⌘N anywhere on this board suggests the filtered project.
   $effect(() => {
-    quickAdd.hint = fProject && fProject !== "inbox" ? fProject : null;
+    quickAdd.hint = project ? (project.status !== "archived" ? project.key : null) : fProject && fProject !== "inbox" ? fProject : null;
     return () => (quickAdd.hint = null);
   });
 
   // --------------------------------------------------------------- focus
 
-  const focus = $derived(
-    tasks.filter((t) => t.focus?.slice(0, 10) === today()).sort((a, b) => (a.focus_order ?? 9) - (b.focus_order ?? 9)),
+  // Focus is one list of three for the workspace; a project board shows its own part of it.
+  const allFocus = $derived(
+    live.filter((t) => t.focus?.slice(0, 10) === today()).sort((a, b) => (a.focus_order ?? 9) - (b.focus_order ?? 9)),
   );
+  const allFocusIds = $derived(allFocus.map((t) => t.id));
+  const focus = $derived(project ? allFocus.filter((t) => t.project === project.path) : allFocus);
   const focusIds = $derived(focus.map((t) => t.id));
+  const otherFocus = $derived(allFocus.length - focus.length);
   const focusHidden = $derived(workspace.settings?.focus_hidden ?? false);
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -96,13 +106,14 @@
   }
   function countLabel(s: { id: string; wip_limit: number | null }) {
     const n = tasks.filter((t) => t.status === s.id).length;
-    return s.wip_limit ? `${n} / ${s.wip_limit}` : `${n}`;
+    return s.wip_limit && !project ? `${n} / ${s.wip_limit}` : `${n}`;
   }
-  const overLimit = (s: { id: string; wip_limit: number | null }) => !!s.wip_limit && tasks.filter((t) => t.status === s.id).length > s.wip_limit;
+  const overLimit = (s: { id: string; wip_limit: number | null }) =>
+    !project && !!s.wip_limit && tasks.filter((t) => t.status === s.id).length > s.wip_limit;
   const openCount = $derived(tasks.filter((t) => t.status !== "done").length);
   const subline = $derived(
     !tasks.length ? "No tasks yet. ⌘N adds one." :
-    [`${openCount} open`, ...statuses.filter((s) => s.id === "doing" || s.id === "review").map((s) => `${cellTasks(cellKey(s.id)).length} ${s.label.toLowerCase()}`)].join(" · "),
+    [...(project ? [project.key] : []), `${openCount} open`, ...statuses.filter((s) => s.id === "doing" || s.id === "review").map((s) => `${cellTasks(cellKey(s.id)).length} ${s.label.toLowerCase()}`)].join(" · "),
   );
 
   // --------------------------------------------------------- drag & drop
@@ -189,13 +200,16 @@
     const t = tasks.find((x) => x.id === id);
     if (!t) return;
     if (key === "focus") {
-      const ids = focusIds.filter((x) => x !== id);
+      const ids = allFocusIds.filter((x) => x !== id);
       if (ids.length >= 3) {
-        workspace.error = "The focus strip holds three tasks. Remove one first.";
+        workspace.error = `The focus strip holds three tasks${otherFocus ? `, ${otherFocus} of them in other projects` : ""}. Remove one first.`;
         return;
       }
-      ids.splice(index, 0, id);
-      if (ids.join() !== focusIds.join()) await setFocus(ids);
+      // `index` counts the visible strip: insert before that card, else after the last visible one.
+      const shown = focusIds.filter((x) => x !== id);
+      const at = index < shown.length ? ids.indexOf(shown[index]) : shown.length ? ids.indexOf(shown[shown.length - 1]) + 1 : ids.length;
+      ids.splice(at, 0, id);
+      if (ids.join() !== allFocusIds.join()) await setFocus(ids);
       return;
     }
     if (key === keyOf(t)) {
@@ -267,10 +281,12 @@
       <input bind:value={query} type="search" placeholder="Search id or title" aria-label="Search tasks (⌘K)" />
       <kbd class="w-mono">⌘K</kbd>
     </label>
-    <div class="w-seg" role="group" aria-label="Grouping">
-      <button type="button" aria-pressed={group === "status"} onclick={() => (group = "status")}>By status</button>
-      <button type="button" aria-pressed={group === "project"} onclick={() => (group = "project")}>By project</button>
-    </div>
+    {#if !project}
+      <div class="w-seg" role="group" aria-label="Grouping">
+        <button type="button" aria-pressed={group === "status"} onclick={() => (group = "status")}>By status</button>
+        <button type="button" aria-pressed={group === "project"} onclick={() => (group = "project")}>By project</button>
+      </div>
+    {/if}
     {#if focusHidden}
       <button type="button" class="w-btn" onclick={() => saveSettings({ focus_hidden: false })}>Show focus · {focus.length}</button>
     {/if}
@@ -284,7 +300,14 @@
     <section class="w-focus" class:is-over={isOver("focus")} data-drop="focus" aria-label="Focus today">
       <div class="w-focus-head">
         <span class="w-caps">Focus today</span>
-        <span class="w-sub hint">{focus.length ? `${plural(focus.length, "task")}, in this order` : "Drag up to three cards here"}</span>
+        <span class="w-sub hint"
+          >{[
+            focus.length ? `${plural(focus.length, "task")}, in this order` : otherFocus ? "Drag cards here" : "Drag up to three cards here",
+            otherFocus && `${otherFocus} in other projects`,
+          ]
+            .filter(Boolean)
+            .join(" · ")}</span
+        >
         <button type="button" class="w-btn w-btn--quiet" onclick={() => saveSettings({ focus_hidden: true })}>Hide</button>
       </div>
       {#if focus.length}
@@ -300,7 +323,7 @@
                   >{[t.id, t.priority && `P${t.priority}`, t.due && `due ${shortDate(t.due)}`, p?.title ?? "Inbox"].filter(Boolean).join(" · ")}</span
                 >
               </div>
-              <button type="button" class="fi-x" aria-label="Remove {t.id} from focus" onclick={() => setFocus(focusIds.filter((x) => x !== t.id))}
+              <button type="button" class="fi-x" aria-label="Remove {t.id} from focus" onclick={() => setFocus(allFocusIds.filter((x) => x !== t.id))}
                 >✕</button
               >
             </li>
@@ -311,11 +334,13 @@
   {/if}
 
   <div class="filters" role="group" aria-label="Filters">
-    <select class="w-chip" class:on={fProject} bind:value={fProject} aria-label="Project">
-      <option value="">All projects</option>
-      {#each projects as p (p.key)}<option value={p.key}>{p.title}</option>{/each}
-      <option value="inbox">Inbox</option>
-    </select>
+    {#if !project}
+      <select class="w-chip" class:on={fProject} bind:value={fProject} aria-label="Project">
+        <option value="">All projects</option>
+        {#each projects as p (p.key)}<option value={p.key}>{p.title}</option>{/each}
+        <option value="inbox">Inbox</option>
+      </select>
+    {/if}
     {#each [1, 2, 3] as p (p)}
       <button type="button" class="w-chip" aria-pressed={fPrio === p} onclick={() => (fPrio = fPrio === p ? null : p)}
         ><span class="w-prio w-prio--{p}">P{p}</span></button
@@ -342,7 +367,7 @@
           {@const key = cellKey(s.id)}
           <section class="w-tray w-col" class:w-col--done={s.id === "done"} class:is-over={isOver(key)} data-drop={key} aria-label={s.label}>
             {@render colHead(s)}
-            {@render cards(key, true)}
+            {@render cards(key, !project)}
           </section>
         {/each}
       </div>
@@ -373,7 +398,7 @@
 
 {#if openId}
   {#key openId}
-    <TaskDetail id={openId} mode={detailMode} {focusIds} onclose={() => (openId = null)} />
+    <TaskDetail id={openId} mode={detailMode} focusIds={allFocusIds} onclose={() => (openId = null)} />
   {/key}
 {/if}
 
