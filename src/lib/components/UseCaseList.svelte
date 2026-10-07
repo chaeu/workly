@@ -52,32 +52,32 @@
         {@const status = u.usecase.status}
         {@const days = daysInStep(u)}
         {@const next = status === "blocked" && u.usecase.blocked_by ? u.usecase.blocked_by : u.usecase.next_step}
+        <!-- Like the board card: the step counts only when it says more than the phase. -->
+        {@const hint = !st
+          ? (u.usecase.step ?? "no step")
+          : st.kind === "gate" || !ph || (st.id !== p.phase_default_step[ph.id] && st.label !== ph.name)
+            ? stepName(st)
+            : undefined}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
         <tr class:blocked={status === "blocked"} class:hold={status === "on_hold"} onclick={() => onopen(u.key)}>
           <td class="w-mono id">{u.key}</td>
           <!-- The title button carries keyboard access; a mouse click anywhere on the row opens it too. -->
-          <td class="title"><button type="button">{u.title}</button></td>
+          <td class="title" title={u.title}><button type="button">{u.title}</button></td>
           <td>
             {#if u.usecase.type}<span class="w-type" class:w-type--ki={u.usecase.type === "ai"} class:hybrid={u.usecase.type === "hybrid"}
                 >{label(p.types, u.usecase.type)}</span
               >{/if}
           </td>
-          <td class="muted">{u.usecase.area ?? "–"}</td>
-          <td>
-            <span class="phase">{ph?.name ?? "–"}</span>
-            <!-- Like the board card: the step shows only when it says more than the phase. -->
-            {#if !st}<span class="step warn">{u.usecase.step ?? "no step"}</span>
-            {:else if st.kind === "gate" || !ph || (st.id !== p.phase_default_step[ph.id] && st.label !== ph.name)}<span class="step" class:gate={st.kind === "gate"}
-                >{#if st.kind === "gate"}<i></i>{/if}{stepName(st)}</span
-              >{/if}
-          </td>
+          <td class="muted area" title={u.usecase.area}>{u.usecase.area ?? "–"}</td>
+          <!-- ponytail: step in the title attribute until P6 brings the real tooltip. -->
+          <td class="phase" class:warn={!st} title={hint}>{#if st?.kind === "gate"}<i></i>{/if}{ph?.name ?? "–"}</td>
           <td>
             <span class="status"
               ><span class="w-dot" class:w-dot--hollow={status === "on_hold"} style:--c={statusColor(status)}></span>{label(p.statuses, status)}</span
             >
           </td>
           <td class="num w-mono" class:stale={isStale(p, u)}>{days ?? "–"}</td>
-          <td class="next">{next ?? ""}</td>
+          <td class="next" title={next}>{next ?? ""}</td>
         </tr>
       {:else}
         <tr><td class="empty" colspan={COLS.length + 1}>No use case matches the filters.</td></tr>
@@ -142,10 +142,17 @@
   .arrow {
     margin-left: 4px;
   }
+  /* One fixed row height: every cell is one line, long text ends in an ellipsis. */
+  tbody tr {
+    height: 38px;
+  }
   td {
-    padding: 8px 12px;
+    padding: 0 12px;
     border-bottom: 1px solid var(--w-line);
-    vertical-align: top;
+    vertical-align: middle;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   tbody tr:last-child td {
     border-bottom: 0;
@@ -162,11 +169,22 @@
     color: var(--w-muted);
     white-space: nowrap;
   }
+  /* max-width: 0 lets the long columns share the rest of the width and clip. */
   .title {
+    width: 40%;
+    max-width: 0;
     min-width: 200px;
   }
+  .area {
+    max-width: 160px;
+  }
+  /* A button is an atomic inline box, so it clips its own text. */
   .title button {
     all: unset;
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-weight: 500;
     cursor: pointer;
   }
@@ -180,31 +198,19 @@
     box-shadow: inset 0 0 0 1px var(--w-accent);
   }
   .phase {
-    display: block;
     font-family: var(--w-font-label);
     font-weight: 600;
-    white-space: nowrap;
   }
-  .step {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    color: var(--w-muted);
-    font-size: var(--w-fs-caption);
-    white-space: nowrap;
-  }
-  .step.gate {
-    color: var(--w-accent);
-  }
-  .step.warn {
+  .phase.warn {
     color: var(--w-warn);
   }
-  .step i {
-    flex: none;
+  .phase i {
+    display: inline-block;
     width: 7px;
     height: 7px;
+    margin: 0 8px 1px 1px;
     transform: rotate(45deg);
-    border: 1.5px solid currentColor;
+    border: 1.5px solid var(--w-accent);
   }
   .status {
     display: flex;
@@ -224,9 +230,11 @@
     font-weight: 500;
   }
   .next {
+    width: 30%;
+    max-width: 0;
+    min-width: 160px;
     color: var(--w-muted);
     font-size: var(--w-fs-caption);
-    min-width: 180px;
   }
   tr.blocked .status,
   tr.blocked .next {
