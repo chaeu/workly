@@ -86,6 +86,9 @@
   --w-sidebar-w: 236px;
   --w-bar-h: 56px;            /* bar under the page head: focus strip, project tabs */
   --w-col-min: 216px;
+  --w-detail-w: 880px;        /* task detail card as popup */
+  --w-detail-min-h: 70vh;     /* popup keeps its size for short tasks */
+  --w-panel-w: 560px;         /* detail card as side panel (tasks, use cases) */
 
   /* Motion */
   --w-ease: cubic-bezier(.2, .7, .2, 1);

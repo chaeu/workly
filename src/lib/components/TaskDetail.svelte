@@ -259,13 +259,17 @@
     right: 0;
     bottom: 0;
     z-index: 40;
-    width: min(440px, 100%);
+    width: min(var(--w-panel-w), 100%);
     display: flex;
     flex-direction: column;
     background: var(--w-surface);
     box-shadow: var(--w-shadow-pop);
     color: var(--w-ink);
     animation: slide var(--w-dur) var(--w-ease);
+  }
+  .w-modal {
+    width: min(var(--w-detail-w), calc(100% - 32px));
+    min-height: min(var(--w-detail-min-h), calc(100% - 48px));
   }
   @keyframes slide {
     from {
@@ -382,6 +386,7 @@
     font-weight: 600;
   }
   .t-body {
+    flex: 1;
     overflow-y: auto;
     padding: 18px 22px 20px;
     display: grid;
@@ -390,6 +395,7 @@
   }
   .panel .t-body {
     grid-template-columns: minmax(0, 1fr);
+    align-content: start;
   }
   .t-desc {
     display: flex;

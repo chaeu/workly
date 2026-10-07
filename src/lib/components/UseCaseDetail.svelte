@@ -219,7 +219,7 @@
     right: 0;
     bottom: 0;
     z-index: 40;
-    width: min(440px, 100%);
+    width: min(var(--w-panel-w), 100%);
     display: flex;
     flex-direction: column;
     background: var(--w-surface);
