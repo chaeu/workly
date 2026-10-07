@@ -167,14 +167,18 @@
 </div>
 
 <style>
+  /* Fills the page below the bar; tree and preview scroll on their own. */
   .layout {
+    flex: 1;
+    min-height: 300px;
     display: grid;
     grid-template-columns: 250px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
     gap: var(--w-s-4);
-    align-items: start;
   }
   .side {
     gap: 2px;
+    overflow-y: auto;
   }
   .group {
     padding: var(--w-s-3) 8px var(--w-s-1);
@@ -228,7 +232,7 @@
     border-radius: var(--w-r-lg);
     box-shadow: var(--w-shadow-panel);
     padding: var(--w-s-3) var(--w-s-6) var(--w-s-6);
-    min-height: 300px;
+    overflow-y: auto;
   }
   .preview-head {
     display: flex;
