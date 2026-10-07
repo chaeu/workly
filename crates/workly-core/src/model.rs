@@ -1,6 +1,7 @@
 //! Typed views of workspace files. Read-only: writes go through `patch`.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 /// Fields the app does not know. Kept so nothing is hidden, never written back.
@@ -81,8 +82,73 @@ pub struct UseCase {
     pub current_state: Option<String>,
     #[serde(default)]
     pub decisions: Vec<Decision>,
+    /// Activities the use case saves time on. Hours and FTE are computed in the app, never stored.
+    #[serde(default, deserialize_with = "lenient_savings")]
+    pub savings: Vec<Saving>,
+    pub savings_note: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+pub const SAVING_PER: [&str; 4] = ["year", "month", "week", "day"];
+
+/// One entry of `usecase.savings`. A hand-written field that is missing or
+/// invalid reads as `None`, so the use case still loads; the scan reports it.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Saving {
+    pub what: Option<String>,
+    pub count: Option<f64>,
+    pub per: Option<String>,
+    pub minutes: Option<f64>,
+    /// Keys the app does not know, sent back unchanged when the list is rewritten.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, Value>,
+}
+
+impl Saving {
+    fn from_value(v: &Value) -> Saving {
+        let num = |k: &str| v.get(k).and_then(Value::as_f64).filter(|x| *x >= 0.0);
+        let mut extra = v.as_object().cloned().unwrap_or_default();
+        extra.retain(|k, _| !["what", "count", "per", "minutes"].contains(&k.as_str()));
+        Saving {
+            what: v.get("what").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).map(String::from),
+            count: num("count"),
+            per: v.get("per").and_then(Value::as_str).filter(|p| SAVING_PER.contains(p)).map(String::from),
+            minutes: num("minutes"),
+            extra,
+        }
+    }
+}
+
+/// What is wrong with a `usecase.savings` value; empty = valid. Checked on write and on scan.
+pub fn saving_problems(v: &Value) -> Vec<String> {
+    let items = match v {
+        Value::Null => return Vec::new(),
+        Value::Array(items) => items,
+        _ => return vec!["usecase.savings must be a list".into()],
+    };
+    let mut out = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        let s = Saving::from_value(item);
+        let n = i + 1;
+        if s.what.is_none() {
+            out.push(format!("usecase.savings {n}: what must be a non-empty text"));
+        }
+        for (field, ok) in [("count", s.count.is_some()), ("minutes", s.minutes.is_some())] {
+            if !ok {
+                out.push(format!("usecase.savings {n}: {field} must be a number >= 0"));
+            }
+        }
+        if s.per.is_none() {
+            out.push(format!("usecase.savings {n}: per must be one of {}", SAVING_PER.join(", ")));
+        }
+    }
+    out
+}
+
+fn lenient_savings<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<Saving>, D::Error> {
+    let v = Option::<Value>::deserialize(d)?;
+    Ok(v.as_ref().and_then(Value::as_array).map(|a| a.iter().map(Saving::from_value).collect()).unwrap_or_default())
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

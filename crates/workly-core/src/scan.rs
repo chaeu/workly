@@ -1,6 +1,6 @@
 //! Walk a workspace and build the in-memory index.
 
-use crate::model::{Config, ParseError, Project, Task, parse_file};
+use crate::model::{Config, ParseError, Project, Task, parse_file, saving_problems};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
@@ -77,8 +77,17 @@ fn walk(root: &Path, dir: &Path, config: &Config, idx: &mut Index) {
     let project_file = dir.join("_project.md");
     if project_file.is_file() {
         let path = rel(root, dir);
-        match read(root, &project_file).and_then(|src| parse_file::<Project>(&rel(root, &project_file), &src)) {
-            Ok(project) => idx.projects.push(ProjectEntry { path: path.clone(), project }),
+        let file = rel(root, &project_file);
+        match read(root, &project_file).and_then(|src| parse_file::<Project>(&file, &src).map(|p| (src, p))) {
+            Ok((src, project)) => {
+                // Bad savings entries load as empty fields; say what is wrong.
+                if project.usecase.is_some() {
+                    let raw = crate::patch::get_field(&src, &["usecase", "savings"]).unwrap_or_default();
+                    let problems = saving_problems(&raw).into_iter();
+                    idx.errors.extend(problems.map(|message| ParseError { path: file.clone(), line: None, message }));
+                }
+                idx.projects.push(ProjectEntry { path: path.clone(), project });
+            }
             Err(e) => idx.errors.push(e),
         }
         for file in md_files(&dir.join("tasks")) {

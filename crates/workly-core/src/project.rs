@@ -187,6 +187,12 @@ impl Workspace {
             "color" if !value.as_str().is_some_and(|s| COLORS.contains(&s)) => {
                 return Err(Error::Invalid(format!("unknown colour {value}")));
             }
+            "usecase.savings" => {
+                let problems = crate::model::saving_problems(value);
+                if !problems.is_empty() {
+                    return Err(Error::Invalid(problems.join("; ")));
+                }
+            }
             f if MOVE_FIELDS.contains(&f) => return Err(Error::Invalid(format!("{f} only changes by moving the use case"))),
             "usecase.status" | "usecase.type" => {
                 if let Some(p) = &self.process {

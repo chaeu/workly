@@ -572,6 +572,98 @@ fn create_usecase_starts_at_first_phase() {
     assert!(!root.join("projects/other").exists());
 }
 
+// ----------------------------------------------------------- savings (P4)
+
+#[test]
+fn savings_write_is_lossless_and_logged() {
+    let (_tmp, root) = fixture();
+    let file = root.join("projects/invoice-extraction/_project.md");
+    let before = fs::read_to_string(&file).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    let old = json!([
+        { "what": "Capture invoice header", "count": 1200, "per": "month", "minutes": 6 },
+        { "what": "Clarify queries with suppliers", "count": 80, "per": "month", "minutes": 15 },
+    ]);
+    // Unchanged row stays verbatim, the edited one is rewritten, the new one appended. Key order as sent.
+    let new = json!([
+        old[0],
+        { "what": "Clarify queries with suppliers", "count": 80, "per": "month", "minutes": 20 },
+        { "what": "Post, archive", "count": 2.5, "per": "day", "minutes": 30 },
+    ]);
+    ws.update_project_field("IE", "usecase.savings", &new, "app").unwrap();
+    let want = before.replace(
+        "    - { what: Clarify queries with suppliers, count: 80, per: month, minutes: 15 }\n",
+        "    - { what: Clarify queries with suppliers, count: 80, per: month, minutes: 20 }\n    - { what: \"Post, archive\", count: 2.5, per: day, minutes: 30 }\n",
+    );
+    assert_eq!(fs::read_to_string(&file).unwrap(), want);
+    let uc = ws.index.project("IE").unwrap().project.usecase.clone().unwrap();
+    assert_eq!((uc.savings.len(), uc.savings[2].count, uc.savings[2].per.as_deref()), (3, Some(2.5), Some("day")));
+    let last = log_lines(&root).pop().unwrap();
+    assert_eq!((&last["kind"], &last["field"], &last["from"], &last["to"]), (&json!("project.update"), &json!("usecase.savings"), &old, &new));
+
+    // A use case without savings gets the list appended to its block.
+    let file = root.join("projects/support-triage/_project.md");
+    let before = fs::read_to_string(&file).unwrap();
+    ws.update_project_field("ST", "usecase.savings", &json!([{ "what": "Route ticket", "count": 300, "per": "week", "minutes": 2 }]), "app").unwrap();
+    let want = before.replace(
+        "  current_state: Need reported, no pilot yet\n",
+        "  current_state: Need reported, no pilot yet\n  savings: [{ what: Route ticket, count: 300, per: week, minutes: 2 }]\n",
+    );
+    assert_eq!(fs::read_to_string(&file).unwrap(), want);
+}
+
+#[test]
+fn savings_are_validated_on_write() {
+    let (_tmp, root) = fixture();
+    let file = root.join("projects/invoice-extraction/_project.md");
+    let before = fs::read_to_string(&file).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    let row = |what: Value, count: Value, per: Value, minutes: Value| json!([{ "what": what, "count": count, "per": per, "minutes": minutes }]);
+    for bad in [
+        row(json!(" "), json!(1), json!("day"), json!(1)),
+        row(json!("X"), json!(-1), json!("day"), json!(1)),
+        row(json!("X"), json!("12"), json!("day"), json!(1)),
+        row(json!("X"), json!(1), json!("quarter"), json!(1)),
+        row(json!("X"), json!(1), json!("day"), Value::Null),
+        json!("about 0.5 FTE"),
+    ] {
+        assert!(matches!(ws.update_project_field("IE", "usecase.savings", &bad, "app"), Err(Error::Invalid(_))), "{bad}");
+    }
+    assert_eq!(fs::read_to_string(&file).unwrap(), before);
+    // Empty is fine; so is a zero.
+    ws.update_project_field("IE", "usecase.savings", &row(json!("X"), json!(0), json!("year"), json!(0)), "app").unwrap();
+    ws.update_project_field("IE", "usecase.savings", &json!([]), "app").unwrap();
+    assert!(fs::read_to_string(&file).unwrap().contains("  savings: []\n"));
+}
+
+#[test]
+fn hand_written_bad_savings_are_problems_not_breakage() {
+    let (_tmp, root) = fixture();
+    let ie = root.join("projects/invoice-extraction/_project.md");
+    let src = fs::read_to_string(&ie).unwrap()
+        .replace("count: 1200, per: month, minutes: 6 }", "count: 1200, per: month, minutes: 6, source: SAP }")
+        .replace("count: 80, per: month", "count: lots, per: month");
+    fs::write(&ie, src).unwrap();
+    let st = root.join("projects/support-triage/_project.md");
+    let src = fs::read_to_string(&st).unwrap().replace("  current_state: Need reported, no pilot yet\n", "  current_state: Need reported, no pilot yet\n  savings: about 0.5 FTE\n");
+    fs::write(&st, src).unwrap();
+
+    let ws = Workspace::open(&root).unwrap();
+    let uc = ws.index.project("IE").unwrap().project.usecase.clone().unwrap();
+    assert_eq!((uc.savings.len(), uc.savings[1].count, uc.savings[1].minutes), (2, None, Some(15.0)));
+    // Unknown keys ride along, so rewriting the list keeps them.
+    assert_eq!(serde_json::to_value(&uc.savings[0]).unwrap()["source"], json!("SAP"));
+    assert!(ws.index.project("ST").unwrap().project.usecase.as_ref().unwrap().savings.is_empty());
+    let msgs: Vec<(&str, &str)> = ws.index.errors.iter().map(|e| (e.path.as_str(), e.message.as_str())).filter(|(_, m)| m.contains("savings")).collect();
+    assert_eq!(
+        msgs,
+        [
+            ("projects/invoice-extraction/_project.md", "usecase.savings 2: count must be a number >= 0"),
+            ("projects/support-triage/_project.md", "usecase.savings must be a list"),
+        ]
+    );
+}
+
 // ------------------------------------------------------------------ agents (M5)
 
 #[test]
