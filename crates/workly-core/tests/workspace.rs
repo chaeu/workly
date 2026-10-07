@@ -215,7 +215,7 @@ fn empty_folder_becomes_workspace() {
     let mut ws = Workspace::open(&root).unwrap();
     assert!(ws.index.errors.is_empty() && ws.index.projects.is_empty(), "{:?}", ws.index.errors);
     assert_eq!(ws.suggest_key("Test Alpha"), "TA");
-    let new = NewProject { title: "Test Alpha".into(), key: "TA".into(), color: "proj-1".into(), repos: vec![], usecase: None };
+    let new = NewProject { title: "Test Alpha".into(), key: "TA".into(), color: "proj-1".into(), repos: vec![], usecase: None, adopt: false };
     assert_eq!(ws.create_project(&new, "app").unwrap(), "projects/test-alpha");
     assert_eq!(ws.create_task("First", Some("TA"), None, "app").unwrap(), "TA-1");
 }
@@ -225,7 +225,7 @@ fn create_project_builds_structure() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
     let repo = workly_core::settings::home().join("repos/alpha");
-    let new = NewProject { title: "Über: Alpha".into(), key: "UA".into(), color: "proj-3".into(), repos: vec!["~/repos/alpha".into()], usecase: None };
+    let new = NewProject { title: "Über: Alpha".into(), key: "UA".into(), color: "proj-3".into(), repos: vec!["~/repos/alpha".into()], usecase: None, adopt: false };
     let dir = ws.create_project(&new, "app").unwrap();
     assert_eq!(dir, "projects/ueber-alpha");
     let d = root.join(&dir);
@@ -242,7 +242,7 @@ fn create_project_builds_structure() {
     assert_eq!(log_lines(&root).pop().unwrap()["kind"], "project.create");
 
     let mut bad = |key: &str, title: &str, color: &str| {
-        let n = NewProject { title: title.into(), key: key.into(), color: color.into(), repos: vec![], usecase: None };
+        let n = NewProject { title: title.into(), key: key.into(), color: color.into(), repos: vec![], usecase: None, adopt: false };
         matches!(ws.create_project(&n, "app"), Err(Error::Invalid(_)))
     };
     assert!(bad("WR", "Other", "proj-1"), "key taken");
@@ -251,6 +251,62 @@ fn create_project_builds_structure() {
     assert!(bad("ZZ", "Über: Alpha", "proj-1"), "folder exists");
     assert!(bad("ZZ", "  ", "proj-1"), "no title");
     assert!(bad("ZZ", "Other", "#fff"), "colour");
+}
+
+/// Every file under `dir` with its bytes.
+fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut out = Vec::new();
+    for e in fs::read_dir(dir).unwrap().flatten() {
+        if e.file_type().unwrap().is_dir() {
+            out.extend(snapshot(&e.path()));
+        } else {
+            out.push((e.path(), fs::read(e.path()).unwrap()));
+        }
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn adopt_existing_folder_keeps_every_file() {
+    let (_tmp, root) = fixture();
+    let wr8 = fs::read(root.join(WR8)).unwrap();
+    let dir = root.join("projects/foo");
+    fs::create_dir_all(dir.join("notes")).unwrap();
+    fs::create_dir_all(dir.join("agent")).unwrap();
+    fs::write(dir.join("notes/idea.md"), "# Idea\n\nLoose note.\n").unwrap();
+    fs::write(dir.join("README.md"), "readme\r\nno newline").unwrap();
+    fs::write(dir.join("agent/AGENTS.md"), "my rules\n").unwrap();
+    fs::write(dir.join("FOO.code-workspace"), "{ \"folders\": [] }").unwrap();
+    let before = snapshot(&dir);
+    let mut ws = Workspace::open(&root).unwrap();
+    let mut new = NewProject { title: "Foo".into(), key: "FOO".into(), color: "proj-2".into(), repos: vec![], usecase: None, adopt: false };
+
+    // Without adopt: a distinguishable refusal, nothing written.
+    assert!(matches!(ws.create_project(&new, "app"), Err(Error::Conflict(_))));
+    assert_eq!(snapshot(&dir), before);
+
+    new.adopt = true;
+    assert_eq!(ws.create_project(&new, "app").unwrap(), "projects/foo");
+    let after = snapshot(&dir);
+    for file in &before {
+        assert!(after.contains(file), "{} changed", file.0.display());
+    }
+    let added: Vec<String> = after.iter().filter(|f| !before.contains(f)).map(|f| f.0.strip_prefix(&dir).unwrap().display().to_string()).collect();
+    assert_eq!(added, ["_project.md"]);
+    for sub in ["tasks", "docs", "decisions"] {
+        assert!(dir.join(sub).is_dir(), "{sub}");
+    }
+    assert_eq!(ws.index.project("FOO").unwrap().project.title, "Foo");
+    assert_eq!((&log_lines(&root).pop().unwrap()["kind"]).as_str(), Some("project.adopt"));
+    assert_eq!(fs::read(root.join(WR8)).unwrap(), wr8);
+
+    // A folder with _project.md already is a project, adopt or not.
+    let wr = root.join("projects/website-relaunch/_project.md");
+    let wr_before = fs::read(&wr).unwrap();
+    let n = NewProject { title: "Website Relaunch".into(), key: "WEB".into(), color: "proj-1".into(), repos: vec![], usecase: None, adopt: true };
+    assert!(matches!(ws.create_project(&n, "app"), Err(Error::Invalid(m)) if m.contains("already a project")));
+    assert_eq!(fs::read(&wr).unwrap(), wr_before);
 }
 
 #[test]
@@ -556,7 +612,7 @@ fn create_usecase_starts_at_first_phase() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
     let uc = Some(workly_core::project::NewUseCase { kind: "ai".into(), area: Some("Finance".into()) });
-    let new = NewProject { title: "Mail Sorting".into(), key: "MS".into(), color: "proj-1".into(), repos: vec![], usecase: uc };
+    let new = NewProject { title: "Mail Sorting".into(), key: "MS".into(), color: "proj-1".into(), repos: vec![], usecase: uc, adopt: false };
     let dir = ws.create_project(&new, "app").unwrap();
     let src = fs::read_to_string(root.join(dir).join("_project.md")).unwrap();
     let today = workly_core::today();
@@ -567,7 +623,7 @@ fn create_usecase_starts_at_first_phase() {
     assert_eq!(ws.index.project("MS").unwrap().project.usecase.as_ref().unwrap().step.as_deref(), Some("need"));
 
     let bad = Some(workly_core::project::NewUseCase { kind: "ml".into(), area: None });
-    let n = NewProject { title: "Other".into(), key: "OT".into(), color: "proj-2".into(), repos: vec![], usecase: bad };
+    let n = NewProject { title: "Other".into(), key: "OT".into(), color: "proj-2".into(), repos: vec![], usecase: bad, adopt: false };
     assert!(matches!(ws.create_project(&n, "app"), Err(Error::Invalid(_))));
     assert!(!root.join("projects/other").exists());
 }

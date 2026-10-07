@@ -77,6 +77,9 @@ pub struct NewProject {
     /// Set = the project starts as a use case at the first phase's default step.
     #[serde(default)]
     pub usecase: Option<NewUseCase>,
+    /// Use the folder when it already exists without `_project.md`; existing files stay untouched.
+    #[serde(default)]
+    pub adopt: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -125,6 +128,9 @@ impl Workspace {
     /// New project from `_templates/project.md` in `<new_projects_dir>/<slug>/`,
     /// with tasks/, docs/, notes/, decisions/, agent/AGENTS.md and `<key>.code-workspace`.
     /// Returns the project folder relative to the workspace.
+    ///
+    /// An existing folder: `Conflict` unless `new.adopt`, then only what is missing is
+    /// added. A folder that already has a `_project.md` is refused either way.
     pub fn create_project(&mut self, new: &NewProject, actor: &str) -> Result<String> {
         let title = new.title.trim();
         if title.is_empty() {
@@ -139,8 +145,17 @@ impl Workspace {
         }
         let dir = self.root.join(&self.config.new_projects_dir).join(ids::slug(title));
         let rel_dir = rel(&self.root, &dir);
-        if dir.exists() {
-            return Err(Error::Invalid(format!("folder {rel_dir} already exists")));
+        let exists = fs::symlink_metadata(&dir).is_ok();
+        if exists {
+            if !fs::symlink_metadata(&dir)?.is_dir() {
+                return Err(Error::Invalid(format!("{rel_dir} exists and is not a plain folder")));
+            }
+            if dir.join("_project.md").exists() {
+                return Err(Error::Invalid(format!("folder {rel_dir} is already a project")));
+            }
+            if !new.adopt {
+                return Err(Error::Conflict(format!("folder {rel_dir} already exists")));
+            }
         }
         let order = self.index.projects.iter().filter_map(|p| p.project.order).max().unwrap_or(0) + 1;
         let template = fs::read_to_string(self.root.join("_templates/project.md")).unwrap_or_else(|_| WORKSPACE_FILES[0].1.into());
@@ -166,10 +181,17 @@ impl Workspace {
             fs::create_dir_all(dir.join(sub))?;
         }
         fs::create_dir_all(dir.join("agent"))?;
-        atomic_write(&dir.join("agent/AGENTS.md"), &AGENTS_TEMPLATE.replace("{{title}}", title), &self.own)?;
-        write_code_workspace(&dir, &new.key, &new.repos, &self.own)?;
+        // Adopting: everything that is already there stays as it is.
+        let agents = dir.join("agent/AGENTS.md");
+        if !agents.exists() {
+            atomic_write(&agents, &AGENTS_TEMPLATE.replace("{{title}}", title), &self.own)?;
+        }
+        if !dir.join(format!("{}.code-workspace", new.key)).exists() {
+            write_code_workspace(&dir, &new.key, &new.repos, &self.own)?;
+        }
         atomic_write(&dir.join("_project.md"), &content, &self.own)?;
-        log(&self.root, &LogEntry::new(actor, "project.create", &new.key, None, Value::Null, rel_dir.clone().into()))?;
+        let kind = if exists { "project.adopt" } else { "project.create" };
+        log(&self.root, &LogEntry::new(actor, kind, &new.key, None, Value::Null, rel_dir.clone().into()))?;
         self.rescan();
         Ok(rel_dir)
     }

@@ -33,7 +33,8 @@ pub enum Error {
     NotFound(String),
     /// Not allowed for this actor, e.g. an agent setting `done`. CLI exit 3.
     InvalidTransition(String),
-    /// The file changed outside since the caller read it; nothing written.
+    /// The target is not in the state the caller expected (file changed outside,
+    /// project folder already exists); nothing written. CLI exit 1.
     Conflict(String),
     Io(std::io::Error),
 }
