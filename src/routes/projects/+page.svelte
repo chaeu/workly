@@ -83,6 +83,10 @@
   </div>
 </header>
 
+{#if !projects.length}
+  <p class="w-sub">No projects yet. A project is a folder with a _project.md, made here or from the template in Obsidian.</p>
+{/if}
+
 {#if live.length}
   <div class="w-tray list" role="list" ondragover={(e) => dragKey && e.preventDefault()} ondrop={drop}>
     {#each shown as p (p.key)}

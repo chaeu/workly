@@ -161,7 +161,11 @@
       {#if project.repos.length}
         <div class="w-caps group">Repos</div>
         {#each project.repos as r (r)}
-          <button class="file w-mono" title="Open in VS Code" onclick={() => openRepo(r)}>{r}</button>
+          {#if workspace.index?.missing_repos.some((m) => m.key === project.key && m.repo === r)}
+            <div class="file w-mono missing" title="This folder does not exist on this Mac">{r}<span class="desc">Not found on this Mac</span></div>
+          {:else}
+            <button class="file w-mono" title="Open in VS Code" onclick={() => openRepo(r)}>{r}</button>
+          {/if}
         {/each}
       {/if}
       {#if project.links.length}
@@ -238,6 +242,10 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .missing {
+    cursor: default;
+    color: var(--w-muted);
+  }
   .file:hover {
     background: color-mix(in srgb, var(--w-surface) 55%, transparent);
   }
@@ -249,12 +257,16 @@
   .add {
     color: var(--w-accent);
   }
-  .skill .desc {
+  .skill .desc,
+  .missing .desc {
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     color: var(--w-muted);
     font-size: var(--w-fs-micro);
+  }
+  .missing .desc {
+    color: var(--w-warn);
   }
   .file.w-mono {
     font-size: var(--w-fs-micro);

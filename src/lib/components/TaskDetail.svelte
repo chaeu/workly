@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { ask } from "@tauri-apps/plugin-dialog";
   import { renderMarkdown } from "$lib/markdown";
   import {
     workspace,
@@ -8,14 +7,13 @@
     readMarkdown,
     updateTaskField,
     addTaskUpdate,
-    deleteTask,
     moveTask,
     setFocus,
     openUrl,
     openInObsidian,
     openInVscode,
   } from "$lib/stores/workspace.svelte";
-  import { agentName, projectOf, shortDate, splitBody, today } from "$lib/tasks.svelte";
+  import { agentName, confirmDeleteTask, projectOf, shortDate, splitBody, today } from "$lib/tasks.svelte";
 
   let { id, mode, focusIds, onclose }: { id: string; mode: "popup" | "panel"; focusIds: string[]; onclose: () => void } = $props();
 
@@ -64,12 +62,7 @@
   }
 
   async function remove() {
-    if (!t) return;
-    const ok = await ask(`Move ${t.id} "${t.title}" to .workly/trash/?`, { title: "Delete task", kind: "warning", okLabel: "Delete" });
-    if (ok) {
-      await deleteTask(id);
-      onclose();
-    }
+    if (t && (await confirmDeleteTask(t))) onclose();
   }
 
   /** Move the file; the select then shows whatever the index says, also after a refused move. */

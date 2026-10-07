@@ -1,4 +1,5 @@
-import { workspace, type TaskEntry, type ProjectEntry } from "$lib/stores/workspace.svelte";
+import { ask } from "@tauri-apps/plugin-dialog";
+import { workspace, deleteTask, type TaskEntry, type ProjectEntry } from "$lib/stores/workspace.svelte";
 
 /** Ticks once a minute for the agent badge; nothing else runs while idle. */
 export const clock = $state({ now: Date.now() });
@@ -71,3 +72,23 @@ export function splitBody(body: string) {
     });
   return { description: [...lines.slice(0, head), ...lines.slice(end)].join("\n"), updates };
 }
+
+/** Quick add (⌘N) lives in the layout. `hint` is the project the board filter suggests. */
+export const quickAdd = $state({ open: false, project: null as string | null, hint: null as string | null });
+export function openQuickAdd(project: string | null = quickAdd.hint) {
+  quickAdd.project = project;
+  quickAdd.open = true;
+}
+
+/** Ask, then move the task to the trash. True when deleted. */
+export async function confirmDeleteTask(t: TaskEntry) {
+  const ok = await ask(`Move ${t.id} "${t.title}" to .workly/trash/?`, { title: "Delete task", kind: "warning", okLabel: "Delete" });
+  if (ok) await deleteTask(t.id);
+  return ok;
+}
+
+/** Typing in a field: single keys and ⌘⌫ belong to the field, not to shortcuts. */
+export const isTyping = (e: KeyboardEvent) => {
+  const el = e.target as HTMLElement;
+  return el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
+};

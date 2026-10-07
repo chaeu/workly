@@ -7,9 +7,14 @@
   import "$lib/styles/tokens.css";
   import "$lib/styles/components.css";
   import "$lib/styles/markdown.css";
+  import { tick } from "svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
+  import { invoke } from "@tauri-apps/api/core";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import QuickAdd from "$lib/components/QuickAdd.svelte";
+  import Shortcuts from "$lib/components/Shortcuts.svelte";
+  import { isTyping, openQuickAdd, quickAdd } from "$lib/tasks.svelte";
   import {
     workspace,
     startWorkspace,
@@ -20,6 +25,7 @@
     createWorkspace,
     openWorkspace,
     agentsEnabled,
+    problemCount,
   } from "$lib/stores/workspace.svelte";
 
   startWorkspace();
@@ -46,18 +52,57 @@
     getCurrentWindow().setTheme(theme === "system" ? null : theme);
   });
 
+  const problems = $derived(problemCount());
+  let showKeys = $state(false);
+
+  // Start time on stderr once the first screen with data is painted.
+  let reported = false;
+  $effect(() => {
+    if (!workspace.ready || reported) return;
+    reported = true;
+    tick().then(() => requestAnimationFrame(() => invoke("app_ready")));
+  });
+
+  /** ⌘K: the search field of this view, else the task search. */
+  async function focusSearch() {
+    const find = () => document.querySelector<HTMLInputElement>(".w-main .w-search input");
+    if (!find()) {
+      await goto("/tasks");
+      await tick();
+    }
+    find()?.focus();
+    find()?.select();
+  }
+
+  // Global shortcuts. Views handle their own Esc, Enter and ⌘⌫.
   function onkeydown(e: KeyboardEvent) {
-    if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
-    // Hidden debug view.
-    if (e.key === "0") {
+    if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey && !isTyping(e)) {
       e.preventDefault();
-      goto("/debug");
+      showKeys = true;
       return;
     }
-    const view = views[Number(e.key) - 1];
-    if (view) {
+    if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
+    const key = e.key.toLowerCase();
+    if (key === "0") {
+      // Hidden debug view.
       e.preventDefault();
-      goto(view.href);
+      goto("/debug");
+    } else if (key === ",") {
+      e.preventDefault();
+      goto("/settings");
+    } else if (key === "n" && workspace.index) {
+      e.preventDefault();
+      const here = workspace.index.projects.find((p) => p.key === page.params.key && p.status !== "archived");
+      if (!quickAdd.open) openQuickAdd(here?.key ?? quickAdd.hint);
+    } else if (key === "k" && workspace.index) {
+      e.preventDefault();
+      focusSearch();
+    } else {
+      const view = views[Number(key) - 1];
+      if (view) {
+        e.preventDefault();
+        goto(view.href);
+      }
     }
   }
 </script>
@@ -102,7 +147,17 @@
       </div>
     {/if}
     <div class="w-sidebar-foot">
-      <a class="w-nav-item" href="/settings" aria-current={page.url.pathname === "/settings" ? "page" : undefined}>Settings</a>
+      <div class="w-nav">
+        {#if problems}
+          <a class="w-nav-item" href="/problems" aria-current={page.url.pathname === "/problems" ? "page" : undefined}
+            ><span class="w-dot" style:--c="var(--w-danger)"></span>Problems<span class="w-count w-mono">{problems}</span></a
+          >
+        {/if}
+        {#if workspace.index}
+          <a class="w-nav-item" href="/trash" aria-current={page.url.pathname === "/trash" ? "page" : undefined}>Trash</a>
+        {/if}
+        <a class="w-nav-item" href="/settings" aria-current={page.url.pathname === "/settings" ? "page" : undefined}>Settings</a>
+      </div>
       <div class="w-mono foot-path" title={workspace.index?.root}>{workspace.index ? tilde(workspace.index.root) : "No workspace"}</div>
     </div>
   </nav>
@@ -117,12 +172,32 @@
     {#if !workspace.ready}
       <!-- first load, avoids flashing the onboarding -->
     {:else if workspace.index || page.url.pathname === "/settings"}
-      {@render children()}
+      <!-- A rendering error shows here instead of a blank window. -->
+      <svelte:boundary onerror={(e) => console.error(e)}>
+        {@render children()}
+        {#snippet failed(error, reset)}
+          <section class="crash" role="alert">
+            <h1 class="w-h2">This view hit an error</h1>
+            <p class="w-sub w-mono">{String(error)}</p>
+            <p class="w-sub">Your files are unchanged.</p>
+            <div class="onboarding">
+              <button class="w-btn" onclick={reset}>Try again</button>
+              <button class="w-btn" onclick={() => location.reload()}>Reload Workly</button>
+            </div>
+          </section>
+        {/snippet}
+      </svelte:boundary>
     {:else}
       <header class="w-page-head">
         <div>
-          <h1 class="w-h1">Welcome to Workly</h1>
-          <p class="w-sub">Pick a folder with your Markdown files, or an empty one. Workly adds _templates/ and .workly/ to it.</p>
+          {#if workspace.openError}
+            <h1 class="w-h1">Workspace not available</h1>
+            <p class="w-sub">{workspace.openError}</p>
+            <p class="w-sub">Was the folder moved, renamed or not synced yet? Open it again or pick another one.</p>
+          {:else}
+            <h1 class="w-h1">Welcome to Workly</h1>
+            <p class="w-sub">Pick a folder with your Markdown files, or an empty one. Workly adds _templates/ and .workly/ to it.</p>
+          {/if}
         </div>
       </header>
       <div class="onboarding">
@@ -142,6 +217,13 @@
     {/if}
   </main>
 </div>
+
+{#if quickAdd.open}
+  <QuickAdd project={quickAdd.project} onclose={() => (quickAdd.open = false)} />
+{/if}
+{#if showKeys}
+  <Shortcuts views={views.map((v) => v.label)} onclose={() => (showKeys = false)} />
+{/if}
 
 <style>
   :global(html, body) {
@@ -216,6 +298,15 @@
   .known-row {
     display: flex;
     gap: var(--w-s-3);
+  }
+  .crash {
+    display: flex;
+    flex-direction: column;
+    gap: var(--w-s-2);
+    user-select: text;
+  }
+  .crash p {
+    margin: 0;
   }
   .titlebar {
     position: fixed;

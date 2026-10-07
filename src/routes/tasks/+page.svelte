@@ -1,7 +1,6 @@
 <script lang="ts">
   import TaskCard from "$lib/components/TaskCard.svelte";
   import TaskDetail from "$lib/components/TaskDetail.svelte";
-  import QuickAdd from "$lib/components/QuickAdd.svelte";
   import {
     workspace,
     projColor,
@@ -12,7 +11,19 @@
     setFocus,
     type TaskEntry,
   } from "$lib/stores/workspace.svelte";
-  import { byBoardOrder, endOfWeek, isOverdue, projectOf, shortDate, startClock, today } from "$lib/tasks.svelte";
+  import {
+    byBoardOrder,
+    confirmDeleteTask,
+    endOfWeek,
+    isOverdue,
+    isTyping,
+    openQuickAdd,
+    projectOf,
+    quickAdd,
+    shortDate,
+    startClock,
+    today,
+  } from "$lib/tasks.svelte";
 
   startClock();
 
@@ -31,7 +42,6 @@
 
   let group = $state<"status" | "project">("status");
   let openId = $state<string | null>(null);
-  let adding = $state(false);
   const detailMode = $derived(workspace.settings?.task_detail ?? "popup");
 
   // ------------------------------------------------------------- filters
@@ -41,7 +51,6 @@
   let fPrio = $state<number | null>(null);
   let fTag = $state("");
   let fDue = $state<"" | "overdue" | "week">("");
-  let searchEl: HTMLInputElement;
   const allTags = $derived([...new Set(tasks.flatMap((t) => t.tags))].sort());
   const filtering = $derived(!!(query.trim() || fProject || fPrio || fTag || fDue));
 
@@ -57,6 +66,11 @@
   }
   const matchCount = $derived(tasks.filter(matches).length);
   const clearFilters = () => ([query, fProject, fPrio, fTag, fDue] = ["", "", null, "", ""]);
+  // ⌘N anywhere on this board suggests the filtered project.
+  $effect(() => {
+    quickAdd.hint = fProject && fProject !== "inbox" ? fProject : null;
+    return () => (quickAdd.hint = null);
+  });
 
   // --------------------------------------------------------------- focus
 
@@ -83,6 +97,7 @@
   const overLimit = (s: { id: string; wip_limit: number | null }) => !!s.wip_limit && tasks.filter((t) => t.status === s.id).length > s.wip_limit;
   const openCount = $derived(tasks.filter((t) => t.status !== "done").length);
   const subline = $derived(
+    !tasks.length ? "No tasks yet. ⌘N adds one." :
     [`${openCount} open`, ...statuses.filter((s) => s.id === "doing" || s.id === "review").map((s) => `${cellTasks(cellKey(s.id)).length} ${s.label.toLowerCase()}`)].join(" · "),
   );
 
@@ -193,20 +208,21 @@
 
   // ------------------------------------------------------------ keyboard
 
+  // ⌘N and ⌘K are global (layout).
   function onkeydown(e: KeyboardEvent) {
     const meta = e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey;
-    if (meta && e.key === "n") {
-      e.preventDefault();
-      adding = true;
-    } else if (meta && e.key === "k") {
-      e.preventDefault();
-      searchEl.focus();
-      searchEl.select();
+    if (meta && e.key === "Backspace" && !isTyping(e)) {
+      // The open card, else the focused card.
+      const id = openId ?? (e.target as HTMLElement).closest?.<HTMLElement>("[data-id]")?.dataset.id;
+      const t = id ? tasks.find((x) => x.id === id) : undefined;
+      if (t) {
+        e.preventDefault();
+        confirmDeleteTask(t).then((ok) => ok && openId === t.id && (openId = null));
+      }
     } else if (e.key === "Escape") {
       if (ghost) endDrag();
-      else if (adding) adding = false;
       else if (openId) openId = null;
-      else if (document.activeElement === searchEl) query = "";
+      else if ((e.target as HTMLElement).matches?.("input[type=search]")) query = "";
     } else if (e.key === "Enter" || e.key === " ") {
       const el = (e.target as HTMLElement).closest?.<HTMLElement>(".w-card, .w-focus-item");
       if (el?.dataset.id && e.target === el) {
@@ -244,7 +260,7 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" class="lens"
         ><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg
       >
-      <input bind:this={searchEl} bind:value={query} type="search" placeholder="Search id or title" aria-label="Search tasks (⌘K)" />
+      <input bind:value={query} type="search" placeholder="Search id or title" aria-label="Search tasks (⌘K)" />
       <kbd class="w-mono">⌘K</kbd>
     </label>
     <div class="w-seg" role="group" aria-label="Grouping">
@@ -254,7 +270,7 @@
     {#if focusHidden}
       <button type="button" class="w-btn" onclick={() => saveSettings({ focus_hidden: false })}>Show focus · {focus.length}</button>
     {/if}
-    <button type="button" class="w-btn w-btn--primary" onclick={() => (adding = true)}>+ New task</button>
+    <button type="button" class="w-btn w-btn--primary" onclick={() => openQuickAdd()}>+ New task</button>
   </div>
 </header>
 
@@ -355,10 +371,6 @@
   {#key openId}
     <TaskDetail id={openId} mode={detailMode} {focusIds} onclose={() => (openId = null)} />
   {/key}
-{/if}
-
-{#if adding}
-  <QuickAdd project={fProject && fProject !== "inbox" ? fProject : null} onclose={() => (adding = false)} />
 {/if}
 
 <style>

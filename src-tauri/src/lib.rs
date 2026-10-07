@@ -2,28 +2,37 @@ use serde::Serialize;
 use serde_json::Value;
 use std::path::Path;
 use std::process::Command;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
 use workly_core::agent::AgentContext;
 use workly_core::model::{Config, Process};
-use workly_core::project::{NewProject, init_workspace, is_workspace};
+use workly_core::project::{MissingRepo, NewProject, init_workspace, is_workspace};
 use workly_core::scan::Index;
 use workly_core::settings::{self, Settings, expand_home};
+use workly_core::trash::TrashItem;
 use workly_core::watch::Watcher;
 use workly_core::Workspace;
 
 const ACTOR: &str = "app";
 
+/// Process start, for the one "ready" line on stderr.
+static STARTED: OnceLock<Instant> = OnceLock::new();
+
 #[derive(Default)]
 struct AppState {
     ws: Mutex<Option<Workspace>>,
     watcher: Mutex<Option<Watcher>>,
+    /// Why the workspace from the settings did not open at startup.
+    open_error: Mutex<Option<String>>,
 }
 
 /// Run `f` on the open workspace; errors become strings for the frontend.
 fn with_ws<T>(state: &AppState, f: impl FnOnce(&mut Workspace) -> workly_core::Result<T>) -> Result<T, String> {
     let mut guard = state.ws.lock().unwrap();
-    let ws = guard.as_mut().ok_or("No workspace open.")?;
+    let Some(ws) = guard.as_mut() else {
+        return Err(state.open_error.lock().unwrap().clone().unwrap_or_else(|| "No workspace open.".into()));
+    };
     f(ws).map_err(|e| e.to_string())
 }
 
@@ -41,6 +50,7 @@ struct Snapshot {
     root: String,
     config: Config,
     process: Option<Process>,
+    missing_repos: Vec<MissingRepo>,
     #[serde(flatten)]
     index: Index,
 }
@@ -49,8 +59,20 @@ struct Snapshot {
 fn get_index(state: State<AppState>) -> Result<Snapshot, String> {
     with_ws(&state, |ws| {
         let root = ws.root().display().to_string();
-        Ok(Snapshot { root, config: ws.config.clone(), process: ws.process.clone(), index: ws.index.clone() })
+        let missing_repos = ws.missing_repos();
+        Ok(Snapshot { root, config: ws.config.clone(), process: ws.process.clone(), missing_repos, index: ws.index.clone() })
     })
+}
+
+/// Called once by the frontend after its first render with data.
+#[tauri::command]
+fn app_ready(state: State<AppState>) {
+    static ONCE: OnceLock<()> = OnceLock::new();
+    if ONCE.set(()).is_ok() {
+        let tasks = state.ws.lock().unwrap().as_ref().map_or(0, |ws| ws.index.tasks.len());
+        let ms = STARTED.get().map_or(0, |t| t.elapsed().as_millis());
+        eprintln!("workly: ready after {ms} ms ({tasks} tasks)");
+    }
 }
 
 // ------------------------------------------------------------------ tasks
@@ -93,6 +115,17 @@ fn delete_task(app: AppHandle, state: State<AppState>, id: String) -> Result<(),
 #[tauri::command]
 fn restore(app: AppHandle, state: State<AppState>, path: String) -> Result<(), String> {
     changed(&app, with_ws(&state, |ws| ws.restore(&path, ACTOR)))
+}
+
+#[tauri::command]
+fn trash_items(state: State<AppState>) -> Result<Vec<TrashItem>, String> {
+    with_ws(&state, |ws| Ok(ws.trash_items()))
+}
+
+/// Moves the trash contents to the macOS Trash; returns how many items.
+#[tauri::command]
+fn empty_trash(app: AppHandle, state: State<AppState>) -> Result<usize, String> {
+    changed(&app, with_ws(&state, |ws| ws.empty_trash(ACTOR)))
 }
 
 // --------------------------------------------------------------- projects
@@ -149,10 +182,18 @@ fn create_agents_md(app: AppHandle, state: State<AppState>, key: String) -> Resu
     changed(&app, with_ws(&state, |ws| ws.create_agents_md(&key, ACTOR)))
 }
 
+#[derive(Serialize)]
+struct CliLink {
+    target: String,
+    /// False when the target is gone, e.g. a removed dev build.
+    ok: bool,
+}
+
 /// Where `~/.local/bin/wly` points, if it is a link.
 #[tauri::command]
-fn cli_link() -> Option<String> {
-    std::fs::read_link(settings::cli_link_path()).ok().map(|p| p.display().to_string())
+fn cli_link() -> Option<CliLink> {
+    let target = std::fs::read_link(settings::cli_link_path()).ok()?;
+    Some(CliLink { ok: target.is_file(), target: target.display().to_string() })
 }
 
 /// Link `~/.local/bin/wly` to this binary, which runs the CLI when started as `wly`.
@@ -189,11 +230,19 @@ fn open_url(url: String) -> Result<(), String> {
     open(&[&url])
 }
 
-/// Workspace-relative path in VS Code.
+/// Workspace-relative path in VS Code, at `line` if given.
 #[tauri::command]
-fn open_in_vscode(state: State<AppState>, path: String) -> Result<(), String> {
+fn open_in_vscode(state: State<AppState>, path: String, line: Option<u32>) -> Result<(), String> {
     let abs = with_ws(&state, |ws| ws.resolve(&path))?;
-    open(&["-b", VSCODE, &abs.to_string_lossy()])
+    match line {
+        None => open(&["-b", VSCODE, &abs.to_string_lossy()]),
+        Some(line) => {
+            let enc: String = (abs.to_string_lossy().bytes())
+                .map(|b| if b.is_ascii_alphanumeric() || b"-._~/".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+                .collect();
+            open(&[&format!("vscode://file{enc}:{line}")])
+        }
+    }
 }
 
 /// The project's `<key>.code-workspace` in VS Code (written first if missing).
@@ -244,6 +293,7 @@ fn open_workspace(app: AppHandle, path: String) -> Result<(), String> {
         init_workspace(path).map_err(|e| e.to_string())?;
     }
     load_workspace(&app, path)?;
+    *app.state::<AppState>().open_error.lock().unwrap() = None;
     let file = settings::default_path();
     let mut s = Settings::load(&file).map_err(|e| e.to_string())?;
     s.activate(path);
@@ -280,6 +330,7 @@ fn startup_workspace() -> Option<String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    STARTED.get_or_init(Instant::now);
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
@@ -288,6 +339,7 @@ pub fn run() {
                 && let Err(e) = load_workspace(app.handle(), Path::new(&path))
             {
                 eprintln!("workly: {e}");
+                *app.state::<AppState>().open_error.lock().unwrap() = Some(e);
             }
             Ok(())
         })
@@ -301,6 +353,9 @@ pub fn run() {
             move_task,
             delete_task,
             restore,
+            trash_items,
+            empty_trash,
+            app_ready,
             suggest_key,
             create_project,
             update_project_field,

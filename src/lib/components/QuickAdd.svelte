@@ -9,6 +9,9 @@
   let project = $state(initial ?? "");
   let priority = $state(2);
   let busy = $state(false);
+  // `autofocus` does not fire when the layout mounts this later.
+  let input: HTMLInputElement;
+  $effect(() => input.focus());
 
   async function save(e: SubmitEvent) {
     e.preventDefault();
@@ -21,11 +24,23 @@
 </script>
 
 <div class="w-scrim" role="presentation" onclick={() => onclose()}></div>
-<div class="w-modal" role="dialog" aria-modal="true" aria-labelledby="qa-title">
+<!-- Esc closes only this dialog, not a card below it. -->
+<div
+  class="w-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="qa-title"
+  tabindex="-1"
+  onkeydown={(e) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      onclose();
+    }
+  }}
+>
   <form onsubmit={save}>
     <h2 class="w-h2" id="qa-title">New task</h2>
-    <!-- svelte-ignore a11y_autofocus -->
-    <input bind:value={title} autofocus placeholder="What needs doing?" aria-label="Title" />
+    <input bind:this={input} bind:value={title} placeholder="What needs doing?" aria-label="Title" />
     <div class="row">
       <select bind:value={project} aria-label="Project">
         <option value="">Inbox</option>

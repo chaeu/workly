@@ -90,6 +90,8 @@ export type Snapshot = {
   root: string;
   config: { task_statuses: { id: string; label: string; wip_limit: number | null }[] };
   process: Process | null;
+  /** Repos of live projects that are not folders on this Mac. */
+  missing_repos: { key: string; repo: string }[];
   projects: ProjectEntry[];
   tasks: TaskEntry[];
   trash: string[];
@@ -111,6 +113,10 @@ export type Settings = {
 export type AgentFile = { path: string; content: string };
 export type Skill = { name: string; description: string; path: string };
 export type AgentContext = { global: AgentFile | null; project: AgentFile | null; skills: Skill[] };
+// Mirrors trash::TrashItem; `path` is relative to the trash and to the workspace.
+export type TrashItem = { path: string; kind: "task" | "project" | "file"; id: string; title: string; deleted_at: string | null };
+/** `~/.local/bin/wly`: null = no link; ok = false when its target is gone. */
+export type CliLink = { target: string; ok: boolean } | null;
 
 export const workspace = $state({
   index: null as Snapshot | null,
@@ -120,6 +126,10 @@ export const workspace = $state({
   error: null as string | null,
   /** True once the first load finished, so the UI does not flash the onboarding. */
   ready: false,
+  /** Why no workspace is open, e.g. the saved folder is gone. */
+  openError: null as string | null,
+  /** undefined until checked. */
+  cli: undefined as CliLink | undefined,
   reloads: 0,
   loadedAt: "",
 });
@@ -129,9 +139,10 @@ async function load() {
     workspace.index = await invoke<Snapshot>("get_index");
     workspace.reloads++;
     workspace.loadedAt = new Date().toLocaleTimeString();
-  } catch {
-    // No workspace open: the layout shows the onboarding.
+  } catch (e) {
+    // No workspace open: the layout shows the onboarding, with the reason if there is one.
     workspace.index = null;
+    workspace.openError = String(e) === "No workspace open." ? null : String(e);
   }
   workspace.ready = true;
 }
@@ -146,8 +157,11 @@ export async function startWorkspace() {
   } catch (e) {
     workspace.error = String(e);
   }
+  // Never fail silently: a rejected promise nobody caught shows as the banner.
+  window.addEventListener("unhandledrejection", (e) => (workspace.error = String(e.reason)));
   await load();
   listen("workspace-changed", load);
+  refreshCli();
 }
 
 /** Run a command; errors land in `workspace.error`. The index reloads via the event. */
@@ -179,6 +193,9 @@ export const addTaskUpdate = (id: string, text: string) => run("add_task_update"
 export const moveTask = (id: string, project: string | null) => run("move_task", { id, project });
 export const deleteTask = (id: string) => run("delete_task", { id });
 export const restore = (path: string) => run("restore", { path });
+export const trashItems = () => invoke<TrashItem[]>("trash_items");
+/** Moves everything to the macOS Trash; returns the item count. */
+export const emptyTrash = () => run<number>("empty_trash");
 
 // --------------------------------------------------------------- projects
 
@@ -232,20 +249,31 @@ export const agentsEnabled = () => workspace.settings?.agents_enabled !== false;
 
 export const agentContext = (key: string | null) => invoke<AgentContext>("agent_context", { key });
 export const createAgentsMd = (key: string) => run<string>("create_agents_md", { key });
-/** Target of ~/.local/bin/wly, or null. */
-export const cliLink = () => invoke<string | null>("cli_link");
+export async function refreshCli() {
+  workspace.cli = await invoke<CliLink>("cli_link").catch(() => null);
+}
 /** Throws, so Settings can show the reason next to the button. */
 export const installCli = () => invoke<string>("install_cli");
 
 // ------------------------------------------------------- open elsewhere
 
 export const openUrl = (url: string) => run("open_url", { url });
-export const openInVscode = (path: string) => run("open_in_vscode", { path });
+export const openInVscode = (path: string, line: number | null = null) => run("open_in_vscode", { path, line });
 export const openProjectInVscode = (key: string) => run("open_project_in_vscode", { key });
 export const openRepo = (repo: string) => run("open_repo", { repo });
 export const reveal = (path: string) => run("reveal", { path });
 export const openInObsidian = (path: string) =>
   openUrl(`obsidian://open?path=${encodeURIComponent(`${workspace.index?.root}/${path}`)}`);
+
+// --------------------------------------------------------------- problems
+
+/** Broken files, repos missing on this Mac, and a missing or broken CLI while agent features are on. */
+export function problemCount() {
+  const idx = workspace.index;
+  if (!idx) return 0;
+  const cli = agentsEnabled() && workspace.cli !== undefined && !workspace.cli?.ok ? 1 : 0;
+  return idx.errors.length + idx.missing_repos.length + cli;
+}
 
 // --------------------------------------------------------------- settings
 
@@ -272,6 +300,7 @@ export async function openWorkspace(path: string) {
     await invoke("open_workspace", { path });
     workspace.settings = await invoke<Settings>("get_settings");
     workspace.error = null;
+    workspace.openError = null;
   } catch (e) {
     workspace.error = String(e);
   }

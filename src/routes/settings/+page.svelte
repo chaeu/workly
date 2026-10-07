@@ -9,9 +9,10 @@
     tilde,
     expandHome,
     agentsEnabled,
-    cliLink,
+    refreshCli,
     installCli,
   } from "$lib/stores/workspace.svelte";
+  import { getVersion } from "@tauri-apps/api/app";
 
   const themes = ["system", "light", "dark"] as const;
   const detailModes = [["popup", "Popup"], ["panel", "Side panel"]] as const;
@@ -25,20 +26,20 @@
     if (typeof path === "string") await saveSettings({ repos_dir: tilde(path) });
   }
 
-  let cli = $state<string | null>(null);
+  const cli = $derived(workspace.cli);
   let cliError = $state<string | null>(null);
-  $effect(() => {
-    if (agentsEnabled()) cliLink().then((t) => (cli = t));
-  });
   async function install() {
     try {
       await installCli();
-      cli = await cliLink();
+      await refreshCli();
       cliError = null;
     } catch (e) {
       cliError = String(e);
     }
   }
+
+  let version = $state("");
+  getVersion().then((v) => (version = v));
 
   const remove = (path: string) => saveSettings({ workspaces: settings!.workspaces.filter((w) => w.path !== path) });
 </script>
@@ -50,7 +51,13 @@
   </div>
 </header>
 
-{#if settings}
+{#if !settings}
+  <section class="panel" role="alert">
+    <h2 class="w-h2">Settings could not be read</h2>
+    <p class="w-sub">{workspace.error ?? "Unknown error."}</p>
+    <p class="w-sub">Fix or delete the file, then restart Workly. Nothing is saved until it can be read, so it is never overwritten.</p>
+  </section>
+{:else}
   <section class="panel">
     <div class="panel-head">
       <h2 class="w-h2">Workspaces</h2>
@@ -138,12 +145,20 @@
     {#if agentsEnabled()}
       <div class="row">
         <span class="name">wly</span>
-        <span class="w-mono path" title={cli ?? undefined}>{cli ? `~/.local/bin/wly → ${tilde(cli)}` : "Not installed. Links ~/.local/bin/wly to this app, no admin rights needed."}</span>
+        <span class="w-mono path" class:broken={cli && !cli.ok} title={cli?.target}
+          >{!cli
+            ? "Not installed. Links ~/.local/bin/wly to this app, no admin rights needed."
+            : cli.ok
+              ? `~/.local/bin/wly → ${tilde(cli.target)}`
+              : `Broken: ~/.local/bin/wly → ${tilde(cli.target)}, which no longer exists`}</span
+        >
         <button class="w-btn" onclick={install}>{cli ? "Reinstall CLI" : "Install CLI"}</button>
       </div>
       {#if cliError}<p class="w-sub cli-error">{cliError}</p>{/if}
     {/if}
   </section>
+
+  <p class="w-sub version">Workly <span class="w-mono">{version}</span> · About: Workly menu → About Workly · Shortcuts: press ?</p>
 {/if}
 
 <style>
@@ -184,8 +199,12 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .cli-error {
+  .cli-error,
+  .broken {
     color: var(--w-danger);
+  }
+  .version {
+    margin: 0;
   }
   .current {
     color: var(--w-accent);
