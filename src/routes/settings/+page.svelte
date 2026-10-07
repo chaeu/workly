@@ -132,6 +132,32 @@
   <section class="panel">
     <div class="panel-head">
       <div>
+        <h2 class="w-h2">Hours per FTE per year</h2>
+        <p class="w-sub">Turns the savings of a use case into FTE. Per Mac.</p>
+      </div>
+      <div class="w-toolbar">
+        {#key settings.fte_hours_per_year}
+          <input
+            class="fte-hours"
+            type="number"
+            min="1"
+            step="1"
+            value={settings.fte_hours_per_year ?? 1720}
+            aria-label="Hours per FTE per year"
+            onchange={(e) => {
+              const n = e.currentTarget.valueAsNumber;
+              if (n > 0) saveSettings({ fte_hours_per_year: n });
+              else e.currentTarget.value = String(settings.fte_hours_per_year ?? 1720);
+            }}
+          />
+        {/key}
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
         <h2 class="w-h2">Agent features</h2>
         <p class="w-sub">Agents view, agent fields on cards and tasks, agent files in projects. Off hides them; files and wly keep working.</p>
       </div>
@@ -209,5 +235,20 @@
   .current {
     color: var(--w-accent);
     padding: 0 14px;
+  }
+  .fte-hours {
+    width: 90px;
+    box-sizing: border-box;
+    border: 1px solid var(--w-line);
+    border-radius: var(--w-r-sm);
+    padding: 4px 8px;
+    background: var(--w-surface);
+    font-size: var(--w-fs-small);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .fte-hours:focus {
+    border-color: var(--w-accent);
+    outline: none;
   }
 </style>
