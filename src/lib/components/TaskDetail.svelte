@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { grow } from "$lib/grow";
   import { renderMarkdown } from "$lib/markdown";
   import {
     workspace,
@@ -7,13 +8,14 @@
     readMarkdown,
     updateTaskField,
     addTaskUpdate,
+    setDescription,
     moveTask,
     setFocus,
     openUrl,
     openInObsidian,
     openInVscode,
   } from "$lib/stores/workspace.svelte";
-  import { agentName, confirmDeleteTask, projectOf, shortDate, splitBody, today } from "$lib/tasks.svelte";
+  import { agentName, confirmDeleteTask, projectOf, rawDescription, shortDate, splitBody, today } from "$lib/tasks.svelte";
 
   let { id, mode, focusIds, onclose }: { id: string; mode: "popup" | "panel"; focusIds: string[]; onclose: () => void } = $props();
 
@@ -76,12 +78,57 @@
   const toggleFocus = () => !focusFull && setFocus(focusAt >= 0 ? focusIds.filter((x) => x !== id) : [...focusIds, id]);
 
   // Links in the description open outside; they never navigate the app window.
+  // Any other click (not ending a text selection) edits the description.
   function onDescClick(e: MouseEvent) {
     const a = (e.target as HTMLElement).closest("a");
-    if (!a) return;
+    if (!a) {
+      if (!getSelection()?.toString()) editDesc();
+      return;
+    }
     e.preventDefault();
     const href = a.getAttribute("href") ?? "";
     if (/^(https?|mailto):/i.test(href)) openUrl(href);
+  }
+
+  // Description edit: raw Markdown in a textarea. `expected` is the file's
+  // description when editing started; core refuses the save if it changed since.
+  let draft = $state<string | null>(null);
+  let expected = "";
+  let conflict = $state(false);
+  let saving = false;
+  function editDesc() {
+    expected = rawDescription(body);
+    draft = expected.replace(/\r\n/g, "\n");
+    conflict = false;
+  }
+  function cancelDesc() {
+    draft = null;
+    conflict = false;
+  }
+  async function saveDesc() {
+    if (draft === null || conflict || saving) return;
+    if (draft.trimEnd() === expected.replace(/\r\n/g, "\n")) return cancelDesc();
+    saving = true;
+    const ok = await setDescription(id, draft, expected);
+    saving = false;
+    if (ok) draft = null;
+    else if (ok === false) conflict = true;
+  }
+  function onDescKey(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      // Cancel the edit only; the card stays open.
+      e.preventDefault();
+      e.stopPropagation();
+      cancelDesc();
+    } else if (e.key === "Enter" && e.metaKey) {
+      e.preventDefault();
+      saveDesc();
+    }
+  }
+  /** Caret at the end, where most edits add text. */
+  function focus(el: HTMLTextAreaElement) {
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
   }
 
   const stamp = (iso: string | null) =>
@@ -135,12 +182,39 @@
 
     <div class="t-body">
       <div class="t-desc">
-        {#if parts.description.trim()}
+        {#if draft !== null}
+          <textarea
+            class="t-desc-edit"
+            bind:value={draft}
+            aria-label="Description (Markdown)"
+            placeholder="Description and acceptance criteria"
+            use:grow
+            use:focus
+            onblur={saveDesc}
+            onkeydown={onDescKey}
+          ></textarea>
+          {#if conflict}
+            <div class="t-conflict" role="alert">
+              Changed outside – reload?
+              <button type="button" class="w-btn w-btn--quiet" onclick={cancelDesc}>Reload</button>
+            </div>
+          {/if}
+        {:else if parts.description.trim()}
           <!-- Sanitised by DOMPurify in renderMarkdown. -->
-          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <div class="md" onclick={onDescClick}>{@html html}</div>
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+          <div
+            class="md t-desc-view"
+            role="group"
+            aria-label="Description, click or press Enter to edit"
+            tabindex="0"
+            title="Click to edit"
+            onclick={onDescClick}
+            onkeydown={(e) => e.key === "Enter" && e.target === e.currentTarget && editDesc()}
+          >
+            {@html html}
+          </div>
         {:else}
-          <p class="w-sub">No description.</p>
+          <button type="button" class="t-desc-add" onclick={editDesc}>Add description</button>
         {/if}
         <div class="t-edit">
           <button type="button" class="w-btn w-btn--quiet" onclick={() => openInObsidian(t.path)}>Edit in Obsidian</button>
@@ -405,6 +479,62 @@
   }
   .t-desc .md :global(:first-child) {
     margin-top: 0;
+  }
+  .t-desc-view {
+    margin: -4px -8px;
+    padding: 4px 8px;
+    border-radius: var(--w-r-sm);
+    cursor: text;
+  }
+  .t-desc-view:hover {
+    background: var(--w-sunk);
+  }
+  .t-desc-view:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--w-accent-soft);
+  }
+  .t-desc-add {
+    align-self: flex-start;
+    margin-left: -8px;
+    border: 0;
+    border-radius: var(--w-r-sm);
+    padding: 4px 8px;
+    background: none;
+    color: var(--w-muted);
+    font-size: var(--w-fs-body);
+    cursor: text;
+  }
+  .t-desc-add:hover {
+    background: var(--w-sunk);
+    color: var(--w-ink);
+  }
+  .t-desc-edit {
+    width: calc(100% + 16px);
+    box-sizing: border-box;
+    margin: -4px -8px;
+    min-height: 120px;
+    border: 0;
+    border-radius: var(--w-r-sm);
+    padding: 4px 8px;
+    background: var(--w-sunk);
+    box-shadow: 0 0 0 2px var(--w-accent-soft);
+    resize: none;
+    overflow: hidden;
+    font-size: var(--w-fs-body);
+    line-height: 1.5;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .t-desc-edit:focus {
+    outline: none;
+  }
+  .t-conflict {
+    display: flex;
+    align-items: center;
+    gap: var(--w-s-2);
+    margin-top: var(--w-s-1);
+    color: var(--w-warn);
+    font-size: var(--w-fs-small);
   }
   .t-edit {
     display: flex;

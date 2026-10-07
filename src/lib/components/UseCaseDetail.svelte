@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { grow } from "$lib/grow";
   import { renderMarkdown } from "$lib/markdown";
   import { workspace, readMarkdown, updateProjectField, updateTaskField, createTask, type Process } from "$lib/stores/workspace.svelte";
   import { daysInStep, isStale, label, nextMoves, phaseIndex, statusColor, stepName, stepOf, type UC } from "$lib/usecases.svelte";
@@ -54,17 +55,6 @@
   async function addTask() {
     if (!newTask.trim()) return;
     if (await createTask(newTask.trim(), key)) newTask = "";
-  }
-
-  /** Grow a textarea with its content (no field-sizing in every WebKit yet). */
-  function grow(el: HTMLTextAreaElement) {
-    const fit = () => {
-      el.style.height = "auto";
-      el.style.height = `${el.scrollHeight}px`;
-    };
-    fit();
-    el.addEventListener("input", fit);
-    return { destroy: () => el.removeEventListener("input", fit) };
   }
 </script>
 

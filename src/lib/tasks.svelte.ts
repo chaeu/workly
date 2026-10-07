@@ -73,6 +73,12 @@ export function splitBody(body: string) {
   return { description: [...lines.slice(0, head), ...lines.slice(end)].join("\n"), updates };
 }
 
+/** The editable description: body before the `## Updates` line, raw (same rule as core's description_end). */
+export function rawDescription(body: string) {
+  const m = /^## Updates[^\S\n]*$/m.exec(body);
+  return (m ? body.slice(0, m.index) : body).trimEnd();
+}
+
 /** Quick add (⌘N) lives in the layout. `hint` is the project the board filter suggests. */
 export const quickAdd = $state({ open: false, project: null as string | null, hint: null as string | null });
 export function openQuickAdd(project: string | null = quickAdd.hint) {
