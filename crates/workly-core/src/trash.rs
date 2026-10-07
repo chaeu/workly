@@ -2,7 +2,7 @@
 
 use crate::model::{Project, Task, parse_file};
 use crate::write::{LogEntry, OwnWrites, atomic_write, log, own_rename};
-use crate::{Error, Result, Workspace, patch};
+use crate::{Error, Result, Workspace, ids, patch};
 use serde::Serialize;
 use serde_json::Value;
 use std::fs;
@@ -114,7 +114,17 @@ impl Workspace {
         }
         system_trash(&paths)?;
         remove_empty_dirs(&self.trash_dir());
-        log(&self.root, &LogEntry::new(actor, "trash.empty", "", None, Value::Null, items.len().into()))?;
+        // One line per project key and task id, so next_id keeps them taken,
+        // also for files that never went through the app.
+        let projects = items.iter().filter(|i| i.kind == "project").map(|i| (i.id.clone(), i.path.clone()));
+        let tasks = self.index.trash.iter().filter_map(|p| {
+            let (key, n) = ids::split_id(p.rsplit('/').next()?)?;
+            Some((format!("{key}-{n}"), p.clone()))
+        });
+        for (id, path) in projects.chain(tasks).collect::<Vec<_>>() {
+            let from = Value::from(format!(".workly/trash/{path}"));
+            log(&self.root, &LogEntry::new(actor, "trash.empty", &id, Some("path"), from, Value::Null))?;
+        }
         self.rescan();
         Ok(items.len())
     }

@@ -40,7 +40,7 @@ docs/                 spec, design, prototypes, prompts
 3. **All file logic lives in `workly-core`.** `src-tauri` and `wly` only call it. The frontend never touches the filesystem directly.
 4. **Design tokens only.** No hex colors, no ad-hoc px values for colors, radii, shadows or fonts in components. Use `var(--w-*)`. If a token is missing, add it to `tokens.css` and say so.
 5. **Atomic writes.** Write to a temp file in the same folder, then rename. Ignore the watcher event caused by our own write.
-6. **Delete = move to `.workly/trash/`** with the relative path preserved. Never `rm`.
+6. **Delete = move to `.workly/trash/`** with the relative path preserved. Never `rm`. Empty trash moves to the macOS Trash.
 7. **Log every change** to `.workly/log/YYYY-MM.jsonl`.
 8. **Never write to `fixtures/workspace` in tests.** Copy it to a temp dir first (`tempfile`).
 9. **No company data.** Only neutral sample data in the repo.
@@ -66,7 +66,9 @@ cargo clippy --workspace -- -D warnings
 cargo run -p wly -- --version
 cargo install --path crates/wly         # wly CLI to ~/.cargo/bin (or Settings → Install CLI: ~/.local/bin/wly -> app binary)
 WORKLY_WORKSPACE=/tmp/workly-dev cargo run -q -p wly -- task show WR-5   # CLI against the dev fixture copy; flags in docs/CLI.md
-pnpm tauri build                        # -> target/release/bundle/macos/Workly.app
+pnpm tauri build                        # -> target/release/bundle/macos/Workly.app (ad-hoc signed)
+scripts/install.sh [--no-build]         # build, copy to /Applications, link ~/.local/bin/wly
+scripts/perf.sh                         # 500 generated tasks in /tmp/workly-perf: scan timing, app start, idle CPU (needs the release build)
 pnpm tauri icon docs/design/icon/workly-icon-1024.png  # regenerate icons (delete non-macOS output)
 ```
 

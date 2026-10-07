@@ -245,10 +245,11 @@ fn open_in_vscode(state: State<AppState>, path: String, line: Option<u32>) -> Re
     }
 }
 
-/// The project's `<key>.code-workspace` in VS Code (written first if missing).
+/// The project's `<key>.code-workspace` in VS Code, rewritten first: its
+/// absolute paths belong to this Mac, the synced file may come from another.
 #[tauri::command]
 fn open_project_in_vscode(state: State<AppState>, key: String) -> Result<(), String> {
-    let file = with_ws(&state, |ws| ws.code_workspace(&key, false))?;
+    let file = with_ws(&state, |ws| ws.code_workspace(&key, true))?;
     open(&["-b", VSCODE, &file.to_string_lossy()])
 }
 
