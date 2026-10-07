@@ -169,7 +169,7 @@
           {#if uc.savings.length || draft}
             <table>
               <thead>
-                <tr><th>Activity</th><th class="num">Count</th><th>Per</th><th class="num">Minutes</th><th class="num">h/yr</th><th></th></tr>
+                <tr><th>Activity</th><th class="num">Count</th><th class="per">Per</th><th class="num">Minutes</th><th class="num">h/yr</th><th></th></tr>
               </thead>
               <tbody>
                 {#each [...uc.savings, ...(draft ? [draft] : [])] as s, i (i)}
@@ -178,9 +178,9 @@
                   <!-- {#key} resets the inputs to the file's values after every reload. -->
                   {#key workspace.reloads}
                     <tr>
-                      <td><input value={s.what ?? ""} placeholder="What is done by hand?" aria-label="Activity" onchange={cell(r, "what")} {@attach (el) => { if (r < 0 && !s.what) el.focus(); }} /></td>
+                      <td><input value={s.what ?? ""} title={s.what ?? ""} placeholder="What is done by hand?" aria-label="Activity" onchange={cell(r, "what")} {@attach (el) => { if (r < 0 && !s.what) el.focus(); }} /></td>
                       <td class="num"><input type="number" min="0" step="any" value={s.count ?? ""} aria-label="Count" onchange={cell(r, "count")} /></td>
-                      <td>
+                      <td class="per">
                         <select value={s.per ?? ""} aria-label="Per" onchange={cell(r, "per")}>
                           {#if !s.per}<option value="">–</option>{/if}
                           {#each PERS as per (per)}<option value={per}>{per}</option>{/each}
@@ -562,7 +562,10 @@
   }
   .savings .num {
     text-align: right;
-    width: 64px;
+    width: 52px;
+  }
+  .savings .per {
+    width: 76px;
   }
   .savings td.w-mono {
     padding-right: 4px;
