@@ -3,7 +3,7 @@
   import { grow } from "$lib/grow";
   import { renderMarkdown } from "$lib/markdown";
   import { workspace, readMarkdown, updateProjectField, updateTaskField, createTask, type Process } from "$lib/stores/workspace.svelte";
-  import { daysInStep, isStale, label, nextMoves, phaseIndex, statusColor, stepName, stepOf, type UC } from "$lib/usecases.svelte";
+  import { daysInStep, isStale, knownAreas, label, nextMoves, phaseIndex, statusColor, stepName, stepOf, type UC } from "$lib/usecases.svelte";
 
   let {
     key,
@@ -24,7 +24,7 @@
   const days = $derived(u ? daysInStep(u) : null);
   const tasks = $derived(workspace.index?.tasks.filter((t) => t.project === u?.path) ?? []);
   const doneCount = $derived(tasks.filter((t) => t.status === "done").length);
-  const areas = $derived([...new Set([...p.areas, ...(uc?.area ? [uc.area] : [])])]);
+  const areas = $derived(knownAreas(p));
 
   // Gone (deleted, archived away or no longer a use case): nothing to show.
   $effect(() => {
@@ -163,10 +163,8 @@
             </dd>
             <dt><label for="f-area">Area</label></dt>
             <dd>
-              <select id="f-area" value={uc.area ?? ""} onchange={(e) => save("usecase.area", e.currentTarget.value || null)}>
-                <option value="">–</option>
-                {#each areas as a (a)}<option value={a}>{a}</option>{/each}
-              </select>
+              <input id="f-area" list="f-area-list" value={uc.area ?? ""} placeholder="–" autocomplete="off" onchange={text("usecase.area")} />
+              <datalist id="f-area-list">{#each areas as a (a)}<option value={a}></option>{/each}</datalist>
             </dd>
             <dt><label for="f-type">Type</label></dt>
             <dd>
@@ -548,7 +546,8 @@
     margin: 0;
     min-width: 0;
   }
-  .kv select {
+  .kv select,
+  .kv input {
     width: 100%;
     border: 1px solid transparent;
     border-radius: var(--w-r-sm);
@@ -558,7 +557,9 @@
     cursor: pointer;
   }
   .kv select:hover,
-  .kv select:focus {
+  .kv select:focus,
+  .kv input:hover,
+  .kv input:focus {
     border-color: var(--w-line);
   }
   .decision {

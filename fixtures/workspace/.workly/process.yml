@@ -90,6 +90,7 @@ types:
   - { id: hybrid, label: Hybrid }
   - { id: rule,   label: Rule-based }
 
+# Suggestions only: areas are free text, a new one is just typed in the app.
 areas: [Finance, Customer Service, Sales, Operations, Data & Reporting]
 
 stale_after_days: 21

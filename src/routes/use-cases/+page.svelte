@@ -9,6 +9,7 @@
     ui,
     daysInStep,
     isStale,
+    knownAreas,
     label,
     moveMessage,
     phaseOf,
@@ -63,7 +64,7 @@
   let fStatus = $state<string[]>([]);
   let fStale = $state(false);
   let query = $state("");
-  const areas = $derived([...new Set([...(p?.areas ?? []), ...ucs.map((u) => u.usecase.area).filter((a): a is string => !!a)])]);
+  const areas = $derived(p ? knownAreas(p) : []);
   const filtering = $derived(!!(fType || fArea || fStatus.length || fStale || query.trim()));
   function matches(u: UC) {
     const q = query.trim().toLowerCase();

@@ -546,6 +546,9 @@ fn move_usecase_rules() {
     ws.update_project_field("IE", "usecase.status", &json!("blocked"), "app").unwrap();
     let uc = ws.index.project("IE").unwrap().project.usecase.clone().unwrap();
     assert_eq!((uc.status.as_deref(), uc.step.as_deref()), (Some("blocked"), Some("pilot")));
+    // Areas are free text: one that no list has is accepted as typed.
+    ws.update_project_field("IE", "usecase.area", &json!("Underwriting"), "app").unwrap();
+    assert_eq!(ws.index.project("IE").unwrap().project.usecase.clone().unwrap().area.as_deref(), Some("Underwriting"));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 // Use-case cockpit helpers. Every step, lane, phase and label comes from
 // `.workly/process.yml`; only the spec's fixed status and type ids pick colours.
-import type { Process, ProjectEntry, Step, UseCase } from "$lib/stores/workspace.svelte";
+import { workspace, type Process, type ProjectEntry, type Step, type UseCase } from "$lib/stores/workspace.svelte";
 import { today } from "$lib/tasks.svelte";
 
 export type UC = ProjectEntry & { usecase: UseCase };
@@ -15,6 +15,12 @@ export const phaseOf = (p: Process, u: UC) => {
   const s = stepOf(p, u.usecase.step);
   return s && s.kind !== "term" ? s.phase : null;
 };
+
+/** Area suggestions: process.yml areas first, then every other area a use case already has. Areas are free text. */
+export function knownAreas(p: Process) {
+  const used = (workspace.index?.projects ?? []).map((x) => x.usecase?.area?.trim()).filter((a): a is string => !!a);
+  return [...new Set([...p.areas, ...used.sort((a, b) => a.localeCompare(b))])];
+}
 
 /** "No" or "No, rework": the negative branch of a decision. */
 export const isNegative = (label: string | null) => /^No\b/.test(label ?? "");

@@ -2,6 +2,7 @@
   // Create (project = null) or edit a project. Every edit is one field write in the core.
   import { ask } from "@tauri-apps/plugin-dialog";
   import { goto } from "$app/navigation";
+  import { knownAreas } from "$lib/usecases.svelte";
   import {
     workspace,
     COLORS,
@@ -73,7 +74,7 @@
     error = null;
     try {
       if (!p) {
-        const uc = usecase ? { type: ucType, area: ucArea || null } : null;
+        const uc = usecase ? { type: ucType, area: ucArea.trim() || null } : null;
         await createProject({ title: title.trim(), key, color, repos: $state.snapshot(repos), usecase: uc });
         onclose();
         if (oncreated) oncreated(key);
@@ -174,10 +175,8 @@
         </div>
         <label class="field">
           <span class="w-caps">Area</span>
-          <select bind:value={ucArea}>
-            <option value="">–</option>
-            {#each process.areas as a (a)}<option value={a}>{a}</option>{/each}
-          </select>
+          <input list="new-area-list" bind:value={ucArea} placeholder="Type or pick an area" autocomplete="off" />
+          <datalist id="new-area-list">{#each knownAreas(process) as a (a)}<option value={a}></option>{/each}</datalist>
         </label>
       {/if}
 
@@ -252,8 +251,7 @@
     flex-direction: column;
     gap: var(--w-s-2);
   }
-  input,
-  select {
+  input {
     border: 0;
     outline: none;
     background: var(--w-tray);
@@ -262,8 +260,7 @@
     font-size: var(--w-fs-small);
     min-width: 0;
   }
-  input:focus,
-  select:focus {
+  input:focus {
     box-shadow: 0 0 0 2px var(--w-accent-soft);
   }
   .key {
