@@ -92,7 +92,8 @@
         d = `M${s.cx} ${s.t}V${top}H${t.cx + off}V${t.t}`;
         ah = head(t.cx + off, t.t, "d");
         x = (s.cx + t.cx) / 2;
-        y = top - 5;
+        // A gate in the first lane leaves no room above the loop: label goes under it.
+        y = top < 20 ? top + 13 : top - 5;
         anchor = "middle";
       }
       out.push({ d, head: ah, label: e.label, x, y, anchor, neg: isNegative(e.label) });
@@ -323,12 +324,16 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* Up to two lines: a long sub still fits the fixed 56px header. */
   .hd small {
     color: var(--w-muted);
     font-size: var(--w-fs-caption);
-    white-space: nowrap;
+    line-height: 1.25;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
   }
   /* Chips sit in an inset well, so they read as items inside the step, not as part of it. */
   .ucs {
