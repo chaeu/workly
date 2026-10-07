@@ -7,7 +7,7 @@
   import { workspace, stepLabel, projColor, openInObsidian, openProjectInVscode, reveal } from "$lib/stores/workspace.svelte";
 
   const project = $derived(workspace.index?.projects.find((p) => p.key === page.params.key) ?? null);
-  // `/projects/WR` = tasks, `?tab=files` = files; links and the sidebar land on tasks.
+  // `/projects/WR` = tasks, `?tab=files` = files. The sidebar link remembers the last tab (layout).
   const tab = $derived(page.url.searchParams.get("tab") === "files" ? "files" : "tasks");
 
   let selected = $state<string | null>(null);
@@ -21,20 +21,23 @@
   <p><a href="/projects">Back to projects</a></p>
 {:else}
   {#snippet title()}
-    <div class="title-row">
-      <span class="w-proj-mark big" style:--c={projColor(project.color)}></span>
-      <h1 class="w-h1">{project.title}</h1>
+    <h1 class="w-h1"><span class="w-proj-mark big" style:--c={projColor(project.color)}></span>{project.title}</h1>
+  {/snippet}
+
+  <!-- Same place and height as the focus strip on /tasks, so nothing moves between views. -->
+  {#snippet bar()}
+    <section class="w-bar" aria-label="Project">
       <div class="w-seg" role="group" aria-label="View">
         <button type="button" aria-pressed={tab === "tasks"} onclick={() => goto(`/projects/${project.key}`)}>Tasks</button>
         <button type="button" aria-pressed={tab === "files"} onclick={() => goto(`/projects/${project.key}?tab=files`)}>Files</button>
       </div>
-    </div>
+    </section>
   {/snippet}
 
   {#if tab === "tasks"}
     <!-- A fresh board per project: filters, search and an open card do not carry over. -->
     {#key project.key}
-      <TaskBoard {project} {title} />
+      <TaskBoard {project} {title} {bar} />
     {/key}
   {:else}
     <header class="w-page-head">
@@ -52,6 +55,7 @@
         <button class="w-btn w-btn--primary" onclick={() => (editing = true)}>Edit</button>
       </div>
     </header>
+    {@render bar()}
     <ProjectFiles {project} bind:selected />
   {/if}
 
@@ -61,19 +65,15 @@
 {/if}
 
 <style>
-  /* Fixed to the title's line height, so the tabs do not make this head taller than /tasks. */
-  .title-row {
-    display: flex;
-    align-items: center;
-    gap: var(--w-s-3);
-    height: calc(var(--w-fs-display) * 1.1);
-  }
-  .title-row .w-seg {
-    margin-left: var(--w-s-2);
-  }
   .big {
+    display: inline-block;
     width: 14px;
     height: 14px;
+    margin-right: var(--w-s-3);
     border-radius: var(--w-r-sm);
+    vertical-align: middle;
+  }
+  .w-bar .w-seg {
+    align-self: flex-start;
   }
 </style>

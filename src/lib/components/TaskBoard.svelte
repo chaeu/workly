@@ -28,11 +28,11 @@
   } from "$lib/tasks.svelte";
 
   /**
-   * `title` is the left side of the page head above the subline.
+   * `title` is the left side of the page head above the subline; `bar` replaces the focus strip.
    * With `project` the board shows only that project's tasks: no project filter,
    * no grouping, no WIP limits (they count the whole workspace), new tasks go there.
    */
-  let { title, project = null }: { title: Snippet; project?: ProjectEntry | null } = $props();
+  let { title, bar, project = null }: { title: Snippet; bar?: Snippet; project?: ProjectEntry | null } = $props();
 
   startClock();
 
@@ -84,14 +84,11 @@
 
   // --------------------------------------------------------------- focus
 
-  // Focus is one list of three for the workspace; a project board shows its own part of it.
-  const allFocus = $derived(
+  // One list of three for the workspace, also on a project board (detail card toggle).
+  const focus = $derived(
     live.filter((t) => t.focus?.slice(0, 10) === today()).sort((a, b) => (a.focus_order ?? 9) - (b.focus_order ?? 9)),
   );
-  const allFocusIds = $derived(allFocus.map((t) => t.id));
-  const focus = $derived(project ? allFocus.filter((t) => t.project === project.path) : allFocus);
   const focusIds = $derived(focus.map((t) => t.id));
-  const otherFocus = $derived(allFocus.length - focus.length);
   const focusHidden = $derived(workspace.settings?.focus_hidden ?? false);
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -200,16 +197,13 @@
     const t = tasks.find((x) => x.id === id);
     if (!t) return;
     if (key === "focus") {
-      const ids = allFocusIds.filter((x) => x !== id);
+      const ids = focusIds.filter((x) => x !== id);
       if (ids.length >= 3) {
-        workspace.error = `The focus strip holds three tasks${otherFocus ? `, ${otherFocus} of them in other projects` : ""}. Remove one first.`;
+        workspace.error = "The focus strip holds three tasks. Remove one first.";
         return;
       }
-      // `index` counts the visible strip: insert before that card, else after the last visible one.
-      const shown = focusIds.filter((x) => x !== id);
-      const at = index < shown.length ? ids.indexOf(shown[index]) : shown.length ? ids.indexOf(shown[shown.length - 1]) + 1 : ids.length;
-      ids.splice(at, 0, id);
-      if (ids.join() !== allFocusIds.join()) await setFocus(ids);
+      ids.splice(index, 0, id);
+      if (ids.join() !== focusIds.join()) await setFocus(ids);
       return;
     }
     if (key === keyOf(t)) {
@@ -287,7 +281,7 @@
         <button type="button" aria-pressed={group === "project"} onclick={() => (group = "project")}>By project</button>
       </div>
     {/if}
-    {#if focusHidden}
+    {#if focusHidden && !bar}
       <button type="button" class="w-btn" onclick={() => saveSettings({ focus_hidden: false })}>Show focus · {focus.length}</button>
     {/if}
     <button type="button" class="w-btn w-btn--primary" onclick={() => openQuickAdd()}>+ New task</button>
@@ -296,18 +290,13 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="board-area" {onpointerdown}>
-  {#if !focusHidden}
+  {#if bar}
+    {@render bar()}
+  {:else if !focusHidden}
     <section class="w-focus" class:is-over={isOver("focus")} data-drop="focus" aria-label="Focus today">
       <div class="w-focus-head">
         <span class="w-caps">Focus today</span>
-        <span class="w-sub hint"
-          >{[
-            focus.length ? `${plural(focus.length, "task")}, in this order` : otherFocus ? "Drag cards here" : "Drag up to three cards here",
-            otherFocus && `${otherFocus} in other projects`,
-          ]
-            .filter(Boolean)
-            .join(" · ")}</span
-        >
+        <span class="w-sub hint">{focus.length ? `${plural(focus.length, "task")}, in this order` : "Drag up to three cards here"}</span>
         <button type="button" class="w-btn w-btn--quiet" onclick={() => saveSettings({ focus_hidden: true })}>Hide</button>
       </div>
       {#if focus.length}
@@ -318,12 +307,12 @@
             <li class="w-focus-item" class:is-dragging={dragFromFocus && dragId === t.id} data-id={t.id} role="button" tabindex="0" aria-label="{i + 1}. {t.id} {t.title}">
               <span class="w-focus-num">{i + 1}</span>
               <div class="fi-text">
-                <strong>{t.title}</strong>
+                <strong title={t.title}>{t.title}</strong>
                 <span class="w-mono"
                   >{[t.id, t.priority && `P${t.priority}`, t.due && `due ${shortDate(t.due)}`, p?.title ?? "Inbox"].filter(Boolean).join(" · ")}</span
                 >
               </div>
-              <button type="button" class="fi-x" aria-label="Remove {t.id} from focus" onclick={() => setFocus(allFocusIds.filter((x) => x !== t.id))}
+              <button type="button" class="fi-x" aria-label="Remove {t.id} from focus" onclick={() => setFocus(focusIds.filter((x) => x !== t.id))}
                 >✕</button
               >
             </li>
@@ -398,7 +387,7 @@
 
 {#if openId}
   {#key openId}
-    <TaskDetail id={openId} mode={detailMode} focusIds={allFocusIds} onclose={() => (openId = null)} />
+    <TaskDetail id={openId} mode={detailMode} {focusIds} onclose={() => (openId = null)} />
   {/key}
 {/if}
 
