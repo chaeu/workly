@@ -255,6 +255,7 @@
       <button type="button" aria-pressed={ui.view === "board"} onclick={() => (ui.view = "board")}>Board</button>
       <button type="button" aria-pressed={ui.view === "map"} onclick={() => (ui.view = "map")}>Process map</button>
     </div>
+    <button type="button" class="w-btn w-btn--quiet" title="Open {PROCESS} in VS Code" onclick={() => openInVscode(PROCESS)}>Edit process</button>
     {#if p && !processErrors.length}
       <button type="button" class="w-btn w-btn--primary" onclick={() => (creating = true)}>+ New use case</button>
     {/if}
