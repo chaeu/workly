@@ -11,6 +11,12 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct MissingRepo {
+    pub key: String,
+    pub repo: String,
+}
+
 macro_rules! fixture {
     ($p:literal) => {
         ($p, include_str!(concat!("../../../fixtures/workspace/", $p)))
@@ -98,6 +104,16 @@ impl Workspace {
     pub(crate) fn project_dir(&self, key: &str) -> Result<PathBuf> {
         let p = self.index.project(key).ok_or_else(|| Error::NotFound(format!("project {key} not found")))?;
         Ok(self.root.join(&p.path))
+    }
+
+    /// Repos of non-archived projects that are not folders on this Mac.
+    pub fn missing_repos(&self) -> Vec<MissingRepo> {
+        (self.index.projects.iter())
+            .filter(|p| p.project.status != "archived")
+            .flat_map(|p| p.project.repos.iter().map(move |r| (p, r)))
+            .filter(|(_, r)| !expand_home(r).is_dir())
+            .map(|(p, r)| MissingRepo { key: p.project.key.clone(), repo: r.clone() })
+            .collect()
     }
 
     /// Key suggestion for a title, avoiding keys already in use.
@@ -281,11 +297,13 @@ impl Workspace {
         let rel_dir = rel(&self.root, &from);
         let to = self.root.join(".workly/trash").join(&rel_dir);
         if to.exists() {
-            return Err(Error::Invalid(format!("trash already has {rel_dir}")));
+            // Tasks deleted earlier already made the folder: sort the rest in.
+            crate::trash::merge_into(&from, &to, &self.own, &|_| false)?;
+        } else {
+            fs::create_dir_all(to.parent().unwrap())?;
+            self.own.expect(&from, None);
+            fs::rename(&from, &to)?;
         }
-        fs::create_dir_all(to.parent().unwrap())?;
-        self.own.expect(&from, None);
-        fs::rename(&from, &to)?;
         let trashed = format!(".workly/trash/{rel_dir}");
         log(&self.root, &LogEntry::new(actor, "project.delete", key, Some("path"), rel_dir.into(), trashed.into()))?;
         self.rescan();

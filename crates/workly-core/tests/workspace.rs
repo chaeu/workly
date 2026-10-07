@@ -573,3 +573,65 @@ fn agent_context_and_agents_md() {
     assert!(matches!(ws.create_agents_md("IE", "app"), Err(Error::Invalid(_))));
     assert_eq!(log_lines(&root).pop().unwrap()["kind"], "project.agents_md");
 }
+
+#[test]
+fn trash_lists_tasks_and_project_folders() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let items = ws.trash_items();
+    assert_eq!(items.len(), 1);
+    assert_eq!((items[0].kind, items[0].id.as_str()), ("task", "WR-9"));
+
+    ws.delete_project("OI", "app").unwrap();
+    ws.delete_task("WR-8", "app").unwrap();
+    let items = ws.trash_items();
+    let kinds: Vec<(&str, &str)> = items.iter().map(|i| (i.kind, i.id.as_str())).collect();
+    assert_eq!(kinds.len(), 3, "{kinds:?}");
+    assert_eq!(kinds[0], ("task", "WR-8"), "newest deletion first");
+    assert!(kinds.contains(&("project", "OI")), "a project folder is one item, not its files");
+    assert!(ws.index.trash.iter().any(|p| p.ends_with("OI-1-legacy-export.md") || p.contains("old-intranet/tasks/")));
+}
+
+#[test]
+fn restore_project_folder_and_refuse_orphan_task() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let task = ws.index.task("OI-1").unwrap().path.clone();
+    ws.delete_task("OI-1", "app").unwrap();
+    ws.delete_project("OI", "app").unwrap();
+    // Its project folder is gone, so the task cannot go back on its own.
+    assert!(matches!(ws.restore(&task, "app"), Err(Error::Invalid(_))));
+
+    ws.restore("projects/archive/old-intranet", "app").unwrap();
+    assert!(ws.index.project("OI").is_some());
+    assert_eq!(log_lines(&root).pop().unwrap()["kind"], "project.restore");
+    ws.restore(&task, "app").unwrap();
+    assert!(ws.index.task("OI-1").is_some());
+    assert_eq!(ws.trash_items().len(), 1, "only WR-9 left");
+}
+
+#[test]
+fn ids_stay_taken_after_the_trash_is_gone() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let id = ws.create_task("Short lived", Some("WR"), None, "app").unwrap();
+    assert_eq!(id, "WR-10");
+    ws.delete_task(&id, "app").unwrap();
+    // As after emptying the trash: the file is gone, the log remembers.
+    fs::remove_dir_all(root.join(".workly/trash/projects")).unwrap();
+    ws.rescan();
+    assert_eq!(ws.next_id("WR"), "WR-11");
+}
+
+#[test]
+fn missing_repos_skip_archived_and_existing() {
+    let (tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let repo = tmp.path().join("repo");
+    fs::create_dir(&repo).unwrap();
+    ws.update_project_field("WR", "repos", &json!([repo.display().to_string(), "~/no/such/repo"]), "app").unwrap();
+    let missing: Vec<(String, String)> = ws.missing_repos().into_iter().map(|m| (m.key, m.repo)).collect();
+    assert!(missing.contains(&("WR".into(), "~/no/such/repo".into())));
+    assert!(!missing.iter().any(|(_, r)| r == &repo.display().to_string()));
+    assert!(!missing.iter().any(|(k, _)| k == "OI"));
+}

@@ -8,6 +8,7 @@ pub mod patch;
 pub mod project;
 pub mod scan;
 pub mod settings;
+pub mod trash;
 pub mod watch;
 pub mod write;
 
@@ -122,8 +123,23 @@ impl Workspace {
             .flat_map(|t| [t.task.id.clone(), file_name(&t.path)])
             .chain(idx.errors.iter().map(|e| file_name(&e.path)))
             .chain(idx.trash.iter().map(|p| file_name(p)))
+            .chain(self.logged_ids())
             .collect();
         format!("{key}-{}", ids::next_number(key, names.iter().map(String::as_str)))
+    }
+
+    /// Every id the log ever mentions, so an emptied trash frees no numbers.
+    // ponytail: reads all log files per new id; index them if logs reach many MB.
+    fn logged_ids(&self) -> Vec<String> {
+        let dir = self.root.join(".workly/log");
+        let lines: Vec<String> = fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.path().extension().is_some_and(|x| x == "jsonl"))
+            .flat_map(|e| fs::read_to_string(e.path()).unwrap_or_default().lines().map(String::from).collect::<Vec<_>>())
+            .collect();
+        lines.iter().filter_map(|l| serde_json::from_str::<Value>(l).ok()?.get("id")?.as_str().map(String::from)).collect()
     }
 
     fn task_path(&self, id: &str) -> Result<PathBuf> {
@@ -355,29 +371,6 @@ impl Workspace {
         }
         let trashed = format!(".workly/trash/{rel_path}");
         log(&self.root, &LogEntry::new(actor, "task.delete", id, Some("path"), rel_path.into(), trashed.into()))?;
-        self.rescan();
-        Ok(())
-    }
-
-    /// Move a trash entry (path relative to the trash) back to where it was.
-    pub fn restore(&mut self, trash_path: &str, actor: &str) -> Result<()> {
-        if !self.index.trash.iter().any(|p| p == trash_path) {
-            return Err(Error::NotFound(format!("{trash_path} is not in the trash")));
-        }
-        let from = self.root.join(".workly/trash").join(trash_path);
-        let to = self.root.join(trash_path);
-        if to.exists() {
-            return Err(Error::Invalid(format!("{trash_path} already exists")));
-        }
-        // Unstamp inside the trash first, so the restored file appears once, final.
-        let src = fs::read_to_string(&from)?;
-        if let Ok(out) = patch::remove_field(&src, &["deleted_at"]) {
-            atomic_write(&from, &out, &self.own)?;
-        }
-        own_rename(&from, &to, &self.own)?;
-        let id = parse_file::<Task>(trash_path, &fs::read_to_string(&to)?).map(|t| t.id).unwrap_or_default();
-        let trashed = format!(".workly/trash/{trash_path}");
-        log(&self.root, &LogEntry::new(actor, "task.restore", &id, Some("path"), trashed.into(), trash_path.into()))?;
         self.rescan();
         Ok(())
     }
