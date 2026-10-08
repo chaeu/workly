@@ -29,6 +29,15 @@ export function shortDate(iso: string | null) {
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/** Tooltip for a due date: the full date and how far away it is. */
+export function dueTip(iso: string) {
+  const days = Math.round((Date.parse(iso.slice(0, 10)) - Date.parse(today())) / 864e5);
+  const d = new Date(`${iso.slice(0, 10)}T00:00`);
+  if (isNaN(days) || isNaN(d.getTime())) return `Due ${iso}`;
+  const when = days < 0 ? `${-days} ${-days === 1 ? "day" : "days"} overdue` : days === 0 ? "Today" : days === 1 ? "Tomorrow" : `In ${days} days`;
+  return `Due ${d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}\n${when}`;
+}
+
 export const isOverdue = (t: TaskEntry) => !!t.due && t.status !== "done" && t.due.slice(0, 10) < today();
 
 const AGENT_NAMES: Record<string, string> = { codex: "Codex", copilot: "Copilot", "claude-code": "Claude Code" };

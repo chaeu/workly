@@ -92,3 +92,17 @@ const fteFmt = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maxi
 const hoursFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 export const fmtFte = (fte: number) => fteFmt.format(fte);
 export const fmtHours = (h: number) => hoursFmt.format(h);
+
+// Tooltip texts (use:tip): first line is the heading.
+/** Card or map dot: who, where it stands, how long, what comes next. */
+export function ucTip(p: Process, u: UC) {
+  const st = stepOf(p, u.usecase.step);
+  const days = daysInStep(u);
+  const status = label(p.statuses, u.usecase.status) + (u.usecase.status === "blocked" && u.usecase.blocked_by ? `: ${u.usecase.blocked_by}` : "");
+  const where = st ? (st.kind === "gate" ? `waiting at ${stepName(st)}` : st.label) : null;
+  return [`${u.key} ${u.title}`, [status, where, days !== null && `${days} d in step`].filter(Boolean).join(" · "), u.usecase.next_step && `→ ${u.usecase.next_step}`]
+    .filter(Boolean)
+    .join("\n");
+}
+export const stepTip = (s: Step) => [stepName(s), s.kind === "gate" ? s.hint : s.sub, s.optional && "Optional"].filter(Boolean).join("\n");
+export const fteTip = (u: UC) => `Expected saving\n${fmtHours(savedHours(u))} h per year · ${fmtFte(savedFte(u) ?? 0)} FTE at ${fmtHours(fteHours())} h`;

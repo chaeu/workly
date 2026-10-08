@@ -2,6 +2,7 @@
   import type { Snippet } from "svelte";
   import TaskCard from "$lib/components/TaskCard.svelte";
   import TaskDetail from "$lib/components/TaskDetail.svelte";
+  import { tip } from "$lib/tip";
   import {
     workspace,
     projColor,
@@ -307,7 +308,7 @@
               role="button"
               tabindex="0"
               aria-label="{i + 1}. {t.id} {t.title}"
-              title={[t.title, [t.id, t.priority && `P${t.priority}`, t.due && `due ${shortDate(t.due)}`, p?.title ?? "Inbox"].filter(Boolean).join(" · ")].join("\n")}
+              use:tip={[t.title, [t.id, t.priority && `P${t.priority}`, t.due && `due ${shortDate(t.due)}`, p?.title ?? "Inbox"].filter(Boolean).join(" · ")].join("\n")}
             >
               <span class="w-focus-num">{i + 1}</span>
               <span class="w-proj-mark" style:--c={p ? projColor(p.color) : "var(--w-line)"}></span>

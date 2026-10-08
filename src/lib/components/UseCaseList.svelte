@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Process } from "$lib/stores/workspace.svelte";
-  import { daysInStep, fmtFte, isStale, label, phaseIndex, phaseOf, savedFte, statusColor, stepName, stepOf, type UC } from "$lib/usecases.svelte";
+  import { daysInStep, fmtFte, fteTip, isStale, label, phaseIndex, phaseOf, savedFte, statusColor, stepName, stepOf, type UC } from "$lib/usecases.svelte";
+  import { clipped, tip } from "$lib/tip";
 
   let { process: p, ucs, onopen }: { process: Process; ucs: UC[]; onopen: (key: string) => void } = $props();
 
@@ -68,23 +69,23 @@
         <tr class:blocked={status === "blocked"} class:hold={status === "on_hold"} onclick={() => onopen(u.key)}>
           <td class="w-mono id">{u.key}</td>
           <!-- The title button carries keyboard access; a mouse click anywhere on the row opens it too. -->
-          <td class="title" title={u.title}><button type="button">{u.title}</button></td>
+          <td class="title"><button type="button" use:tip={clipped(u.title)}>{u.title}</button></td>
           <td>
             {#if u.usecase.type}<span class="w-type" class:w-type--ki={u.usecase.type === "ai"} class:hybrid={u.usecase.type === "hybrid"}
                 >{label(p.types, u.usecase.type)}</span
               >{/if}
           </td>
-          <td class="muted area" title={u.usecase.area}>{u.usecase.area ?? "–"}</td>
-          <!-- ponytail: step in the title attribute until P6 brings the real tooltip. -->
-          <td class="phase" class:warn={!st} title={hint}>{#if st?.kind === "gate"}<i></i>{/if}{ph?.name ?? "–"}</td>
+          <td class="muted area" use:tip={clipped(u.usecase.area)}>{u.usecase.area ?? "–"}</td>
+          <!-- The step only in the tooltip; the phase name too when the cell cuts it off. -->
+          <td class="phase" class:warn={!st} use:tip={(el) => [clipped(ph?.name)(el), hint].filter(Boolean).join("\n")}>{#if st?.kind === "gate"}<i></i>{/if}{ph?.name ?? "–"}</td>
           <td>
             <span class="status"
               ><span class="w-dot" class:w-dot--hollow={status === "on_hold"} style:--c={statusColor(status)}></span>{label(p.statuses, status)}</span
             >
           </td>
           <td class="num w-mono" class:stale={isStale(p, u)}>{days ?? "–"}</td>
-          <td class="num w-mono">{fte === null ? "" : fmtFte(fte)}</td>
-          <td class="next" title={next}>{next ?? ""}</td>
+          <td class="num w-mono" use:tip={fte !== null && fteTip(u)}>{fte === null ? "" : fmtFte(fte)}</td>
+          <td class="next" use:tip={clipped(next)}>{next ?? ""}</td>
         </tr>
       {:else}
         <tr><td class="empty" colspan={COLS.length + 1}>No use case matches the filters.</td></tr>

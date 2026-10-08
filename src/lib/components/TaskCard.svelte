@@ -1,6 +1,7 @@
 <script lang="ts">
   import { agentsEnabled, projColor, type TaskEntry } from "$lib/stores/workspace.svelte";
-  import { agentBadge, agentName, isOverdue, projectOf, shortDate } from "$lib/tasks.svelte";
+  import { agentBadge, agentName, dueTip, isOverdue, projectOf, shortDate } from "$lib/tasks.svelte";
+  import { clipped, tip } from "$lib/tip";
 
   let { task: t, showProject = true, dim = false, dragging = false }: { task: TaskEntry; showProject?: boolean; dim?: boolean; dragging?: boolean } =
     $props();
@@ -36,9 +37,9 @@
     <div class="w-card-foot">
       {#if showProject}
         <span class="w-proj-mark" style:--c={project ? projColor(project.color) : "var(--w-line)"}></span>
-        <span class="w-card-proj">{project?.title ?? "Inbox"}</span>
+        <span class="w-card-proj" use:tip={clipped(project?.title)}>{project?.title ?? "Inbox"}</span>
       {/if}
-      {#if t.due && !done}<span class="w-mono" class:overdue={isOverdue(t)}>due {shortDate(t.due)}</span>{/if}
+      {#if t.due && !done}<span class="w-mono" class:overdue={isOverdue(t)} use:tip={dueTip(t.due)}>due {shortDate(t.due)}</span>{/if}
     </div>
   {/if}
 </div>

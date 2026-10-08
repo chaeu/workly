@@ -18,8 +18,12 @@
     statusColor,
     stepName,
     stepOf,
+    stepTip,
+    fteTip,
+    ucTip,
     type UC,
   } from "$lib/usecases.svelte";
+  import { tip } from "$lib/tip";
 
   startClock();
 
@@ -215,10 +219,11 @@
     tabindex="0"
     data-key={u.key}
     aria-label="{u.key} {u.title}, {label(p!.statuses, status)}"
+    use:tip={ucTip(p!, u)}
   >
     <div class="c-top">
       <span class="w-mono c-id">{u.key}</span>
-      {#if fte}<span class="fte w-mono" title="Expected saving">{fmtFte(fte)} FTE</span>{/if}
+      {#if fte}<span class="fte w-mono" use:tip={fteTip(u)}>{fmtFte(fte)} FTE</span>{/if}
       {#if u.usecase.type}<span class="w-type" class:w-type--ki={u.usecase.type === "ai"} class:hybrid={u.usecase.type === "hybrid"}
           >{label(p!.types, u.usecase.type)}</span
         >{/if}
@@ -231,7 +236,7 @@
     {/if}
     <div class="c-status">
       <span class="w-dot" class:w-dot--hollow={status === "on_hold"} style:--c={statusColor(status)}></span>{label(p!.statuses, status)}
-      {#if days !== null}<span class="age w-mono" class:stale={isStale(p!, u)} title="Days in the current step">{days} d</span>{/if}
+      {#if days !== null}<span class="age w-mono" class:stale={isStale(p!, u)}>{days} d</span>{/if}
     </div>
     {#if next}<div class="c-next">{status === "blocked" ? "" : "→ "}{next}</div>{/if}
   </div>
@@ -379,7 +384,7 @@
         {#each p.phases as ph (ph.id)}
           {@const g = stepOf(p, p.board_gates[ph.id])}
           <div class="g-row">
-            {#if g}<div class="bgate w-gate" title={g.hint ?? undefined}><code>{g.code ?? g.id}</code><span>{g.label}</span></div>{/if}
+            {#if g}<div class="bgate w-gate" use:tip={stepTip(g)}><code>{g.code ?? g.id}</code><span>{g.label}</span></div>{/if}
           </div>
         {/each}
         {#each lanes as l, li (l.id)}

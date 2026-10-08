@@ -108,6 +108,10 @@ Der Streifen hat eine feste Höhe (`--w-bar-h`), leer wie voll. In der Projektan
 
 Radius 14, `shadow-pop`, Hintergrund-Abdunklung `scrim`. Aufbau wie im Cockpit: Kopf (ID, Typ, Bereich, Schließen), Titel, Position/Fortschritt, Status-Pillen, Inhalt zweispaltig, Aktionsleiste unten auf `sunk`. Die Task-Karte ist als Popup `--w-detail-w` breit und mindestens `--w-detail-min-h` hoch, damit Beschreibung und Updates auch bei kurzen Tasks Platz haben; als Seitenleiste `--w-panel-w` breit (auch Use Cases). Fokus setzt ein Stern im Kopf (gefüllt = im Fokus, Tooltip „Focus #n“).
 
+### Tooltip
+
+`use:tip` statt `title` überall, wo ein Hinweis mehr als ein Icon-Name ist (Prozesslandkarte, Cockpit, Liste, Task-Board, Fokus-Stern). Ein geteiltes Element `.w-tip`: `surface`, `line`-Ring, `shadow-pop`, Radius 9, max. 280 px, 12 px. Erscheint nach 300 ms bei Hover und Tastaturfokus (direkt, wenn gerade ein anderer Tooltip offen war), verschwindet bei Verlassen, Blur, Scrollen, Klick und Esc. Mehrzeilig: erste Zeile fett, der Rest muted. Für den vollen Text einer Zelle oder eines Namens erscheint er nur, wenn der Text tatsächlich gekürzt ist. Nie interaktiv; der zugängliche Name bleibt beim Element.
+
 ### Gate-Marker
 
 Raute (10 px, 45°, Akzent-Rand, `accent-soft` Fläche) + Code in Mono + Name 12/600. Auf dem Board an der rechten Spaltenkante, in der Prozesslandkarte als große Raute.

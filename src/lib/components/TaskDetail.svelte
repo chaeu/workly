@@ -1,5 +1,6 @@
 <script lang="ts">
   import { grow } from "$lib/grow";
+  import { tip } from "$lib/tip";
   import { renderMarkdown } from "$lib/markdown";
   import {
     workspace,
@@ -156,7 +157,7 @@
           aria-pressed={focusAt >= 0}
           aria-disabled={focusFull}
           aria-label={focusAt >= 0 ? `Focus #${focusAt + 1}, remove from focus` : "Add to today's focus"}
-          title={focusAt >= 0 ? `Focus #${focusAt + 1}` : focusFull ? "The focus strip already has three tasks" : "Add to today's focus"}
+          use:tip={focusAt >= 0 ? `Focus #${focusAt + 1}` : focusFull ? "The focus strip already has three tasks" : "Add to today's focus"}
           onclick={toggleFocus}
           ><svg width="16" height="16" viewBox="0 0 24 24" fill={focusAt >= 0 ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"
             ><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z" /></svg

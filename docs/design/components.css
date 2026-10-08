@@ -128,10 +128,19 @@
   box-shadow: var(--w-shadow-pop); overflow: hidden; animation: w-pop var(--w-dur) var(--w-ease); }
 @keyframes w-pop { from { opacity: 0; transform: translate(-50%, -48%) scale(.98); } }
 
+/* ---------- Tooltip (use:tip, one shared element on body) ---------- */
+.w-tip { position: fixed; z-index: 60; max-width: 280px; padding: 6px 10px; pointer-events: none; overflow-wrap: break-word;
+  font-family: var(--w-font-sans); font-size: var(--w-fs-caption); line-height: 1.4; color: var(--w-ink); background: var(--w-surface);
+  border-radius: var(--w-r-md); box-shadow: 0 0 0 1px var(--w-line), var(--w-shadow-pop); visibility: hidden; opacity: 0;
+  transition: opacity var(--w-dur) var(--w-ease), visibility var(--w-dur); }
+.w-tip.is-on { visibility: visible; opacity: 1; }
+.w-tip strong { display: block; font-weight: 600; }
+.w-tip strong ~ div { color: var(--w-muted); }
+
 @media (max-width: 680px) {
   .w-main { padding: 20px 16px 28px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .w-app *, .w-modal { transition: none !important; animation: none !important; }
+  .w-app *, .w-modal, .w-tip { transition: none !important; animation: none !important; }
   .w-drag-ghost { rotate: 0deg; }
 }

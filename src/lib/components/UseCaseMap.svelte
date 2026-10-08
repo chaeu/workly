@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Process } from "$lib/stores/workspace.svelte";
-  import { daysInStep, isNegative, isStale, label, statusColor, stepOf, type UC } from "$lib/usecases.svelte";
+  import { daysInStep, isNegative, isStale, label, statusColor, stepOf, stepTip, ucTip, type UC } from "$lib/usecases.svelte";
+  import { tip } from "$lib/tip";
 
   let { process: p, ucs, dim, dragKey, over }: { process: Process; ucs: UC[]; dim: (u: UC) => boolean; dragKey: string | null; over: string | null } =
     $props();
@@ -129,7 +130,8 @@
     role="button"
     tabindex="0"
     data-key={u.key}
-    title="{u.title} · {label(p.statuses, st)}{st === 'blocked' && u.usecase.blocked_by ? `: ${u.usecase.blocked_by}` : ''}"
+    aria-label="{u.key} {u.title}, {label(p.statuses, st)}"
+    use:tip={ucTip(p, u)}
   >
     <span class="w-dot" class:w-dot--hollow={st === "on_hold"} style:--c={statusColor(st)}></span>
     <span class="t">
@@ -164,7 +166,7 @@
       </div>
     {:else if n.kind === "gate"}
       <div class="node" class:over={over === `step:${n.id}`} data-drop="step" data-step={n.id} style:grid-row={row(n.lane)} style:grid-column={n.col + 2}>
-        <div class="gate shape" class:optional={n.optional} data-node={n.id} title={n.hint ?? undefined}>
+        <div class="gate shape" class:optional={n.optional} data-node={n.id} use:tip={stepTip(n)}>
           <svg viewBox="0 0 112 56" aria-hidden="true"><polygon points="56,1 111,28 56,55 1,28" /></svg>
           <div class="gi"><code>{n.code ?? ""}</code><span>{n.label}</span></div>
         </div>
@@ -178,7 +180,7 @@
     {:else}
       <div class="node" class:over={over === `step:${n.id}`} data-drop="step" data-step={n.id} style:grid-row={row(n.lane)} style:grid-column={n.col + 2}>
         <div class="box shape" class:parked={n.parked} class:optional={n.optional} data-node={n.id}>
-          <div class="hd">
+          <div class="hd" use:tip={stepTip(n)}>
             <strong>{n.label}{#if n.optional}<span class="opt">optional</span>{/if}</strong>
             {#if n.sub}<small>{n.sub}</small>{/if}
           </div>
