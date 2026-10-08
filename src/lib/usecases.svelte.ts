@@ -157,6 +157,11 @@ export function assessRank(p: Process, u: UC) {
 }
 const scoreFmt = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 export const fmtScore = (n: number | null) => (n === null ? "–" : scoreFmt.format(n));
+/** The arithmetic behind one axis: "(3 + 2 + 2) / 3 = 2.3"; "nothing scored" when no criterion has points. */
+export function axisCalc(p: Process, a: UseCaseAssessment, axis: string) {
+  const pts = p.assessment!.criteria.filter((c) => c.axis === axis && a.scores[c.id] != null).map((c) => a.scores[c.id]);
+  return pts.length ? `(${pts.join(" + ")}) / ${pts.length} = ${fmtScore(pts.reduce((x, y) => x + y, 0) / pts.length)}` : "nothing scored";
+}
 export const scoreLine = (r: AssessResult) => `Value ${fmtScore(r.value)} · Feasibility ${fmtScore(r.feasibility)}`;
 export const assessTip = (r: AssessResult) =>
   [verdict(r), scoreLine(r), ...r.failed.map((x) => `K.O.: ${x}`), ...(r.open.length ? ["Open for pilot:", ...r.open.map((x) => `· ${x}`)] : [])].join("\n");

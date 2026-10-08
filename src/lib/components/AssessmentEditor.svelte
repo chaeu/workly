@@ -5,7 +5,7 @@
   import AssessmentPill from "$lib/components/AssessmentPill.svelte";
   import { workspace, updateProjectField, type KoValue, type Process, type UseCaseAssessment } from "$lib/stores/workspace.svelte";
   import { today } from "$lib/tasks.svelte";
-  import { assess, scoreLine, type UC } from "$lib/usecases.svelte";
+  import { assess, axisCalc, type UC } from "$lib/usecases.svelte";
 
   let { key, process: p, onclose }: { key: string; process: Process; onclose: () => void } = $props();
 
@@ -117,7 +117,9 @@
     <div class="foot">
       <div class="result">
         <AssessmentPill result={r} />
-        <span>{scoreLine(r)}</span>
+        <!-- The arithmetic, so a score can be explained: mean of the scored criteria per axis. -->
+        <span>Value <span class="w-mono calc">{axisCalc(p, draft, "value")}</span></span>
+        <span>Feasibility <span class="w-mono calc">{axisCalc(p, draft, "feasibility")}</span></span>
         <span class="w-sub">{r.open.length} open</span>
       </div>
       {#if u.usecase.assessment}<button type="button" class="w-btn w-btn--quiet" disabled={busy} onclick={clear}>Clear…</button>{/if}
@@ -242,11 +244,15 @@
     border-top: 1px solid var(--w-line);
     background: var(--w-sunk);
   }
+  .calc {
+    font-size: var(--w-fs-caption);
+  }
   .result {
     flex: 1;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--w-s-3);
+    gap: 2px var(--w-s-3);
     font-size: var(--w-fs-small);
     font-variant-numeric: tabular-nums;
   }

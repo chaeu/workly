@@ -3,7 +3,9 @@
   // Read-only; scores change in the editor (D5). Advanced adds bubble size by manual effort and quadrant colours.
   import { projColor, type Process } from "$lib/stores/workspace.svelte";
   import {
+    ASSESS_THRESHOLD,
     assess,
+    axisCalc,
     assessTip,
     fmtFte,
     fmtScore,
@@ -49,10 +51,13 @@
   let hover = $state<string | null>(null);
   const dimmed = (d: Dot) => !!hover && hover !== d.u.key;
 
+  // Each point carries its own arithmetic, so its position can be explained.
   const dotTip = (d: Dot) =>
     [
       `${d.u.key} ${d.u.title}`,
-      `${d.q} · ${scoreLine(d.r)}${d.fte != null ? ` · ${fmtFte(d.fte)} FTE` : ""}`,
+      `${d.q}${d.fte != null ? ` · ${fmtFte(d.fte)} FTE` : ""}`,
+      `Value ${axisCalc(p, d.u.usecase.assessment!, "value")}`,
+      `Feasibility ${axisCalc(p, d.u.usecase.assessment!, "feasibility")}`,
       ...(d.r.open.length ? ["Open for pilot:", ...d.r.open.map((x) => `· ${x}`)] : []),
     ].join("\n");
   const chipTip = (u: UC, r: AssessResult | null) => `${u.key} ${u.title}\n${r ? assessTip(r) : "Not assessed"}`;
@@ -168,12 +173,34 @@
       </div>
     </div>
 
-    {#if advanced}
-      <div class="legend">
+    <div class="legend">
+      {#if advanced}
         <span><i class="lg"></i>Pilot or later</span><span><i class="lg early"></i>Still in {p.phases[0]?.name ?? "the first phase"}</span>
         <span>Size = manual effort (FTE)</span><span>Colour = quadrant</span>
-      </div>
-    {/if}
+      {/if}
+      <!-- The method in one card, built from process.yml, for "how is this calculated?". Shown on hover or focus. -->
+      <span class="how">
+        <button type="button" class="how-btn" aria-describedby="matrix-calc">How is this calculated?</button>
+        <span class="how-card" id="matrix-calc" role="tooltip">
+          <strong>How the matrix is calculated</strong>
+          <span>Each criterion gets 1, 2 or 3 points; the anchors in the assessment say what each means. A criterion without points is open and left out. No weights.</span>
+          {#each [["value", "Value"], ["feasibility", "Feasibility"]] as const as [axis, name] (axis)}
+            <span><b>{name}</b> = average of the scored criteria:</span>
+            <ul>
+              {#each p.assessment!.criteria.filter((c) => c.axis === axis) as c (c.id)}<li>{c.label}</li>{/each}
+            </ul>
+          {/each}
+          <span><b>Quadrant</b>: a value of {fmtScore(ASSESS_THRESHOLD)} or more counts as high.</span>
+          <span class="qgrid">
+            <span></span><span class="w-caps">Feasibility ≥ {fmtScore(ASSESS_THRESHOLD)}</span><span class="w-caps">Feasibility &lt; {fmtScore(ASSESS_THRESHOLD)}</span>
+            <span class="w-caps">Value ≥ {fmtScore(ASSESS_THRESHOLD)}</span><span style:--c={QUADRANT_COLOR["Quick win"]}>Quick win</span><span style:--c={QUADRANT_COLOR["Big bet"]}>Big bet</span>
+            <span class="w-caps">Value &lt; {fmtScore(ASSESS_THRESHOLD)}</span><span style:--c={QUADRANT_COLOR["Fill-in"]}>Fill-in</span><span style:--c={QUADRANT_COLOR.Drop}>Drop</span>
+          </span>
+          <span><b>K.O.</b>: one failed question ({p.assessment!.ko.map((k) => k.label).join(" · ")}) stops the assessment; the use case gets no position.</span>
+          {#if advanced}<span><b>Bubble size</b> = manual effort in FTE.</span>{/if}
+        </span>
+      </span>
+    </div>
 
     {#each [["K.O.", ko], ["Not assessed", unplaced]] as const as [name, list] (name)}
       <div class="row">
@@ -376,10 +403,77 @@
     color: var(--w-muted);
     font-size: var(--w-fs-caption);
   }
-  .legend span {
+  .legend > span:not(.how) {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+  }
+  /* ---------- "How is this calculated?" ---------- */
+  .how {
+    position: relative;
+    margin-left: auto;
+  }
+  .how-btn {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--w-muted);
+    font: inherit;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+    cursor: help;
+  }
+  .how-btn:hover {
+    color: var(--w-ink);
+  }
+  .how-card {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    z-index: 10;
+    width: min(460px, 80vw);
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px;
+    border-radius: var(--w-r-md);
+    background: var(--w-surface);
+    box-shadow:
+      0 0 0 1px var(--w-line),
+      var(--w-shadow-pop);
+    color: var(--w-ink);
+    font-size: var(--w-fs-caption);
+    line-height: 1.45;
+    visibility: hidden;
+    opacity: 0;
+    transition:
+      opacity var(--w-dur) var(--w-ease),
+      visibility var(--w-dur);
+  }
+  .how:hover .how-card,
+  .how:focus-within .how-card {
+    visibility: visible;
+    opacity: 1;
+  }
+  .how-card strong {
+    font-size: var(--w-fs-small);
+  }
+  .how-card ul {
+    margin: -2px 0 2px;
+    padding-left: 18px;
+    color: var(--w-muted);
+  }
+  .qgrid {
+    display: grid;
+    grid-template-columns: auto 1fr 1fr;
+    gap: 2px 10px;
+    align-items: center;
+    padding: 6px 8px;
+    border-radius: var(--w-r-sm);
+    background: var(--w-sunk);
+  }
+  .qgrid > span[style] {
+    color: var(--c);
+    font-weight: 600;
   }
   .lg {
     width: 12px;
