@@ -310,17 +310,17 @@
         <button type="button" aria-pressed={compact} onclick={() => saveSettings({ usecase_compact: true })}>Compact</button>
       </div>
     {/if}
-    {#if view === "matrix"}
-      <div class="w-seg" role="group" aria-label="Matrix detail">
-        <button type="button" aria-pressed={!ui.matrixAdvanced} onclick={() => (ui.matrixAdvanced = false)}>Standard</button>
-        <button type="button" aria-pressed={ui.matrixAdvanced} onclick={() => (ui.matrixAdvanced = true)}>Advanced</button>
-      </div>
-    {/if}
     <select class="w-chip" class:on={fArea} bind:value={fArea} aria-label="Area">
       <option value="">All areas</option>
       {#each areas as a (a)}<option value={a}>{a}</option>{/each}
     </select>
     <div class="group details">
+      {#if view === "matrix"}
+        <div class="w-seg matrix-mode" role="group" aria-label="Matrix detail">
+          <button type="button" aria-pressed={!ui.matrixAdvanced} onclick={() => (ui.matrixAdvanced = false)}>Standard</button>
+          <button type="button" aria-pressed={ui.matrixAdvanced} onclick={() => (ui.matrixAdvanced = true)}>Advanced</button>
+        </div>
+      {/if}
       <span class="w-caps">Details</span>
       <div class="w-seg" role="group" aria-label="Detail cards">
         <button type="button" aria-pressed={detailMode === "popup"} onclick={() => saveSettings({ task_detail: "popup" })}>Popup</button>
@@ -461,6 +461,10 @@
   }
   .details {
     margin-left: auto;
+  }
+  /* Same distance as between toolbar groups. */
+  .matrix-mode {
+    margin-right: 10px;
   }
   select.w-chip {
     padding-right: 6px;
