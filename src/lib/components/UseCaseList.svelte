@@ -19,7 +19,7 @@
     ["step", "Phase / step", stepRank],
     ["status", "Status", (u: UC) => p.statuses.findIndex((s) => s.id === u.usecase.status)],
     ["days", "Days", (u: UC) => daysInStep(u) ?? -1],
-    ["fte", "FTE", savedFte],
+    ["fte", "Effort", savedFte],
   ] as const;
   const NUM: string[] = ["days", "fte"];
   type Col = (typeof COLS)[number][0];

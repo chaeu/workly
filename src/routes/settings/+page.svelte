@@ -133,7 +133,7 @@
     <div class="panel-head">
       <div>
         <h2 class="w-h2">Hours per FTE per year</h2>
-        <p class="w-sub">Turns the savings of a use case into FTE. Per Mac.</p>
+        <p class="w-sub">Turns the manual effort of a use case into FTE. Per Mac.</p>
       </div>
       <div class="w-toolbar">
         {#key settings.fte_hours_per_year}

@@ -177,7 +177,7 @@
         {@render area("next_step", "Next step", uc.next_step, "What happens next?")}
         {@render area("current_state", "Current state", uc.current_state, "Where does it stand?")}
         <section class="savings">
-          <span class="w-caps">Savings</span>
+          <span class="w-caps">Manual effort</span>
           {#if uc.savings.length || draft}
             <table>
               <thead>
@@ -220,7 +220,7 @@
           {/if}
           {#if uc.savings.length || uc.savings_note}
             {#key uc.savings_note}
-              <input class="note" value={uc.savings_note ?? ""} placeholder="Where do the numbers come from?" aria-label="Savings note" onchange={text("usecase.savings_note")} />
+              <input class="note" value={uc.savings_note ?? ""} placeholder="Where do the numbers come from?" aria-label="Manual effort note" onchange={text("usecase.savings_note")} />
             {/key}
           {/if}
         </section>

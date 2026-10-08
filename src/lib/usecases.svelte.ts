@@ -105,4 +105,4 @@ export function ucTip(p: Process, u: UC) {
     .join("\n");
 }
 export const stepTip = (s: Step) => [stepName(s), s.kind === "gate" ? s.hint : s.sub, s.optional && "Optional"].filter(Boolean).join("\n");
-export const fteTip = (u: UC) => `Expected saving\n${fmtHours(savedHours(u))} h per year · ${fmtFte(savedFte(u) ?? 0)} FTE at ${fmtHours(fteHours())} h`;
+export const fteTip = (u: UC) => `Manual effort\n${fmtHours(savedHours(u))} h per year · ${fmtFte(savedFte(u) ?? 0)} FTE at ${fmtHours(fteHours())} h`;
