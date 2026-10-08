@@ -2,8 +2,9 @@
 //! YAML through a serializer: unknown fields, key order, comments, blank lines
 //! and the quoting of untouched values stay byte-identical.
 //!
-//! Supported paths: a top-level key (`status`) or a key in one nested block
-//! map (`agent.active`). Values are JSON scalars or lists of scalars.
+//! Supported paths: up to three keys through nested block maps (`status`,
+//! `agent.active`, `usecase.assessment.ko`). Values are JSON scalars, lists of
+//! scalars or flat maps, and flat maps of scalars (written as `{ a: b }`).
 
 use crate::frontmatter::{eol_of, split};
 use serde_json::Value;
@@ -91,7 +92,7 @@ fn json_set(v: &mut Value, path: &[&str], value: Option<Value>) {
 
 fn check_path(path: &[&str]) -> Result<(), String> {
     let ok = |k: &str| !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
-    if path.is_empty() || path.len() > 2 || !path.iter().all(|k| ok(k)) {
+    if path.is_empty() || path.len() > 3 || !path.iter().all(|k| ok(k)) {
         return Err(format!("unsupported field path '{}'", path.join(".")));
     }
     Ok(())
@@ -110,7 +111,7 @@ pub fn emit(v: &Value) -> Result<String, String> {
             let items: Result<Vec<_>, _> = items.iter().map(emit_item(true)).collect();
             format!("[{}]", items?.join(", "))
         }
-        Value::Object(_) => return Err("maps cannot be written; set nested keys one by one".into()),
+        Value::Object(_) => emit_item(true)(v)?,
     })
 }
 
@@ -122,7 +123,7 @@ fn emit_item(in_flow: bool) -> impl Fn(&Value) -> Result<String, String> {
             let fields: Result<Vec<_>, String> = map
                 .iter()
                 .map(|(k, v)| match v {
-                    Value::Array(_) | Value::Object(_) => Err("list items may only be scalars or flat maps".into()),
+                    Value::Array(_) | Value::Object(_) => Err("maps may only hold scalars".into()),
                     _ => Ok(format!("{}: {}", scalar(k, true), emit_item(true)(v)?)),
                 })
                 .collect();
@@ -308,18 +309,16 @@ fn set_in(doc: &mut Doc, scope: Scope, path: &[&str], value: &Value, text: &str)
     let Some((i, kl)) = find_key(doc, scope, path[0]) else {
         // New keys go to the end of their map.
         let at = (scope.start..scope.end).rev().find(|&j| !is_blank(&doc.lines[j])).map_or(scope.start, |j| j + 1);
-        let pad = " ".repeat(scope.indent);
-        let new = match path {
-            [key] => vec![format!("{pad}{key}: {text}{eol}")],
-            [key, child] => vec![format!("{pad}{key}:{eol}"), format!("{pad}  {child}: {text}{eol}")],
-            _ => unreachable!(),
-        };
+        let new = path.iter().enumerate().map(|(d, key)| {
+            let pad = " ".repeat(scope.indent + 2 * d);
+            if d + 1 == path.len() { format!("{pad}{key}: {text}{eol}") } else { format!("{pad}{key}:{eol}") }
+        });
         doc.lines.splice(at..at, new);
         return Ok(());
     };
     let end = block_end(doc, i, scope, kl.has_value());
 
-    if path.len() == 2 {
+    if path.len() > 1 {
         if kl.has_value() {
             // Only `key: null` / `key: ~` may turn into a block map.
             let v = &content(&doc.lines[i])[kl.value_start..kl.value_end];
@@ -372,7 +371,7 @@ fn set_in(doc: &mut Doc, scope: Scope, path: &[&str], value: &Value, text: &str)
 fn remove_in(doc: &mut Doc, scope: Scope, path: &[&str]) -> Result<(), String> {
     let Some((i, kl)) = find_key(doc, scope, path[0]) else { return Ok(()) };
     let end = block_end(doc, i, scope, kl.has_value());
-    if path.len() == 2 {
+    if path.len() > 1 {
         if kl.has_value() || end == i + 1 {
             return Ok(());
         }
@@ -437,6 +436,18 @@ mod tests {
     }
 
     #[test]
+    fn three_levels_and_flow_maps() {
+        let src = "---\nid: A-1\nuc:\n  step: x   # here\n---\n";
+        let added = set(src, "uc.a.ko", json!({ "owner": "pass", "data_use": "open" }));
+        assert_eq!(added, "---\nid: A-1\nuc:\n  step: x   # here\n  a:\n    ko: { owner: pass, data_use: open }\n---\n");
+        // A hand-written block map is replaced by one flow line; a trailing comment stays.
+        let block = "---\nuc:\n  a:\n    ko:   # k.o.\n      owner: pass\n      risk: maybe\n    note: n\n---\n";
+        assert_eq!(set(block, "uc.a.ko", json!({ "risk": "open" })), "---\nuc:\n  a:\n    ko: { risk: open }   # k.o.\n    note: n\n---\n");
+        assert_eq!(remove_field(block, &["uc", "a", "ko"]).unwrap(), "---\nuc:\n  a:\n    note: n\n---\n");
+        assert_eq!(emit(&json!({ "a": "x, y", "b": 3 })).unwrap(), "{ a: \"x, y\", b: 3 }");
+    }
+
+    #[test]
     fn lists() {
         assert_eq!(set("---\ntags: [a]\n---\n", "tags", json!(["a", "b"])), "---\ntags: [a, b]\n---\n");
         assert_eq!(set("---\nid: x\n---\n", "tags", json!(["a"])), "---\nid: x\ntags: [a]\n---\n");
@@ -462,7 +473,8 @@ mod tests {
         assert!(set_field(src, &["agent", "x"], &json!(1)).is_err());
         assert!(set_field(src, &["tags", "x"], &json!(1)).is_err());
         assert!(set_field(src, &["a: b"], &json!(1)).is_err());
-        assert!(set_field(src, &["x"], &json!({"a": 1})).is_err());
+        assert!(set_field(src, &["x"], &json!({"a": {"b": 1}})).is_err());
+        assert!(set_field(src, &["a", "b", "c", "d"], &json!(1)).is_err());
         assert!(set_field("no frontmatter", &["x"], &json!(1)).is_err());
         assert!(set_field("---\nid: \"broken\n---\n", &["x"], &json!(1)).is_err());
     }

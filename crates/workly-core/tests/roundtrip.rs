@@ -51,6 +51,8 @@ fn golden_wr8_every_field() {
         ("custom.owner_note", json!("done"), &["  owner_note: ask client about legacy URLs"], &["  owner_note: done"]),
         ("custom.links", json!(["c"]), &["  links: [a, b]"], &["  links: [c]"]),
         ("custom.new", json!(1), &[], &["  new: 1"]),
+        ("custom.meta", json!({ "a": "pass", "b": 2 }), &[], &["  meta: { a: pass, b: 2 }"]),
+        ("custom.more.n", json!(1), &[], &["  more:", "    n: 1"]),
         ("created", json!("2026-10-02"), &["created: 2026-10-01"], &["created: 2026-10-02"]),
         ("done_at", json!("2026-10-06"), &["done_at: null"], &["done_at: 2026-10-06"]),
         ("focus", json!("2026-10-06"), &[], &["focus: 2026-10-06"]),
