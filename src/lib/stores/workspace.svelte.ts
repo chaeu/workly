@@ -59,7 +59,11 @@ export type UseCase = {
   decisions: Decision[];
   savings: Saving[];
   savings_note: string | null;
+  /** Invalid hand-written entries are left out (listed under Problems); missing = open. */
+  assessment: UseCaseAssessment | null;
 };
+export type KoValue = "pass" | "fail" | "open";
+export type UseCaseAssessment = { date: string | null; ko: Record<string, KoValue>; scores: Record<string, number>; note: string | null };
 export type ParseError = { path: string; line: number | null; message: string };
 // Mirrors model::Process: `.workly/process.yml`.
 export type Labelled = { id: string; label: string };
@@ -90,7 +94,10 @@ export type Process = {
   types: Labelled[];
   areas: string[];
   stale_after_days: number | null;
+  /** Assessment method; null = no assessment anywhere in the app. */
+  assessment: { ko: Labelled[]; criteria: Criterion[] } | null;
 };
+export type Criterion = { id: string; axis: "value" | "feasibility"; label: string; anchors: string[] };
 export type Snapshot = {
   root: string;
   config: { task_statuses: { id: string; label: string; wip_limit: number | null }[] };

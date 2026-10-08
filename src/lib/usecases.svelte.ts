@@ -1,6 +1,6 @@
 // Use-case cockpit helpers. Every step, lane, phase and label comes from
 // `.workly/process.yml`; only the spec's fixed status and type ids pick colours.
-import { workspace, type Process, type ProjectEntry, type Saving, type Step, type UseCase } from "$lib/stores/workspace.svelte";
+import { workspace, type Process, type ProjectEntry, type Saving, type Step, type UseCase, type UseCaseAssessment } from "$lib/stores/workspace.svelte";
 import { today } from "$lib/tasks.svelte";
 
 export type UC = ProjectEntry & { usecase: UseCase };
@@ -105,6 +105,61 @@ const fteFmt = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maxi
 const hoursFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 export const fmtFte = (fte: number) => fteFmt.format(fte);
 export const fmtHours = (h: number) => hoursFmt.format(h);
+
+// ---------------------------------------------------------------- assessment
+
+/** Value and feasibility at or above this are "high" (docs/ASSESSMENT.md, D3). */
+export const ASSESS_THRESHOLD = 2.0;
+export const QUADRANTS = ["Quick win", "Big bet", "Fill-in", "Drop"] as const;
+export type Quadrant = (typeof QUADRANTS)[number];
+export const QUADRANT_COLOR: Record<Quadrant | "K.O.", string> = {
+  "Quick win": "var(--w-ok)",
+  "Big bet": "var(--w-info)",
+  "Fill-in": "var(--w-warn)",
+  Drop: "var(--w-hold)",
+  "K.O.": "var(--w-danger)",
+};
+
+/**
+ * Result of one assessment against the method in process.yml. Computed, never stored.
+ * value / feasibility: mean of the scored criteria per axis, null when none is scored.
+ * ko: fail if any fails, else open if any is open or missing, else pass.
+ * open: labels of open K.O. questions, then unscored criteria (what the pilot has to answer).
+ */
+export function assess(p: Process, a: UseCaseAssessment) {
+  const m = p.assessment!;
+  const mean = (axis: string) => {
+    const pts = m.criteria.filter((c) => c.axis === axis && a.scores[c.id] != null).map((c) => a.scores[c.id]);
+    return pts.length ? pts.reduce((x, y) => x + y, 0) / pts.length : null;
+  };
+  const [value, feasibility] = [mean("value"), mean("feasibility")];
+  const quadrant: Quadrant | null =
+    value === null || feasibility === null
+      ? null
+      : value >= ASSESS_THRESHOLD
+        ? feasibility >= ASSESS_THRESHOLD ? "Quick win" : "Big bet"
+        : feasibility >= ASSESS_THRESHOLD ? "Fill-in" : "Drop";
+  const koOf = (id: string) => a.ko[id] ?? "open";
+  const failed = m.ko.filter((k) => koOf(k.id) === "fail").map((k) => k.label);
+  const open = [...m.ko.filter((k) => koOf(k.id) === "open").map((k) => k.label), ...m.criteria.filter((c) => a.scores[c.id] == null).map((c) => c.label)];
+  const ko = failed.length ? "fail" : m.ko.some((k) => koOf(k.id) === "open") ? "open" : "pass";
+  return { value, feasibility, quadrant, ko, failed, open };
+}
+export type AssessResult = ReturnType<typeof assess>;
+
+/** What the pill says: K.O. beats the quadrant; scored on one axis only = "Incomplete". */
+export const verdict = (r: AssessResult) => (r.ko === "fail" ? "K.O." : (r.quadrant ?? "Incomplete"));
+/** List sort: Quick win, Big bet, Fill-in, Drop, K.O., incomplete; null = not assessed (sorts last). */
+export function assessRank(p: Process, u: UC) {
+  if (!p.assessment || !u.usecase.assessment) return null;
+  const v = verdict(assess(p, u.usecase.assessment));
+  return v === "K.O." ? 5 : v === "Incomplete" ? 6 : QUADRANTS.indexOf(v) + 1;
+}
+const scoreFmt = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+export const fmtScore = (n: number | null) => (n === null ? "–" : scoreFmt.format(n));
+export const scoreLine = (r: AssessResult) => `Value ${fmtScore(r.value)} · Feasibility ${fmtScore(r.feasibility)}`;
+export const assessTip = (r: AssessResult) =>
+  [verdict(r), scoreLine(r), ...r.failed.map((x) => `K.O.: ${x}`), ...(r.open.length ? ["Open for pilot:", ...r.open.map((x) => `· ${x}`)] : [])].join("\n");
 
 // Tooltip texts (use:tip): first line is the heading.
 /** Card or map dot: who, where it stands, how long, what comes next. */
