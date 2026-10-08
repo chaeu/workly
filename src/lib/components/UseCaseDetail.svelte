@@ -6,6 +6,7 @@
   import EffortEditor from "$lib/components/EffortEditor.svelte";
   import ProcessHistory from "$lib/components/ProcessHistory.svelte";
   import { grow } from "$lib/grow";
+  import { outside } from "$lib/outside";
   import { tip } from "$lib/tip";
   import { workspace, updateProjectField, updateTaskField, createTask, type Process } from "$lib/stores/workspace.svelte";
   import {
@@ -327,7 +328,13 @@
     {#if editingAssessment && p.assessment}<AssessmentEditor {key} process={p} onclose={() => (editingAssessment = false)} />{/if}
   {:else}
     {#if mode === "popup"}<div class="w-scrim" onclick={onclose} aria-hidden="true"></div>{/if}
-    <div class={mode === "popup" ? "w-modal" : "panel"} role="dialog" aria-modal={mode === "popup"} aria-labelledby="u-title">
+    <div
+      class={mode === "popup" ? "w-modal" : "panel"}
+      role="dialog"
+      aria-modal={mode === "popup"}
+      aria-labelledby="u-title"
+      use:outside={mode === "panel" ? onclose : null}
+    >
       <div class="d-top">
         <div class="d-meta">
           <span class="w-mono">{u.key}</span>
