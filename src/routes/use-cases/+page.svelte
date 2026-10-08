@@ -1,6 +1,7 @@
 <script lang="ts">
   import UseCaseMap from "$lib/components/UseCaseMap.svelte";
   import UseCaseList from "$lib/components/UseCaseList.svelte";
+  import UseCaseMatrix from "$lib/components/UseCaseMatrix.svelte";
   import ProcessError from "$lib/components/ProcessError.svelte";
   import UseCaseDetail from "$lib/components/UseCaseDetail.svelte";
   import ProjectForm from "$lib/components/ProjectForm.svelte";
@@ -33,6 +34,8 @@
   const processErrors = $derived(workspace.index?.errors.filter((e) => e.path === PROCESS) ?? []);
   const ucs = $derived((workspace.index?.projects.filter((x) => x.usecase && x.status !== "archived") ?? []) as UC[]);
   const unplaced = $derived(p ? ucs.filter((u) => !phaseOf(p, u)) : []);
+  // The matrix exists only with an assessment block in process.yml; without one it falls back to the list.
+  const view = $derived(ui.view === "matrix" && !p?.assessment ? "list" : ui.view);
   const detailMode = $derived(workspace.settings?.task_detail ?? "popup");
   let openKey = $state<string | null>(null);
   const compact = $derived(workspace.settings?.usecase_compact ?? false);
@@ -249,11 +252,13 @@
   <div>
     <h1 class="w-h1">Use-case cockpit</h1>
     <div class="w-sub">
-      {ui.view === "board"
+      {view === "board"
         ? "Phases left to right, lanes by choice. Drag a card to change phase or lane; click opens the details."
-        : ui.view === "list"
+        : view === "list"
           ? "All use cases in one table. Click a column to sort, a row to open the details."
-          : "Lanes show the owner; diamonds are decisions. Drag a use case onto the step it is in."}
+          : view === "matrix"
+            ? "Assessed use cases by value and feasibility. Scores change in the assessment; click a use case to open the details."
+            : "Lanes show the owner; diamonds are decisions. Drag a use case onto the step it is in."}
     </div>
   </div>
   <div class="w-toolbar">
@@ -264,9 +269,10 @@
       <input bind:value={query} type="search" placeholder="Search key or title" aria-label="Search use cases" />
     </label>
     <div class="w-seg" role="group" aria-label="View">
-      <button type="button" aria-pressed={ui.view === "list"} onclick={() => (ui.view = "list")}>List</button>
-      <button type="button" aria-pressed={ui.view === "board"} onclick={() => (ui.view = "board")}>Board</button>
-      <button type="button" aria-pressed={ui.view === "map"} onclick={() => (ui.view = "map")}>Process map</button>
+      <button type="button" aria-pressed={view === "list"} onclick={() => (ui.view = "list")}>List</button>
+      <button type="button" aria-pressed={view === "board"} onclick={() => (ui.view = "board")}>Board</button>
+      <button type="button" aria-pressed={view === "map"} onclick={() => (ui.view = "map")}>Process map</button>
+      {#if p?.assessment}<button type="button" aria-pressed={view === "matrix"} onclick={() => (ui.view = "matrix")}>Matrix</button>{/if}
     </div>
     <button type="button" class="w-btn w-btn--quiet" title="Open {PROCESS} in VS Code" onclick={() => openInVscode(PROCESS)}>Edit process</button>
     {#if p && !processErrors.length}
@@ -279,7 +285,7 @@
   <ProcessError />
 {:else}
   <div class="toolbar">
-    {#if ui.view === "board"}
+    {#if view === "board"}
       <div class="group">
         <span class="w-caps">Lanes</span>
         <div class="w-seg" role="group" aria-label="Lanes">
@@ -298,7 +304,7 @@
         {/each}
       </div>
     </div>
-    {#if ui.view === "board"}
+    {#if view === "board"}
       <div class="w-seg" role="group" aria-label="Density">
         <button type="button" aria-pressed={!compact} onclick={() => saveSettings({ usecase_compact: false })}>Detailed</button>
         <button type="button" aria-pressed={compact} onclick={() => saveSettings({ usecase_compact: true })}>Compact</button>
@@ -352,12 +358,14 @@
     </p>
   {/if}
 
-  {#if ui.view === "list"}
+  {#if view === "list"}
     <UseCaseList process={p} ucs={ucs.filter(matches)} onopen={(key) => (openKey = key)} />
+  {:else if view === "matrix"}
+    <UseCaseMatrix process={p} ucs={ucs.filter(matches)} onopen={(key) => (openKey = key)} />
   {:else}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="scroll" class:map-wrap={ui.view === "map"} {onpointerdown}>
-    {#if ui.view === "board"}
+  <div class="scroll" class:map-wrap={view === "map"} {onpointerdown}>
+    {#if view === "board"}
       <div class="board" class:compact style:--n={p.phases.length}>
         <div class="corner w-caps">{LANE_MODES.find(([m]) => m === ui.lanes)![1]} / phase</div>
         {#each p.phases as ph, i (ph.id)}
@@ -406,14 +414,14 @@
   </div>
   {/if}
 
-  <div class="legend">
+  {#if view !== "matrix"}<div class="legend">
     {#each p.statuses as s (s.id)}
       <span><span class="w-dot" class:w-dot--hollow={s.id === "on_hold"} style:--c={statusColor(s.id)}></span>{s.label}</span>
     {/each}
     <span
       >Number = days in the current step{p.stale_after_days != null ? `, orange from ${p.stale_after_days}` : ""}. Diamond = decision (gate).</span
     >
-  </div>
+  </div>{/if}
 
   {#if creating}
     <ProjectForm usecase onclose={() => (creating = false)} oncreated={(key) => (openWhenLoaded = key)} />
