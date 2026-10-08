@@ -60,7 +60,7 @@ Ein Workspace ist ein Ordner, zugleich Obsidian-Vault und Git-Repo. Menschenlesb
 | --- | --- | --- |
 | Gerät | `~/Library/Application Support/Workly/settings.json` | Workspaces (Name + Pfad, mehrere, umschaltbar), Repos-Ordner, Theme, Fenster, UI-Präferenzen, Agent-Funktionen an/aus, Stunden pro FTE und Jahr |
 | Workspace | `<workspace>/.workly/config.yml` | Ordner für neue Projekte und Inbox, Scan-Ausschlüsse, Task-Status, WIP-Limits, Agent-Standards |
-| Workspace | `<workspace>/.workly/process.yml` | Use-Case-Prozess (Phasen, Schritte, Gates, Kanten) |
+| Workspace | `<workspace>/.workly/process.yml` | Use-Case-Prozess (Phasen, Schritte, Gates, Kanten) und Bewertungskriterien (`assessment:` mit K.-o.-Fragen und Kriterien je Achse samt Ankern) |
 
 ### Ordnerstruktur
 
@@ -115,6 +115,11 @@ usecase:                      # optional, only for use cases
   savings:                    # optional, activities the use case takes over
     - { what: Capture invoice, count: 1200, per: month, minutes: 6 }   # per: year | month | week | day
   savings_note: "Volume from the department, sample 09/2026"
+  assessment:                 # optional, current assessment (criteria from process.yml)
+    date: 2026-10-08
+    ko: { owner: pass, risk: open, data_use: pass }      # pass | fail | open
+    scores: { volume: 3, quality: 2, data: 2, path: 3 }  # 1 | 2 | 3, missing = open
+    note: Risk depends on whether output reaches customers
 ---
 Short description in Markdown, shown as overview in the app.
 ```
@@ -167,6 +172,7 @@ Description and acceptance criteria.
 - **Log:** Jede Änderung als JSON-Zeile in `.workly/log/JJJJ-MM.jsonl`: `{ts, actor, kind, id, field, from, to}`. `actor` = `app`, `cli`, `agent:<name>`.
 - **Use-Case-Verlauf:** Der Core liest das Log (nur lesen) und baut daraus pro Phase Zeitraum, Status-Episoden (mit dem letzten „Blocked by“) und die Entscheidungen aus `usecase.decisions` (Gate-Entscheidungen in der Phase des Gates, sonst nach Datum). `usecase.remove` setzt den Verlauf zurück. Der Verlauf kennt nur Änderungen über Workly; weicht die Datei vom Log ab, gilt die Datei (`step`, `step_since`).
 - **Ersparnis (`usecase.savings`):** Stunden und FTE werden berechnet, nie gespeichert. Stunden/Jahr = Σ `count` × Faktor(`per`) × `minutes` / 60 mit Faktor year 1, month 12, week 46, day 220 (Arbeitswochen/-tage, Konstanten in der App); FTE = Stunden / `fte_hours_per_year` (Geräte-Einstellung, Standard 1720). Die App schreibt immer die ganze Liste und prüft dabei: `what` nicht leer, `count` und `minutes` Zahlen ≥ 0, `per` aus der Liste. Ungültige Einträge von Hand stehen unter Problems, der Use Case lädt trotzdem. Anzeige: auf der Use-Case-Seite eine Karte unter der Beschreibung (Summe, eine Zeile pro Tätigkeit, Notiz), bearbeitet im Popup „Edit…“ (Tabelle, Notiz, Umrechnung); Detailkarte (Popup, Seitenleiste) zeigt in der Seitenspalte nur die Summe „≈ FTE · h/yr“, der Tooltip listet jede Tätigkeit und die Umrechnung (ohne Einträge: „No effort recorded“ mit Link zur Seite); sortierbare Spalte Effort (FTE-Wert) in der Liste (leer = hinten), Pill auf der Board-Karte bei > 0. Keine Summe im Cockpit, kein Automatisierungsgrad, keine Geldbeträge. UI-Label *Manual effort*, der Feldname bleibt `savings`.
+- **Bewertung (`usecase.assessment`):** Vor G0 „Pilot?“ und nach dem Pilot an G1 erneut. Die Methode steht in `process.yml` unter `assessment:` (`ko:` mit `id`, `label`; `criteria:` mit `id`, `axis` value | feasibility, `label`, genau 3 `anchors` für 1, 2, 3); eingebaut ist nichts, fehlt der Block, blendet die App jede Bewertung aus. Pro Use Case gibt es eine aktuelle Bewertung; eine Neubewertung überschreibt sie, der alte Stand steht im Log (`from`). K.-o.-Werte sind `pass` / `fail` / `open` (nicht yes/no, YAML 1.1), Punkte 1–3; ein fehlender Schlüssel heißt offen. Value, Feasibility (Durchschnitt der bewerteten Kriterien je Achse, ohne Gewichte), Quadrant (Grenze 2,0: Quick win, Big bet, Fill-in, Drop; ein `fail` = K.O.) und offene Punkte werden berechnet, nie gespeichert. Die App schreibt immer den ganzen Block (ein Write, eine Logzeile, `ko` und `scores` als Flow-Maps, `null` entfernt ihn) und prüft dabei Werte, Datum und dass jede ID in `process.yml` steht. Ungültige Werte von Hand stehen unter Problems und gelten als offen, der Use Case lädt trotzdem.
 - **Dateinamen:** `<ID>-<slug>.md`; Titeländerungen benennen die Datei nicht um (stabil für Links).
 - **Projekt-Keys:** 2–6 Zeichen, Großbuchstaben, Ziffern erst nach dem ersten Buchstaben (Kollisionsziffer, z. B. `WR2`).
 - **Neue Projekte** liegen in `<new_projects_dir>/<slug>/`. Existiert der Ordner schon ohne `_project.md`, bietet das Formular „Use existing folder“ an: die App schreibt `_project.md` und legt nur Fehlendes an (Unterordner, `agent/AGENTS.md`, `<key>.code-workspace`); vorhandene Dateien werden nie überschrieben oder verschoben, Titel und Key kommen aus dem Formular. Hat der Ordner schon eine `_project.md`, ist er bereits ein Projekt und das Anlegen schlägt fehl. Projekt löschen verschiebt den ganzen Ordner in den Papierkorb.
