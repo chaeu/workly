@@ -38,14 +38,14 @@
   let selected = $state<string | null>(null);
   let editing = $state(false);
 
-  // Overview: body of _project.md, reloaded on every index change so edits in Obsidian show up live.
+  // Overview and Use case: body of _project.md, reloaded on every index change so edits in Obsidian show up live.
   const overviewPath = $derived(project ? `${project.path}/_project.md` : "");
   let html = $state("");
   let descError = $state<string | null>(null);
   $effect(() => {
     void workspace.reloads;
     const path = overviewPath;
-    if (tab !== "overview" || !path) return;
+    if ((tab !== "overview" && tab !== "usecase") || !path) return;
     readMarkdown(path).then(
       (src) => {
         if (path !== overviewPath) return;
@@ -84,6 +84,19 @@
   </header>
   <p><a href="/projects">Back to projects</a></p>
 {:else}
+  {#snippet description()}
+    {#if descError}
+      <p class="w-sub">{descError}</p>
+    {:else if html}
+      <!-- Sanitised by DOMPurify in renderMarkdown. -->
+      <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <div class="md" onclick={onDescClick}>{@html html}</div>
+    {:else}
+      <p class="w-sub">No description in _project.md.</p>
+    {/if}
+  {/snippet}
+
   {#snippet title()}
     <h1 class="w-h1"><span class="w-proj-mark big" style:--c={projColor(project.color)}></span>{project.title}</h1>
   {/snippet}
@@ -128,24 +141,13 @@
     {:else if tab === "usecase"}
       {#if proc && !procBroken}
         <!-- No toast here: the new step shows right away. -->
-        <UseCaseDetail key={project.key} process={proc} mode="page" onmove={(u, step) => step !== u.usecase.step && moveUseCase(u.key, step)} />
+        <UseCaseDetail key={project.key} process={proc} mode="page" {description} onmove={(u, step) => step !== u.usecase.step && moveUseCase(u.key, step)} />
       {:else}
         <ProcessError />
       {/if}
     {:else}
       <div class="overview">
-        <section class="desc" aria-label="Description">
-          {#if descError}
-            <p class="w-sub">{descError}</p>
-          {:else if html}
-            <!-- Sanitised by DOMPurify in renderMarkdown. -->
-            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-            <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-            <div class="md" onclick={onDescClick}>{@html html}</div>
-          {:else}
-            <p class="w-sub">No description in _project.md.</p>
-          {/if}
-        </section>
+        <section class="desc" aria-label="Description">{@render description()}</section>
 
         <aside class="props" aria-label="Properties">
           <dl>

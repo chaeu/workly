@@ -45,6 +45,17 @@ export function daysInStep(u: UC) {
   const d = Math.round((Date.parse(`${today()}T00:00`) - Date.parse(`${since}T00:00`)) / 86_400_000);
   return isNaN(d) ? null : d;
 }
+/** Whole days from `a` to `b` (today when null). Dates are YYYY-MM-DD. */
+export const daysBetween = (a: string, b: string | null) => Math.round((Date.parse(`${b ?? today()}T00:00`) - Date.parse(`${a}T00:00`)) / 86_400_000);
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "24 Sep" from YYYY-MM-DD; always three letters, so date columns line up. */
+export const fmtDay = (d: string) => `${d.slice(8, 10)} ${MONTHS[Number(d.slice(5, 7)) - 1] ?? "?"}`;
+/** "01 – 24 Sep", "27 Aug – 10 Sep"; open end = "since 24 Sep". */
+export function fmtSpan(a: string, b: string | null) {
+  if (!b) return `since ${fmtDay(a)}`;
+  const [x, y] = [fmtDay(a), fmtDay(b)];
+  return a.slice(0, 7) === b.slice(0, 7) ? `${x.slice(0, 2)} – ${y}` : `${x} – ${y}`;
+}
 export const isStale = (p: Process, u: UC) => {
   const d = daysInStep(u);
   return d !== null && p.stale_after_days != null && d >= p.stale_after_days && u.usecase.status !== "stable";
@@ -74,7 +85,7 @@ export function moveMessage(p: Process, key: string, fromId: string | null, toId
     if (crossed.length) return `${key} passed ${crossed.join(", ")} → ${stepName(to)}`;
   }
   if (to.kind === "gate") return `${key} waits at ${stepName(to)}`;
-  return `${key} → ${stepName(to)}, ball with ${p.lanes.find((l) => l.id === to.lane)?.label ?? to.lane}`;
+  return `${key} → ${stepName(to)}, owner ${p.lanes.find((l) => l.id === to.lane)?.label ?? to.lane}`;
 }
 
 // ---------------------------------------------------------------- savings

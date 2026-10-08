@@ -253,7 +253,7 @@
         ? "Phases left to right, lanes by choice. Drag a card to change phase or lane; click opens the details."
         : ui.view === "list"
           ? "All use cases in one table. Click a column to sort, a row to open the details."
-          : "Lanes show who has the ball; diamonds are decisions. Drag a use case onto the step it is in."}
+          : "Lanes show the owner; diamonds are decisions. Drag a use case onto the step it is in."}
     </div>
   </div>
   <div class="w-toolbar">

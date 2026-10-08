@@ -153,7 +153,7 @@
     <div class="f-lane" style:grid-row={i + 1} style:--tint={tint(i)}>
       <strong>{l.label}</strong>
       {#if l.sub}<small>{l.sub}</small>{/if}
-      <span class="ball">Ball here: <b>{here.length}</b>{#if blocked}{" · "}<span class="bl">{blocked} blocked</span>{/if}</span>
+      <span class="owns">Owns: <b>{here.length}</b>{#if blocked}{" · "}<span class="bl">{blocked} blocked</span>{/if}</span>
     </div>
   {/each}
 
@@ -244,17 +244,17 @@
     font-size: var(--w-fs-caption);
     line-height: 1.35;
   }
-  .ball {
+  .owns {
     margin-top: 8px;
     font-size: var(--w-fs-caption);
     font-variant-numeric: tabular-nums;
     color: var(--w-muted);
   }
-  .ball b {
+  .owns b {
     color: var(--w-ink);
     font-weight: 600;
   }
-  .ball .bl {
+  .owns .bl {
     color: var(--w-danger);
     font-weight: 600;
   }

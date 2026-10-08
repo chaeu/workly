@@ -1,8 +1,11 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import { goto } from "$app/navigation";
+  import EffortEditor from "$lib/components/EffortEditor.svelte";
+  import ProcessHistory from "$lib/components/ProcessHistory.svelte";
   import { grow } from "$lib/grow";
   import { tip } from "$lib/tip";
-  import { workspace, updateProjectField, updateTaskField, createTask, type Process, type Saving } from "$lib/stores/workspace.svelte";
+  import { workspace, updateProjectField, updateTaskField, createTask, type Process } from "$lib/stores/workspace.svelte";
   import {
     daysInStep,
     fmtFte,
@@ -13,7 +16,6 @@
     knownAreas,
     label,
     nextMoves,
-    PER_YEAR,
     phaseIndex,
     savedHours,
     savingHours,
@@ -29,7 +31,16 @@
     mode,
     onmove,
     onclose,
-  }: { key: string; process: Process; mode: "popup" | "panel" | "page"; onmove: (u: UC, step: string) => void; onclose?: () => void } = $props();
+    description,
+  }: {
+    key: string;
+    process: Process;
+    mode: "popup" | "panel" | "page";
+    onmove: (u: UC, step: string) => void;
+    onclose?: () => void;
+    /** Page only: the rendered _project.md body (the project page owns it, with its link handling). */
+    description?: Snippet;
+  } = $props();
   const pageHref = $derived(`/projects/${key}?tab=usecase`);
 
   const u = $derived(workspace.index?.projects.find((x) => x.key === key && x.usecase) as UC | undefined);
@@ -68,31 +79,8 @@
   const text = (field: string) => (e: Event & { currentTarget: HTMLTextAreaElement | HTMLInputElement }) =>
     save(field, e.currentTarget.value.trim() || null);
 
-  // Savings: the whole list is written on every change. A new row stays a local draft until it is complete.
-  const PERS = Object.keys(PER_YEAR);
-  let draft = $state<Saving | null>(null);
-  const complete = (s: Saving) => !!s.what?.trim() && s.count != null && s.count >= 0 && s.minutes != null && s.minutes >= 0 && !!s.per;
   const hours = $derived(u ? savedHours(u) : 0);
-  const saveSavings = (list: Saving[]) => save("usecase.savings", list);
-  /** Cell edit of row `i` (or the draft when i < 0). Invalid input falls back to the file's value. */
-  function cell(i: number, field: "what" | "count" | "per" | "minutes") {
-    return (e: Event & { currentTarget: HTMLInputElement | HTMLSelectElement }) => {
-      const el = e.currentTarget;
-      const value = field === "what" || field === "per" ? el.value.trim() : el.value === "" ? null : Number(el.value);
-      const row = { ...(i < 0 ? draft! : uc!.savings[i]), [field]: value };
-      if (i < 0) {
-        draft = row;
-        if (complete(row)) {
-          saveSavings([...uc!.savings, row]);
-          draft = null;
-        }
-      } else if (complete(row)) {
-        saveSavings(uc!.savings.map((s, j) => (j === i ? row : s)));
-      } else {
-        el.value = String(uc!.savings[i][field] ?? "");
-      }
-    };
-  }
+  let editingEffort = $state(false);
 
   // ponytail: unticking reopens as `todo` (or the first status); the task board covers other statuses.
   const reopen = $derived(workspace.index?.config.task_statuses.find((s) => s.id === "todo")?.id ?? workspace.index?.config.task_statuses[0]?.id ?? "todo");
@@ -129,13 +117,16 @@
       {/if}
       <div class="where">
         {#if step}
-          Step <b>{stepName(step)}</b> · Ball with <b>{lane?.label ?? step.lane}</b>
+          Step <b>{stepName(step)}</b> · Owner <b>{lane?.label ?? step.lane}</b>
         {:else}
           <span class="stale">Unknown step “{uc.step ?? "none"}”, pick one below</span>
         {/if}
         {#if days !== null}· <span class:stale={isStale(p, u)}>{days} {days === 1 ? "day" : "days"} in step</span>{/if}
       </div>
     </div>
+  {/snippet}
+
+  {#snippet statuses()}
     <div class="status-row" role="group" aria-label="Status">
       {#each p.statuses as s (s.id)}
         <button type="button" aria-pressed={uc.status === s.id} onclick={() => save("usecase.status", s.id)}
@@ -165,10 +156,8 @@
     {/if}
   {/snippet}
 
-  {#snippet side()}
-    <section>
-      <h3 class="w-caps">Classification</h3>
-      <dl class="kv">
+  {#snippet classification()}
+    <dl class="kv">
         <dt><label for="f-step">Step</label></dt>
         <dd>
           {#key uc.step}
@@ -195,18 +184,9 @@
           </select>
         </dd>
       </dl>
-    </section>
-    {#if mode !== "page"}
-      <!-- Light version: the total only; the full list is on the page. -->
-      <section>
-        <h3 class="w-caps">Manual effort</h3>
-        {#if uc.savings.length}
-          <span class="sum" use:tip={fteTip(u)}><b>≈ {fmtFte(hours / fteHours())} FTE</b> · {fmtHours(hours)} h/yr</span>
-        {:else}
-          <span class="sum">No effort recorded · <a href={pageHref}>Open page</a></span>
-        {/if}
-      </section>
-    {/if}
+  {/snippet}
+
+  {#snippet taskList()}
     <section>
       <h3 class="w-caps">Tasks <span class="w-mono prog">{doneCount}/{tasks.length}</span></h3>
       {#if tasks.length}<div class="bar"><i style:width="{(doneCount / tasks.length) * 100}%"></i></div>{/if}
@@ -220,6 +200,23 @@
       </ul>
       <input class="add-task" bind:value={newTask} placeholder="+ Add task" aria-label="Add task" onkeydown={(e) => e.key === "Enter" && addTask()} />
     </section>
+  {/snippet}
+
+  {#snippet side()}
+    <section>
+      <h3 class="w-caps">Classification</h3>
+      {@render classification()}
+    </section>
+    <!-- Light version: the total only; the list and the editor are on the page. -->
+    <section>
+      <h3 class="w-caps">Manual effort</h3>
+      {#if uc.savings.length}
+        <span class="sum" use:tip={fteTip(u)}><b>≈ {fmtFte(hours / fteHours())} FTE</b> · {fmtHours(hours)} h/yr</span>
+      {:else}
+        <span class="sum">No effort recorded · <a href={pageHref}>Open page</a></span>
+      {/if}
+    </section>
+    {@render taskList()}
     <section>
       <h3 class="w-caps">Decisions <span class="w-mono prog">{uc.decisions.length}</span></h3>
       {#each uc.decisions as d, i (i)}
@@ -233,68 +230,44 @@
   {/snippet}
 
   {#if mode === "page"}
-    <!-- ponytail: one component, three modes. Split the effort table into its own component only if this becomes unreadable. -->
+    <!-- Page: process flow on the left (status, texts, gates, history, tasks), content on the right. -->
     <div class="page">
-      <div class="card">
-        <div class="d-top">{@render position()}</div>
-        <div class="pg-body">
-          {@render blocked()}
-          <div class="d-main">
-            {@render texts()}
-            <section class="savings">
-              <span class="w-caps">Manual effort</span>
-              {#if uc.savings.length || draft}
-                <table>
-                  <thead>
-                    <tr><th>Activity</th><th class="num">Count</th><th class="per">Per</th><th class="num">Minutes</th><th class="num">h/yr</th><th></th></tr>
-                  </thead>
-                  <tbody>
-                    {#each [...uc.savings, ...(draft ? [draft] : [])] as s, i (i)}
-                      {@const r = i < uc.savings.length ? i : -1}
-                      {@const h = savingHours(s)}
-                      <!-- {#key} resets the inputs to the file's values after every reload. -->
-                      {#key workspace.reloads}
-                        <tr>
-                          <td><input value={s.what ?? ""} title={s.what ?? ""} placeholder="What is done by hand?" aria-label="Activity" onchange={cell(r, "what")} {@attach (el) => { if (r < 0 && !s.what) el.focus(); }} /></td>
-                          <td class="num"><input type="number" min="0" step="any" value={s.count ?? ""} aria-label="Count" onchange={cell(r, "count")} /></td>
-                          <td class="per">
-                            <select value={s.per ?? ""} aria-label="Per" onchange={cell(r, "per")}>
-                              {#if !s.per}<option value="">–</option>{/if}
-                              {#each PERS as per (per)}<option value={per}>{per}</option>{/each}
-                            </select>
-                          </td>
-                          <td class="num"><input type="number" min="0" step="any" value={s.minutes ?? ""} aria-label="Minutes" onchange={cell(r, "minutes")} /></td>
-                          <td class="num w-mono">{h == null ? "–" : fmtHours(h)}</td>
-                          <td>
-                            <button type="button" class="rm" aria-label="Remove activity" onclick={() => (r < 0 ? (draft = null) : saveSavings(uc.savings.filter((_, j) => j !== r)))}>✕</button>
-                          </td>
-                        </tr>
-                      {/key}
-                    {/each}
-                  </tbody>
-                </table>
-                <div class="total">
-                  <span><b>≈ {fmtFte(hours / fteHours())} FTE</b> · {fmtHours(hours)} h/yr</span>
-                  <button type="button" class="w-btn w-btn--quiet" onclick={() => (draft ??= { what: "", count: null, per: "month", minutes: null })}>+ Add activity</button>
-                </div>
-                <p class="w-sub hint">
-                  Per year: month × {PER_YEAR.month}, week × {PER_YEAR.week}, day × {PER_YEAR.day} · 1 FTE = {fmtHours(fteHours())} h (Settings)
-                </p>
-              {:else}
-                <button type="button" class="add-act" onclick={() => (draft = { what: "", count: null, per: "month", minutes: null })}>+ Add activity</button>
-              {/if}
-              {#if uc.savings.length || uc.savings_note}
-                {#key uc.savings_note}
-                  <input class="note" value={uc.savings_note ?? ""} placeholder="Where do the numbers come from?" aria-label="Manual effort note" onchange={text("usecase.savings_note")} />
-                {/key}
-              {/if}
-            </section>
-          </div>
-          {#if moves.length}<div class="moves">{@render moveButtons()}</div>{/if}
-        </div>
+      <div class="card flow">
+        {@render statuses()}
+        {@render blocked()}
+        {@render texts()}
+        {#if moves.length}<div class="moves">{@render moveButtons()}</div>{/if}
+        <section class="sec"><ProcessHistory {u} process={p} /></section>
+        <div class="sec">{@render taskList()}</div>
       </div>
-      <aside class="card d-side">{@render side()}</aside>
+      <div class="content">
+        <div class="card desc">
+          <div class="cls">{@render classification()}</div>
+          {@render description?.()}
+        </div>
+        <!-- Always in the same place below the description, however long that gets. -->
+        <section class="card effort" aria-label="Manual effort">
+          <div class="eff-sum">
+            <span class="w-caps">Manual effort today</span>
+            {#if uc.savings.length}
+              <b class="big" use:tip={fteTip(u)}>≈ {fmtFte(hours / fteHours())} FTE</b>
+              <span class="w-sub">{fmtHours(hours)} h/yr</span>
+            {:else}
+              <span class="w-sub">No effort recorded</span>
+            {/if}
+          </div>
+          <div class="eff-list">
+            {#each uc.savings as s, i (i)}
+              {@const h = savingHours(s)}
+              <div class="eff-row"><span>{s.what ?? "–"}</span><span class="w-mono">{h == null ? "–" : `${fmtHours(h)} h`}</span></div>
+            {/each}
+            {#if uc.savings_note}<p class="w-sub">{uc.savings_note}</p>{/if}
+          </div>
+          <button type="button" class="w-btn" onclick={() => (editingEffort = true)}>{uc.savings.length ? "Edit…" : "Add…"}</button>
+        </section>
+      </div>
     </div>
+    {#if editingEffort}<EffortEditor {key} onclose={() => (editingEffort = false)} />{/if}
   {:else}
     {#if mode === "popup"}<div class="w-scrim" onclick={onclose} aria-hidden="true"></div>{/if}
     <div class={mode === "popup" ? "w-modal" : "panel"} role="dialog" aria-modal={mode === "popup"} aria-labelledby="u-title">
@@ -316,6 +289,7 @@
           />
         {/key}
         {@render position()}
+        {@render statuses()}
       </div>
 
       <div class="d-body">
@@ -583,113 +557,6 @@
     background: var(--w-surface);
     outline: none;
   }
-  .savings {
-    display: grid;
-    gap: 6px;
-  }
-  .savings table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--w-fs-small);
-  }
-  .savings th {
-    text-align: left;
-    font-weight: 500;
-    font-size: var(--w-fs-caption);
-    color: var(--w-muted);
-    padding: 0 4px 2px;
-    border-bottom: 1px solid var(--w-line);
-  }
-  .savings td {
-    padding: 1px 0;
-    border-bottom: 1px solid var(--w-line);
-  }
-  .savings .num {
-    text-align: right;
-    width: 52px;
-  }
-  .savings .per {
-    width: 76px;
-  }
-  .savings td.w-mono {
-    padding-right: 4px;
-    color: var(--w-muted);
-  }
-  .savings td:last-child {
-    width: 24px;
-  }
-  .savings input,
-  .savings select,
-  .note {
-    width: 100%;
-    box-sizing: border-box;
-    border: 1px solid transparent;
-    border-radius: var(--w-r-sm);
-    padding: 3px 4px;
-    background: none;
-    font-size: var(--w-fs-small);
-    font-variant-numeric: tabular-nums;
-  }
-  .savings .num input {
-    text-align: right;
-  }
-  .savings input:hover,
-  .savings select:hover,
-  .note:hover {
-    border-color: var(--w-line);
-  }
-  .savings input:focus,
-  .savings select:focus,
-  .note:focus {
-    border-color: var(--w-accent);
-    background: var(--w-surface);
-    outline: none;
-  }
-  .rm {
-    border: 0;
-    background: none;
-    color: var(--w-muted);
-    cursor: pointer;
-    border-radius: var(--w-r-sm);
-    width: 22px;
-    height: 22px;
-  }
-  .rm:hover {
-    background: var(--w-tray);
-    color: var(--w-ink);
-  }
-  .total {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: var(--w-fs-small);
-    color: var(--w-muted);
-  }
-  .total b {
-    color: var(--w-ink);
-    font-weight: 600;
-  }
-  .hint {
-    margin: 0;
-    font-size: var(--w-fs-caption);
-  }
-  .add-act {
-    justify-self: start;
-    border: 0;
-    background: var(--w-tray);
-    border-radius: var(--w-r-sm);
-    padding: 5px 8px;
-    font-size: var(--w-fs-small);
-    color: var(--w-muted);
-    cursor: pointer;
-  }
-  .add-act:hover {
-    color: var(--w-ink);
-  }
-  .note {
-    margin-left: -4px;
-    color: var(--w-muted);
-  }
   .sum {
     font-size: var(--w-fs-small);
     color: var(--w-muted);
@@ -834,12 +701,12 @@
   .open {
     margin-left: auto;
   }
-  /* Page: fills the tab below the bar like Overview; both columns scroll on their own. */
+  /* Page: fills the tab below the bar like Overview; every card scrolls on its own. */
   .page {
     flex: 1;
     min-height: 300px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-columns: 420px minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
     gap: var(--w-s-4);
   }
@@ -849,28 +716,107 @@
     box-shadow: var(--w-shadow-panel);
     overflow-y: auto;
   }
-  .page .d-side {
-    border-left: 0;
-    padding: var(--w-s-4) var(--w-s-5);
+  .flow {
+    padding: var(--w-s-5) 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
   }
-  .pg-body {
-    padding: 18px 22px 20px;
+  .flow .status-row {
+    gap: 4px;
+  }
+  .flow .status-row button {
+    padding: 3px 9px 3px 7px;
+    font-size: var(--w-fs-caption);
+  }
+  .flow .callout {
+    flex: none;
+  }
+  .sec,
+  .sec section {
     display: grid;
-    gap: 18px;
-    align-content: start;
+    gap: 8px;
+  }
+  .sec {
+    border-top: 1px solid var(--w-line);
+    padding-top: 14px;
+  }
+  .sec h3 {
+    display: flex;
+    justify-content: space-between;
+    margin: 0;
   }
   .moves {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
-    padding-top: var(--w-s-4);
-    border-top: 1px solid var(--w-line);
+  }
+  .content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--w-s-4);
+    min-height: 0;
+  }
+  .desc {
+    flex: 1;
+    min-height: 0;
+    padding: var(--w-s-4) 30px var(--w-s-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--w-s-4);
+  }
+  .cls .kv {
+    grid-template-columns: auto minmax(0, 1.4fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+    padding-bottom: var(--w-s-3);
+    border-bottom: 1px solid var(--w-line);
+  }
+  /* Natural height, at most a third of the column; a long list scrolls inside. */
+  .effort {
+    flex: none;
+    max-height: 33%;
+    padding: var(--w-s-4) 30px;
+    display: grid;
+    grid-template-columns: 170px minmax(0, 1fr) auto;
+    gap: 6px var(--w-s-6);
+    align-items: start;
+  }
+  .eff-sum {
+    display: grid;
+    gap: 2px;
+  }
+  .big {
+    justify-self: start;
+    font-family: var(--w-font-label);
+    font-size: var(--w-fs-heading);
+    font-weight: 600;
+  }
+  .eff-list {
+    display: grid;
+    min-width: 0;
+  }
+  .eff-row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--w-s-3);
+    padding: 5px 0;
+    border-bottom: 1px solid var(--w-line);
+    font-size: var(--w-fs-small);
+  }
+  .eff-row .w-mono {
+    color: var(--w-muted);
+    white-space: nowrap;
+  }
+  .eff-list p {
+    margin: 6px 0 0;
   }
   @media (max-width: 680px) {
     .page {
       grid-template-columns: 1fr;
       grid-template-rows: none;
+    }
+    .effort {
+      grid-template-columns: 1fr;
     }
     .d-body {
       grid-template-columns: 1fr;

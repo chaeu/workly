@@ -237,6 +237,14 @@ export const reorderProjects = (keys: string[]) => run("reorder_projects", { key
 export const deleteProject = (key: string) => run("delete_project", { key });
 export const projectFiles = (key: string) => invoke<string[]>("project_files", { key });
 export const readMarkdown = (path: string) => invoke<string>("read_markdown", { path });
+/** Per phase: time span and events, from .workly/log (core `history.rs`). */
+export type PhaseSpan = {
+  phase: string;
+  start: string | null;
+  end: string | null;
+  events: { date: string; kind: "status" | "decision"; status: string | null; until: string | null; gate: string | null; text: string | null }[];
+};
+export const usecaseHistory = (key: string) => invoke<PhaseSpan[]>("usecase_history", { key });
 
 export const openTasks = (p: ProjectEntry) =>
   workspace.index?.tasks.filter((t) => t.project === p.path && t.status !== "done").length ?? 0;
