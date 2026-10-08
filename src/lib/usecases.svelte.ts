@@ -5,6 +5,8 @@ import { today } from "$lib/tasks.svelte";
 
 export type UC = ProjectEntry & { usecase: UseCase };
 
+export const PROCESS = ".workly/process.yml";
+
 /** View state that survives switching pages (not saved: no file needs it). */
 export const ui = $state({ view: "list" as "list" | "board" | "map", lanes: "area" as "area" | "type" | "status" });
 
