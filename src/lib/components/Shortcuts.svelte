@@ -7,6 +7,7 @@
     ...views.map((v, i) => [`⌘${i + 1}`, v]),
     ["⌘,", "Settings"],
     ["Enter", "Open the focused card"],
+    ["⌘↩", "Open the use-case page from its card"],
     ["Esc", "Close card or dialog"],
     ["⌘⌫", "Delete the open or focused task"],
     ["?", "This list"],

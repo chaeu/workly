@@ -10,6 +10,7 @@
     suggestKey,
     createProject,
     makeUseCase,
+    removeUseCase,
     updateProjectField,
     deleteProject,
     nextColor,
@@ -128,6 +129,20 @@
     goto("/projects");
   }
 
+  // Back to a plain project: rare, so it lives here next to "Make use case…", not on the use-case page.
+  async function removeFromCockpit() {
+    if (!p?.usecase) return;
+    const n = p.usecase.decisions.length;
+    const ok = await ask(`Removes the use-case fields including ${n} decision${n === 1 ? "" : "s"} from _project.md. The log keeps a copy.`, {
+      title: `Remove ${p.key} from cockpit`,
+      kind: "warning",
+      okLabel: "Remove",
+    });
+    if (!ok) return;
+    await removeUseCase(p.key);
+    onclose();
+  }
+
   function onkeydown(e: KeyboardEvent) {
     if (e.key === "Escape") onclose();
   }
@@ -184,6 +199,11 @@
         <div class="field">
           <span class="w-caps">Use case</span>
           <div><button type="button" class="w-btn" onclick={() => (makeUc = true)}>Make use case…</button></div>
+        </div>
+      {:else if p?.usecase}
+        <div class="field">
+          <span class="w-caps">Use case</span>
+          <div><button type="button" class="w-btn w-btn--quiet danger" onclick={removeFromCockpit}>Remove from cockpit…</button></div>
         </div>
       {/if}
 

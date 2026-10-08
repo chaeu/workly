@@ -1,10 +1,8 @@
 <script lang="ts">
-  import { ask } from "@tauri-apps/plugin-dialog";
   import { goto } from "$app/navigation";
   import { grow } from "$lib/grow";
-  import { renderMarkdown } from "$lib/markdown";
   import { tip } from "$lib/tip";
-  import { workspace, readMarkdown, updateProjectField, updateTaskField, createTask, removeUseCase, type Process, type Saving } from "$lib/stores/workspace.svelte";
+  import { workspace, updateProjectField, updateTaskField, createTask, type Process, type Saving } from "$lib/stores/workspace.svelte";
   import {
     daysInStep,
     fmtFte,
@@ -52,13 +50,13 @@
     if (workspace.index && !u) onclose?.();
   });
 
-  // Description = the body of _project.md, re-read on every index change. The page shows it on the Overview tab.
-  let body = $state("");
-  $effect(() => {
-    const path = mode === "page" ? null : u?.path;
-    void workspace.index;
-    if (path) readMarkdown(`${path}/_project.md`).then((b) => (body = b), (e) => (workspace.error = String(e)));
-  });
+  // ⌘↩ in the card opens the full page.
+  function onkeydown(e: KeyboardEvent) {
+    if (mode !== "page" && e.key === "Enter" && e.metaKey) {
+      e.preventDefault();
+      goto(pageHref);
+    }
+  }
 
   async function save(field: string, value: unknown) {
     try {
@@ -96,17 +94,6 @@
     };
   }
 
-  // Back to a plain project (page only); the project page falls back to Overview once the index drops the use case.
-  async function removeFromCockpit() {
-    const n = uc?.decisions.length ?? 0;
-    const ok = await ask(`Removes the use-case fields including ${n} decision${n === 1 ? "" : "s"} from _project.md. The log keeps a copy.`, {
-      title: `Remove ${key} from cockpit`,
-      kind: "warning",
-      okLabel: "Remove",
-    });
-    if (ok) await removeUseCase(key);
-  }
-
   // ponytail: unticking reopens as `todo` (or the first status); the task board covers other statuses.
   const reopen = $derived(workspace.index?.config.task_statuses.find((s) => s.id === "todo")?.id ?? workspace.index?.config.task_statuses[0]?.id ?? "todo");
   let newTask = $state("");
@@ -124,6 +111,8 @@
     {/key}
   </section>
 {/snippet}
+
+<svelte:window {onkeydown} />
 
 {#if u && uc}
   <!-- Parts shared by the popup / panel (light version) and the page (everything editable). -->
@@ -163,8 +152,8 @@
   {/snippet}
 
   {#snippet texts()}
-    {@render area("next_step", "Next step", uc.next_step, "What happens next?")}
     {@render area("current_state", "Current state", uc.current_state, "Where does it stand?")}
+    {@render area("next_step", "Next step", uc.next_step, "What happens next?")}
   {/snippet}
 
   {#snippet moveButtons()}
@@ -207,6 +196,17 @@
         </dd>
       </dl>
     </section>
+    {#if mode !== "page"}
+      <!-- Light version: the total only; the full list is on the page. -->
+      <section>
+        <h3 class="w-caps">Manual effort</h3>
+        {#if uc.savings.length}
+          <span class="sum" use:tip={fteTip(u)}><b>≈ {fmtFte(hours / fteHours())} FTE</b> · {fmtHours(hours)} h/yr</span>
+        {:else}
+          <span class="sum">No effort recorded · <a href={pageHref}>Open page</a></span>
+        {/if}
+      </section>
+    {/if}
     <section>
       <h3 class="w-caps">Tasks <span class="w-mono prog">{doneCount}/{tasks.length}</span></h3>
       {#if tasks.length}<div class="bar"><i style:width="{(doneCount / tasks.length) * 100}%"></i></div>{/if}
@@ -291,11 +291,6 @@
             </section>
           </div>
           {#if moves.length}<div class="moves">{@render moveButtons()}</div>{/if}
-          <section class="settings">
-            <h3 class="w-caps">Settings</h3>
-            <div><button type="button" class="w-btn danger" onclick={removeFromCockpit}>Remove from cockpit…</button></div>
-            <p class="w-sub">Removes the use-case fields and decisions from _project.md. The project and its tasks stay.</p>
-          </section>
         </div>
       </div>
       <aside class="card d-side">{@render side()}</aside>
@@ -308,6 +303,7 @@
           <span class="w-mono">{u.key}</span>
           {#if uc.type}<span class="w-type" class:w-type--ki={uc.type === "ai"} class:hybrid={uc.type === "hybrid"}>{label(p.types, uc.type)}</span>{/if}
           {#if uc.area}<span class="pill">{uc.area}</span>{/if}
+          <button type="button" class="w-btn w-btn--quiet open" title="Open page (⌘↩)" onclick={() => goto(pageHref)}>Open page ↗</button>
           <button type="button" class="x" onclick={onclose} aria-label="Close">✕</button>
         </div>
         {#key u.title}
@@ -326,32 +322,11 @@
         {@render blocked()}
         <div class="d-main">
           {@render texts()}
-          <!-- Light version: the total only; the table is on the page. -->
-          <section class="txt">
-            <span class="w-caps">Manual effort</span>
-            {#if uc.savings.length}
-              <span class="sum" use:tip={fteTip(u)}><b>≈ {fmtFte(hours / fteHours())} FTE</b> · {fmtHours(hours)} h/yr</span>
-            {:else}
-              <span class="sum">No effort recorded · <a href={pageHref}>Open page</a></span>
-            {/if}
-          </section>
-          <section class="txt">
-            <span class="w-caps">Description</span>
-            {#if body.trim()}
-              <!-- Sanitised by DOMPurify in renderMarkdown. -->
-              <div class="md">{@html renderMarkdown(body)}</div>
-            {:else}
-              <p class="w-sub">No description in _project.md.</p>
-            {/if}
-          </section>
         </div>
         <aside class="d-side">{@render side()}</aside>
       </div>
 
-      <div class="d-foot">
-        {@render moveButtons()}
-        <button type="button" class="w-btn w-btn--quiet open" onclick={() => goto(pageHref)}>Open page</button>
-      </div>
+      {#if moves.length}<div class="d-foot">{@render moveButtons()}</div>{/if}
     </div>
   {/if}
 {/if}
@@ -404,7 +379,6 @@
     padding: 0 8px;
   }
   .x {
-    margin-left: auto;
     width: 30px;
     height: 30px;
     border: 0;
@@ -581,7 +555,7 @@
     display: grid;
     gap: 3px;
   }
-  .txt:first-child textarea {
+  #f-next_step {
     font-size: var(--w-fs-title);
     font-weight: 500;
   }
@@ -728,14 +702,6 @@
   .sum a {
     color: var(--w-accent);
   }
-  .md {
-    font-size: var(--w-fs-body);
-    user-select: text;
-    -webkit-user-select: text;
-  }
-  .md :global(:first-child) {
-    margin-top: 0;
-  }
   .d-side {
     display: grid;
     gap: 18px;
@@ -868,9 +834,6 @@
   .open {
     margin-left: auto;
   }
-  .danger {
-    color: var(--w-danger);
-  }
   /* Page: fills the tab below the bar like Overview; both columns scroll on their own. */
   .page {
     flex: 1;
@@ -896,22 +859,13 @@
     gap: 18px;
     align-content: start;
   }
-  .moves,
-  .settings {
+  .moves {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
     padding-top: var(--w-s-4);
     border-top: 1px solid var(--w-line);
-  }
-  .settings {
-    display: grid;
-    justify-items: start;
-  }
-  .settings h3,
-  .settings p {
-    margin: 0;
   }
   @media (max-width: 680px) {
     .page {
