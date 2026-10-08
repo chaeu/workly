@@ -137,8 +137,8 @@
 </script>
 
 {#if t}
-  <!-- Side panel: a clear scrim, so a click outside only closes it and never opens what lies beneath. -->
-  <div class="w-scrim" class:w-scrim--clear={mode === "panel"} onclick={onclose} aria-hidden="true"></div>
+  <!-- Popup and side panel: a click on the scrim only closes, it never opens what lies beneath. -->
+  <div class="w-scrim" onclick={onclose} aria-hidden="true"></div>
   <div
     class={mode === "popup" ? "w-modal" : "panel"}
     role="dialog"
