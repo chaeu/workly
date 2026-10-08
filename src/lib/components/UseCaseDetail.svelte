@@ -3,12 +3,14 @@
   import { goto } from "$app/navigation";
   import { grow } from "$lib/grow";
   import { renderMarkdown } from "$lib/markdown";
+  import { tip } from "$lib/tip";
   import { workspace, readMarkdown, updateProjectField, updateTaskField, createTask, removeUseCase, type Process, type Saving } from "$lib/stores/workspace.svelte";
   import {
     daysInStep,
     fmtFte,
     fmtHours,
     fteHours,
+    fteTip,
     isStale,
     knownAreas,
     label,
@@ -29,7 +31,8 @@
     mode,
     onmove,
     onclose,
-  }: { key: string; process: Process; mode: "popup" | "panel"; onmove: (u: UC, step: string) => void; onclose: () => void } = $props();
+  }: { key: string; process: Process; mode: "popup" | "panel" | "page"; onmove: (u: UC, step: string) => void; onclose?: () => void } = $props();
+  const pageHref = $derived(`/projects/${key}?tab=usecase`);
 
   const u = $derived(workspace.index?.projects.find((x) => x.key === key && x.usecase) as UC | undefined);
   const uc = $derived(u?.usecase);
@@ -46,13 +49,13 @@
 
   // Gone (deleted, archived away or no longer a use case): nothing to show.
   $effect(() => {
-    if (workspace.index && !u) onclose();
+    if (workspace.index && !u) onclose?.();
   });
 
-  // Description = the body of _project.md, re-read on every index change.
+  // Description = the body of _project.md, re-read on every index change. The page shows it on the Overview tab.
   let body = $state("");
   $effect(() => {
-    const path = u?.path;
+    const path = mode === "page" ? null : u?.path;
     void workspace.index;
     if (path) readMarkdown(`${path}/_project.md`).then((b) => (body = b), (e) => (workspace.error = String(e)));
   });
@@ -93,7 +96,7 @@
     };
   }
 
-  // Back to a plain project; the effect above closes the card once the index drops the use case.
+  // Back to a plain project (page only); the project page falls back to Overview once the index drops the use case.
   async function removeFromCockpit() {
     const n = uc?.decisions.length ?? 0;
     const ok = await ask(`Removes the use-case fields including ${n} decision${n === 1 ? "" : "s"} from _project.md. The log keeps a copy.`, {
@@ -123,185 +126,234 @@
 {/snippet}
 
 {#if u && uc}
-  {#if mode === "popup"}<div class="w-scrim" onclick={onclose} aria-hidden="true"></div>{/if}
-  <div class={mode === "popup" ? "w-modal" : "panel"} role="dialog" aria-modal={mode === "popup"} aria-labelledby="u-title">
-    <div class="d-top">
-      <div class="d-meta">
-        <span class="w-mono">{u.key}</span>
-        {#if uc.type}<span class="w-type" class:w-type--ki={uc.type === "ai"} class:hybrid={uc.type === "hybrid"}>{label(p.types, uc.type)}</span>{/if}
-        {#if uc.area}<span class="pill">{uc.area}</span>{/if}
-        <button type="button" class="x" onclick={onclose} aria-label="Close">✕</button>
-      </div>
-      {#key u.title}
-        <input
-          id="u-title"
-          class="d-title"
-          value={u.title}
-          aria-label="Title"
-          onchange={(e) => (e.currentTarget.value.trim() ? save("title", e.currentTarget.value.trim()) : (e.currentTarget.value = u.title))}
-        />
-      {/key}
-      <div class="d-pos">
-        {#if parked}
-          <span class="parked-badge">{p.phases[phaseIndex(p, step?.phase)].name}</span>
+  <!-- Parts shared by the popup / panel (light version) and the page (everything editable). -->
+  {#snippet position()}
+    <div class="d-pos">
+      {#if parked}
+        <span class="parked-badge">{p.phases[phaseIndex(p, step?.phase)].name}</span>
+      {:else}
+        <ol class="track" aria-label="Phase">
+          {#each track as ph, i (ph.id)}
+            <li class:done={i < cur} class:cur={i === cur} class:opt={ph.optional}><i></i><span>{ph.name}</span></li>
+          {/each}
+        </ol>
+      {/if}
+      <div class="where">
+        {#if step}
+          Step <b>{stepName(step)}</b> · Ball with <b>{lane?.label ?? step.lane}</b>
         {:else}
-          <ol class="track" aria-label="Phase">
-            {#each track as ph, i (ph.id)}
-              <li class:done={i < cur} class:cur={i === cur} class:opt={ph.optional}><i></i><span>{ph.name}</span></li>
-            {/each}
-          </ol>
+          <span class="stale">Unknown step “{uc.step ?? "none"}”, pick one below</span>
         {/if}
-        <div class="where">
-          {#if step}
-            Step <b>{stepName(step)}</b> · Ball with <b>{lane?.label ?? step.lane}</b>
-          {:else}
-            <span class="stale">Unknown step “{uc.step ?? "none"}”, pick one below</span>
-          {/if}
-          {#if days !== null}· <span class:stale={isStale(p, u)}>{days} {days === 1 ? "day" : "days"} in step</span>{/if}
+        {#if days !== null}· <span class:stale={isStale(p, u)}>{days} {days === 1 ? "day" : "days"} in step</span>{/if}
+      </div>
+    </div>
+    <div class="status-row" role="group" aria-label="Status">
+      {#each p.statuses as s (s.id)}
+        <button type="button" aria-pressed={uc.status === s.id} onclick={() => save("usecase.status", s.id)}
+          ><span class="w-dot" class:w-dot--hollow={s.id === "on_hold"} style:--c={statusColor(s.id)}></span>{s.label}</button
+        >
+      {/each}
+    </div>
+  {/snippet}
+
+  {#snippet blocked()}
+    {#if uc.status === "blocked"}
+      <div class="callout">{@render area("blocked_by", "Blocked by", uc.blocked_by, "What or who blocks it?")}</div>
+    {/if}
+  {/snippet}
+
+  {#snippet texts()}
+    {@render area("next_step", "Next step", uc.next_step, "What happens next?")}
+    {@render area("current_state", "Current state", uc.current_state, "Where does it stand?")}
+  {/snippet}
+
+  {#snippet moveButtons()}
+    {#if moves.length}
+      <span class="w-caps">{step?.kind === "gate" ? "Decision" : "Next"}</span>
+      {#each moves as m (m.to)}
+        <button type="button" class="w-btn" class:w-btn--primary={!m.neg} onclick={() => onmove(u, m.to)}>{m.verdict} → {m.text}</button>
+      {/each}
+    {/if}
+  {/snippet}
+
+  {#snippet side()}
+    <section>
+      <h3 class="w-caps">Classification</h3>
+      <dl class="kv">
+        <dt><label for="f-step">Step</label></dt>
+        <dd>
+          {#key uc.step}
+            <select id="f-step" value={uc.step ?? ""} onchange={(e) => onmove(u, e.currentTarget.value)}>
+              {#if !step}<option value={uc.step ?? ""}>–</option>{/if}
+              {#each p.phases as ph (ph.id)}
+                <optgroup label={ph.name}>
+                  {#each p.steps.filter((s) => s.phase === ph.id && s.kind !== "term") as s (s.id)}<option value={s.id}>{stepName(s)}</option>{/each}
+                </optgroup>
+              {/each}
+            </select>
+          {/key}
+        </dd>
+        <dt><label for="f-area">Area</label></dt>
+        <dd>
+          <input id="f-area" list="f-area-list" value={uc.area ?? ""} placeholder="–" autocomplete="off" onchange={text("usecase.area")} />
+          <datalist id="f-area-list">{#each areas as a (a)}<option value={a}></option>{/each}</datalist>
+        </dd>
+        <dt><label for="f-type">Type</label></dt>
+        <dd>
+          <select id="f-type" value={uc.type ?? ""} onchange={(e) => save("usecase.type", e.currentTarget.value)}>
+            {#if !uc.type}<option value="">–</option>{/if}
+            {#each p.types as t (t.id)}<option value={t.id}>{t.label}</option>{/each}
+          </select>
+        </dd>
+      </dl>
+    </section>
+    <section>
+      <h3 class="w-caps">Tasks <span class="w-mono prog">{doneCount}/{tasks.length}</span></h3>
+      {#if tasks.length}<div class="bar"><i style:width="{(doneCount / tasks.length) * 100}%"></i></div>{/if}
+      <ul class="tasks">
+        {#each tasks as t (t.id)}
+          <li class:done={t.status === "done"}>
+            <input type="checkbox" id="t-{t.id}" checked={t.status === "done"} onchange={(e) => updateTaskField(t.id, "status", e.currentTarget.checked ? "done" : reopen)} />
+            <label for="t-{t.id}"><span class="w-mono">{t.id}</span> {t.title}</label>
+          </li>
+        {/each}
+      </ul>
+      <input class="add-task" bind:value={newTask} placeholder="+ Add task" aria-label="Add task" onkeydown={(e) => e.key === "Enter" && addTask()} />
+    </section>
+    <section>
+      <h3 class="w-caps">Decisions <span class="w-mono prog">{uc.decisions.length}</span></h3>
+      {#each uc.decisions as d, i (i)}
+        <div class="decision">
+          <span class="w-mono">{[d.date, d.gate].filter(Boolean).join(" · ")}</span>{d.text}
+        </div>
+      {:else}
+        <p class="w-sub">None yet.</p>
+      {/each}
+    </section>
+  {/snippet}
+
+  {#if mode === "page"}
+    <!-- ponytail: one component, three modes. Split the effort table into its own component only if this becomes unreadable. -->
+    <div class="page">
+      <div class="card">
+        <div class="d-top">{@render position()}</div>
+        <div class="pg-body">
+          {@render blocked()}
+          <div class="d-main">
+            {@render texts()}
+            <section class="savings">
+              <span class="w-caps">Manual effort</span>
+              {#if uc.savings.length || draft}
+                <table>
+                  <thead>
+                    <tr><th>Activity</th><th class="num">Count</th><th class="per">Per</th><th class="num">Minutes</th><th class="num">h/yr</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {#each [...uc.savings, ...(draft ? [draft] : [])] as s, i (i)}
+                      {@const r = i < uc.savings.length ? i : -1}
+                      {@const h = savingHours(s)}
+                      <!-- {#key} resets the inputs to the file's values after every reload. -->
+                      {#key workspace.reloads}
+                        <tr>
+                          <td><input value={s.what ?? ""} title={s.what ?? ""} placeholder="What is done by hand?" aria-label="Activity" onchange={cell(r, "what")} {@attach (el) => { if (r < 0 && !s.what) el.focus(); }} /></td>
+                          <td class="num"><input type="number" min="0" step="any" value={s.count ?? ""} aria-label="Count" onchange={cell(r, "count")} /></td>
+                          <td class="per">
+                            <select value={s.per ?? ""} aria-label="Per" onchange={cell(r, "per")}>
+                              {#if !s.per}<option value="">–</option>{/if}
+                              {#each PERS as per (per)}<option value={per}>{per}</option>{/each}
+                            </select>
+                          </td>
+                          <td class="num"><input type="number" min="0" step="any" value={s.minutes ?? ""} aria-label="Minutes" onchange={cell(r, "minutes")} /></td>
+                          <td class="num w-mono">{h == null ? "–" : fmtHours(h)}</td>
+                          <td>
+                            <button type="button" class="rm" aria-label="Remove activity" onclick={() => (r < 0 ? (draft = null) : saveSavings(uc.savings.filter((_, j) => j !== r)))}>✕</button>
+                          </td>
+                        </tr>
+                      {/key}
+                    {/each}
+                  </tbody>
+                </table>
+                <div class="total">
+                  <span><b>≈ {fmtFte(hours / fteHours())} FTE</b> · {fmtHours(hours)} h/yr</span>
+                  <button type="button" class="w-btn w-btn--quiet" onclick={() => (draft ??= { what: "", count: null, per: "month", minutes: null })}>+ Add activity</button>
+                </div>
+                <p class="w-sub hint">
+                  Per year: month × {PER_YEAR.month}, week × {PER_YEAR.week}, day × {PER_YEAR.day} · 1 FTE = {fmtHours(fteHours())} h (Settings)
+                </p>
+              {:else}
+                <button type="button" class="add-act" onclick={() => (draft = { what: "", count: null, per: "month", minutes: null })}>+ Add activity</button>
+              {/if}
+              {#if uc.savings.length || uc.savings_note}
+                {#key uc.savings_note}
+                  <input class="note" value={uc.savings_note ?? ""} placeholder="Where do the numbers come from?" aria-label="Manual effort note" onchange={text("usecase.savings_note")} />
+                {/key}
+              {/if}
+            </section>
+          </div>
+          {#if moves.length}<div class="moves">{@render moveButtons()}</div>{/if}
+          <section class="settings">
+            <h3 class="w-caps">Settings</h3>
+            <div><button type="button" class="w-btn danger" onclick={removeFromCockpit}>Remove from cockpit…</button></div>
+            <p class="w-sub">Removes the use-case fields and decisions from _project.md. The project and its tasks stay.</p>
+          </section>
         </div>
       </div>
-      <div class="status-row" role="group" aria-label="Status">
-        {#each p.statuses as s (s.id)}
-          <button type="button" aria-pressed={uc.status === s.id} onclick={() => save("usecase.status", s.id)}
-            ><span class="w-dot" class:w-dot--hollow={s.id === "on_hold"} style:--c={statusColor(s.id)}></span>{s.label}</button
-          >
-        {/each}
+      <aside class="card d-side">{@render side()}</aside>
+    </div>
+  {:else}
+    {#if mode === "popup"}<div class="w-scrim" onclick={onclose} aria-hidden="true"></div>{/if}
+    <div class={mode === "popup" ? "w-modal" : "panel"} role="dialog" aria-modal={mode === "popup"} aria-labelledby="u-title">
+      <div class="d-top">
+        <div class="d-meta">
+          <span class="w-mono">{u.key}</span>
+          {#if uc.type}<span class="w-type" class:w-type--ki={uc.type === "ai"} class:hybrid={uc.type === "hybrid"}>{label(p.types, uc.type)}</span>{/if}
+          {#if uc.area}<span class="pill">{uc.area}</span>{/if}
+          <button type="button" class="x" onclick={onclose} aria-label="Close">✕</button>
+        </div>
+        {#key u.title}
+          <input
+            id="u-title"
+            class="d-title"
+            value={u.title}
+            aria-label="Title"
+            onchange={(e) => (e.currentTarget.value.trim() ? save("title", e.currentTarget.value.trim()) : (e.currentTarget.value = u.title))}
+          />
+        {/key}
+        {@render position()}
+      </div>
+
+      <div class="d-body">
+        {@render blocked()}
+        <div class="d-main">
+          {@render texts()}
+          <!-- Light version: the total only; the table is on the page. -->
+          <section class="txt">
+            <span class="w-caps">Manual effort</span>
+            {#if uc.savings.length}
+              <span class="sum" use:tip={fteTip(u)}><b>≈ {fmtFte(hours / fteHours())} FTE</b> · {fmtHours(hours)} h/yr</span>
+            {:else}
+              <span class="sum">No effort recorded · <a href={pageHref}>Open page</a></span>
+            {/if}
+          </section>
+          <section class="txt">
+            <span class="w-caps">Description</span>
+            {#if body.trim()}
+              <!-- Sanitised by DOMPurify in renderMarkdown. -->
+              <div class="md">{@html renderMarkdown(body)}</div>
+            {:else}
+              <p class="w-sub">No description in _project.md.</p>
+            {/if}
+          </section>
+        </div>
+        <aside class="d-side">{@render side()}</aside>
+      </div>
+
+      <div class="d-foot">
+        {@render moveButtons()}
+        <button type="button" class="w-btn w-btn--quiet open" onclick={() => goto(pageHref)}>Open page</button>
       </div>
     </div>
-
-    <div class="d-body">
-      {#if uc.status === "blocked"}
-        <div class="callout">{@render area("blocked_by", "Blocked by", uc.blocked_by, "What or who blocks it?")}</div>
-      {/if}
-      <div class="d-main">
-        {@render area("next_step", "Next step", uc.next_step, "What happens next?")}
-        {@render area("current_state", "Current state", uc.current_state, "Where does it stand?")}
-        <section class="savings">
-          <span class="w-caps">Manual effort</span>
-          {#if uc.savings.length || draft}
-            <table>
-              <thead>
-                <tr><th>Activity</th><th class="num">Count</th><th class="per">Per</th><th class="num">Minutes</th><th class="num">h/yr</th><th></th></tr>
-              </thead>
-              <tbody>
-                {#each [...uc.savings, ...(draft ? [draft] : [])] as s, i (i)}
-                  {@const r = i < uc.savings.length ? i : -1}
-                  {@const h = savingHours(s)}
-                  <!-- {#key} resets the inputs to the file's values after every reload. -->
-                  {#key workspace.reloads}
-                    <tr>
-                      <td><input value={s.what ?? ""} title={s.what ?? ""} placeholder="What is done by hand?" aria-label="Activity" onchange={cell(r, "what")} {@attach (el) => { if (r < 0 && !s.what) el.focus(); }} /></td>
-                      <td class="num"><input type="number" min="0" step="any" value={s.count ?? ""} aria-label="Count" onchange={cell(r, "count")} /></td>
-                      <td class="per">
-                        <select value={s.per ?? ""} aria-label="Per" onchange={cell(r, "per")}>
-                          {#if !s.per}<option value="">–</option>{/if}
-                          {#each PERS as per (per)}<option value={per}>{per}</option>{/each}
-                        </select>
-                      </td>
-                      <td class="num"><input type="number" min="0" step="any" value={s.minutes ?? ""} aria-label="Minutes" onchange={cell(r, "minutes")} /></td>
-                      <td class="num w-mono">{h == null ? "–" : fmtHours(h)}</td>
-                      <td>
-                        <button type="button" class="rm" aria-label="Remove activity" onclick={() => (r < 0 ? (draft = null) : saveSavings(uc.savings.filter((_, j) => j !== r)))}>✕</button>
-                      </td>
-                    </tr>
-                  {/key}
-                {/each}
-              </tbody>
-            </table>
-            <div class="total">
-              <span><b>≈ {fmtFte(hours / fteHours())} FTE</b> · {fmtHours(hours)} h/yr</span>
-              <button type="button" class="w-btn w-btn--quiet" onclick={() => (draft ??= { what: "", count: null, per: "month", minutes: null })}>+ Add activity</button>
-            </div>
-            <p class="w-sub hint">
-              Per year: month × {PER_YEAR.month}, week × {PER_YEAR.week}, day × {PER_YEAR.day} · 1 FTE = {fmtHours(fteHours())} h (Settings)
-            </p>
-          {:else}
-            <button type="button" class="add-act" onclick={() => (draft = { what: "", count: null, per: "month", minutes: null })}>+ Add activity</button>
-          {/if}
-          {#if uc.savings.length || uc.savings_note}
-            {#key uc.savings_note}
-              <input class="note" value={uc.savings_note ?? ""} placeholder="Where do the numbers come from?" aria-label="Manual effort note" onchange={text("usecase.savings_note")} />
-            {/key}
-          {/if}
-        </section>
-        <section class="txt">
-          <span class="w-caps">Description</span>
-          {#if body.trim()}
-            <!-- Sanitised by DOMPurify in renderMarkdown. -->
-            <div class="md">{@html renderMarkdown(body)}</div>
-          {:else}
-            <p class="w-sub">No description in _project.md.</p>
-          {/if}
-        </section>
-      </div>
-      <aside class="d-side">
-        <section>
-          <h3 class="w-caps">Tasks <span class="w-mono prog">{doneCount}/{tasks.length}</span></h3>
-          {#if tasks.length}<div class="bar"><i style:width="{(doneCount / tasks.length) * 100}%"></i></div>{/if}
-          <ul class="tasks">
-            {#each tasks as t (t.id)}
-              <li class:done={t.status === "done"}>
-                <input type="checkbox" id="t-{t.id}" checked={t.status === "done"} onchange={(e) => updateTaskField(t.id, "status", e.currentTarget.checked ? "done" : reopen)} />
-                <label for="t-{t.id}"><span class="w-mono">{t.id}</span> {t.title}</label>
-              </li>
-            {/each}
-          </ul>
-          <input class="add-task" bind:value={newTask} placeholder="+ Add task" aria-label="Add task" onkeydown={(e) => e.key === "Enter" && addTask()} />
-        </section>
-        <section>
-          <h3 class="w-caps">Classification</h3>
-          <dl class="kv">
-            <dt><label for="f-step">Step</label></dt>
-            <dd>
-              {#key uc.step}
-                <select id="f-step" value={uc.step ?? ""} onchange={(e) => onmove(u, e.currentTarget.value)}>
-                  {#if !step}<option value={uc.step ?? ""}>–</option>{/if}
-                  {#each p.phases as ph (ph.id)}
-                    <optgroup label={ph.name}>
-                      {#each p.steps.filter((s) => s.phase === ph.id && s.kind !== "term") as s (s.id)}<option value={s.id}>{stepName(s)}</option>{/each}
-                    </optgroup>
-                  {/each}
-                </select>
-              {/key}
-            </dd>
-            <dt><label for="f-area">Area</label></dt>
-            <dd>
-              <input id="f-area" list="f-area-list" value={uc.area ?? ""} placeholder="–" autocomplete="off" onchange={text("usecase.area")} />
-              <datalist id="f-area-list">{#each areas as a (a)}<option value={a}></option>{/each}</datalist>
-            </dd>
-            <dt><label for="f-type">Type</label></dt>
-            <dd>
-              <select id="f-type" value={uc.type ?? ""} onchange={(e) => save("usecase.type", e.currentTarget.value)}>
-                {#if !uc.type}<option value="">–</option>{/if}
-                {#each p.types as t (t.id)}<option value={t.id}>{t.label}</option>{/each}
-              </select>
-            </dd>
-          </dl>
-        </section>
-        <section>
-          <h3 class="w-caps">Decisions <span class="w-mono prog">{uc.decisions.length}</span></h3>
-          {#each uc.decisions as d, i (i)}
-            <div class="decision">
-              <span class="w-mono">{[d.date, d.gate].filter(Boolean).join(" · ")}</span>{d.text}
-            </div>
-          {:else}
-            <p class="w-sub">None yet.</p>
-          {/each}
-        </section>
-      </aside>
-    </div>
-
-    <div class="d-foot">
-      {#if moves.length}
-        <span class="w-caps">{step?.kind === "gate" ? "Decision" : "Next"}</span>
-        {#each moves as m (m.to)}
-          <button type="button" class="w-btn" class:w-btn--primary={!m.neg} onclick={() => onmove(u, m.to)}>{m.verdict} → {m.text}</button>
-        {/each}
-      {/if}
-      <button type="button" class="w-btn w-btn--quiet open" onclick={() => goto(`/projects/${u.key}`)}>Open project</button>
-      <button type="button" class="w-btn w-btn--quiet danger" onclick={removeFromCockpit}>Remove from cockpit…</button>
-    </div>
-  </div>
+  {/if}
 {/if}
 
 <style>
@@ -493,7 +545,12 @@
     font-weight: 600;
     box-shadow: inset 0 0 0 1.5px var(--w-ink);
   }
+  .w-modal {
+    width: min(var(--w-uc-detail-w), calc(100% - 32px));
+    min-height: min(var(--w-uc-detail-min-h), calc(100% - 48px));
+  }
   .d-body {
+    flex: 1;
     overflow-y: auto;
     padding: 18px 22px 20px;
     display: grid;
@@ -659,6 +716,18 @@
     margin-left: -4px;
     color: var(--w-muted);
   }
+  .sum {
+    font-size: var(--w-fs-small);
+    color: var(--w-muted);
+    justify-self: start;
+  }
+  .sum b {
+    color: var(--w-ink);
+    font-weight: 600;
+  }
+  .sum a {
+    color: var(--w-accent);
+  }
   .md {
     font-size: var(--w-fs-body);
     user-select: text;
@@ -802,7 +871,53 @@
   .danger {
     color: var(--w-danger);
   }
+  /* Page: fills the tab below the bar like Overview; both columns scroll on their own. */
+  .page {
+    flex: 1;
+    min-height: 300px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-rows: minmax(0, 1fr);
+    gap: var(--w-s-4);
+  }
+  .card {
+    background: var(--w-surface);
+    border-radius: var(--w-r-lg);
+    box-shadow: var(--w-shadow-panel);
+    overflow-y: auto;
+  }
+  .page .d-side {
+    border-left: 0;
+    padding: var(--w-s-4) var(--w-s-5);
+  }
+  .pg-body {
+    padding: 18px 22px 20px;
+    display: grid;
+    gap: 18px;
+    align-content: start;
+  }
+  .moves,
+  .settings {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding-top: var(--w-s-4);
+    border-top: 1px solid var(--w-line);
+  }
+  .settings {
+    display: grid;
+    justify-items: start;
+  }
+  .settings h3,
+  .settings p {
+    margin: 0;
+  }
   @media (max-width: 680px) {
+    .page {
+      grid-template-columns: 1fr;
+      grid-template-rows: none;
+    }
     .d-body {
       grid-template-columns: 1fr;
     }

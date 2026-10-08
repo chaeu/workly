@@ -88,6 +88,8 @@
   --w-col-min: 216px;
   --w-detail-w: 880px;        /* task detail card as popup */
   --w-detail-min-h: 70vh;     /* popup keeps its size for short tasks */
+  --w-uc-detail-w: 1040px;    /* use-case detail card as popup */
+  --w-uc-detail-min-h: 75vh;  /* popup keeps its size for short use cases */
   --w-panel-w: 560px;         /* detail card as side panel (tasks, use cases) */
 
   /* Motion */
