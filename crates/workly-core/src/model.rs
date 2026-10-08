@@ -258,6 +258,29 @@ pub struct Process {
     #[serde(default)]
     pub areas: Vec<String>,
     pub stale_after_days: Option<u32>,
+    /// Use-case assessment method; missing = no assessment in the app.
+    pub assessment: Option<Assessment>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Assessment {
+    #[serde(default)]
+    pub ko: Vec<Labelled>,
+    #[serde(default)]
+    pub criteria: Vec<Criterion>,
+}
+
+pub const AXES: [&str; 2] = ["value", "feasibility"];
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Criterion {
+    pub id: String,
+    /// value | feasibility
+    pub axis: String,
+    pub label: String,
+    /// What 1, 2 and 3 points mean.
+    #[serde(default)]
+    pub anchors: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -351,6 +374,28 @@ impl Process {
                 }
             }
         }
+        if let Some(a) = &self.assessment {
+            let mut seen = Vec::new();
+            for id in a.ko.iter().map(|k| &k.id).chain(a.criteria.iter().map(|c| &c.id)) {
+                if seen.contains(&id) {
+                    errors.push(format!("assessment: id '{id}' is used twice"));
+                }
+                seen.push(id);
+            }
+            for c in &a.criteria {
+                if !AXES.contains(&c.axis.as_str()) {
+                    errors.push(format!("assessment: criterion '{}' has unknown axis '{}' (value | feasibility)", c.id, c.axis));
+                }
+                if c.anchors.len() != 3 {
+                    errors.push(format!("assessment: criterion '{}' needs exactly 3 anchors, has {}", c.id, c.anchors.len()));
+                }
+            }
+            for axis in AXES {
+                if !a.criteria.iter().any(|c| c.axis == axis) {
+                    errors.push(format!("assessment: no criterion on the {axis} axis"));
+                }
+            }
+        }
         errors
     }
 }
@@ -398,6 +443,19 @@ mod tests {
                 "edge 1 (s -> nope) references unknown step 'nope'",
                 "phase_default_step: phase 'p' points to unknown step 'gone'",
                 "phase_default_step: unknown phase 'q'",
+            ]
+        );
+        let p: Process = serde_yaml::from_str(
+            "assessment:\n  ko: [{id: a, label: A}]\n  criteria:\n    - {id: a, axis: value, label: X, anchors: [1, 2, 3]}\n    - {id: b, axis: cost, label: Y, anchors: [1, 2]}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            p.validate(),
+            [
+                "assessment: id 'a' is used twice",
+                "assessment: criterion 'b' has unknown axis 'cost' (value | feasibility)",
+                "assessment: criterion 'b' needs exactly 3 anchors, has 2",
+                "assessment: no criterion on the feasibility axis",
             ]
         );
     }

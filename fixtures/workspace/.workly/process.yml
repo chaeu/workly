@@ -19,24 +19,27 @@ phases:
   - { id: parked,  name: Parked,     desc: "No-go, dropped or later", parked: true }
 
 # kind: box | gate | term (term is never a valid use-case position)
+# col 4 stays empty: room for the "No" branch from G0 up to Parked.
 steps:
   - { id: start,   kind: term, col: 0,  lane: fb,  label: Start }
-  - { id: need,    kind: box,  col: 1,  lane: fb,  phase: idea,    label: Report need,      sub: Problem and volume }
-  - { id: pilot,   kind: box,  col: 2,  lane: me,  phase: pilot,   label: Pilot / quick PoC, sub: "Feasible? 2-4 weeks" }
-  - { id: g1,      kind: gate, col: 3,  lane: me,  phase: pilot,   code: G1, label: "Pursue?", hint: "Pilot shows feasibility and value" }
-  - { id: parked,  kind: box,  col: 3,  lane: fb,  phase: parked,  label: Parked,           sub: No-go or later, parked: true }
-  - { id: wd,      kind: gate, col: 4,  lane: me,  phase: demand,  code: Switch, label: "Demand needed?", hint: "Yes for budget, other teams or core systems; no for self-build" }
-  - { id: demand,  kind: box,  col: 5,  lane: gov, phase: demand,  label: Demand,           sub: "Request, business case", optional: true }
-  - { id: g2,      kind: gate, col: 6,  lane: gov, phase: demand,  code: G2, label: "Demand ok?", hint: "Board releases budget or capacity", optional: true }
-  - { id: concept, kind: box,  col: 7,  lane: me,  phase: concept, label: Concept,          sub: "Design, data, operations" }
-  - { id: g3,      kind: gate, col: 8,  lane: gov, phase: concept, code: G3, label: "Approvals ok?", hint: "Privacy, IT security, AI governance for AI" }
-  - { id: infra,   kind: box,  col: 9,  lane: it,  phase: build,   label: Access & infra,   sub: "Permissions, environments" }
-  - { id: build,   kind: box,  col: 10, lane: me,  phase: build,   label: Build,            sub: "MVP, production-ready" }
-  - { id: uat,     kind: box,  col: 11, lane: fb,  phase: test,    label: Test (UAT),       sub: with real cases }
-  - { id: g4,      kind: gate, col: 12, lane: fb,  phase: test,    code: G4, label: "Accepted?", hint: "Business accepts, handover to operations" }
-  - { id: live,    kind: box,  col: 13, lane: it,  phase: live,    label: Go-live,          sub: "Rollout, hypercare" }
-  - { id: run,     kind: box,  col: 14, lane: it,  phase: run,     label: Operations,       sub: "Monitoring, value" }
-  - { id: end,     kind: term, col: 15, lane: it,  label: End }
+  - { id: need,    kind: box,  col: 1,  lane: fb,  phase: idea,    label: Capture,          sub: "Problem, owner, volume" }
+  - { id: assess,  kind: box,  col: 2,  lane: me,  phase: idea,    label: Assess,           sub: Score value & feasibility }
+  - { id: g0,      kind: gate, col: 3,  lane: me,  phase: idea,    code: G0, label: "Pilot?", hint: "No K.O., value and feasibility worth a timeboxed pilot" }
+  - { id: pilot,   kind: box,  col: 5,  lane: me,  phase: pilot,   label: Pilot / quick PoC, sub: "Feasible? 2-4 weeks" }
+  - { id: g1,      kind: gate, col: 6,  lane: me,  phase: pilot,   code: G1, label: "Pursue?", hint: "Pilot shows feasibility and value. Re-assess with pilot results" }
+  - { id: parked,  kind: box,  col: 6,  lane: fb,  phase: parked,  label: Parked,           sub: No-go or later, parked: true }
+  - { id: wd,      kind: gate, col: 7,  lane: me,  phase: demand,  code: Switch, label: "Demand needed?", hint: "Yes for budget, other teams or core systems; no for self-build" }
+  - { id: demand,  kind: box,  col: 8,  lane: gov, phase: demand,  label: Demand,           sub: "Request, business case", optional: true }
+  - { id: g2,      kind: gate, col: 9,  lane: gov, phase: demand,  code: G2, label: "Demand ok?", hint: "Board releases budget or capacity", optional: true }
+  - { id: concept, kind: box,  col: 10, lane: me,  phase: concept, label: Concept,          sub: "Design, data, operations" }
+  - { id: g3,      kind: gate, col: 11, lane: gov, phase: concept, code: G3, label: "Approvals ok?", hint: "Privacy, IT security, AI governance for AI" }
+  - { id: infra,   kind: box,  col: 12, lane: it,  phase: build,   label: Access & infra,   sub: "Permissions, environments" }
+  - { id: build,   kind: box,  col: 13, lane: me,  phase: build,   label: Build,            sub: "MVP, production-ready" }
+  - { id: uat,     kind: box,  col: 14, lane: fb,  phase: test,    label: Test (UAT),       sub: with real cases }
+  - { id: g4,      kind: gate, col: 15, lane: fb,  phase: test,    code: G4, label: "Accepted?", hint: "Business accepts, handover to operations" }
+  - { id: live,    kind: box,  col: 16, lane: it,  phase: live,    label: Go-live,          sub: "Rollout, hypercare" }
+  - { id: run,     kind: box,  col: 17, lane: it,  phase: run,     label: Operations,       sub: "Monitoring, value" }
+  - { id: end,     kind: term, col: 18, lane: it,  label: End }
 
 phase_default_step:
   idea: need
@@ -50,6 +53,7 @@ phase_default_step:
   parked: parked
 
 board_gates:
+  idea: g0
   pilot: g1
   demand: g2
   concept: g3
@@ -58,7 +62,10 @@ board_gates:
 # route: h | hv | hvh | vu | over. Label starting with "No" = negative branch.
 edges:
   - { from: start,   to: need,    route: h }
-  - { from: need,    to: pilot,   route: hv }
+  - { from: need,    to: assess,  route: hv }
+  - { from: assess,  to: g0,      route: h }
+  - { from: g0,      to: pilot,   route: h,    label: "Yes", label_dx: 16 }
+  - { from: g0,      to: parked,  route: hvh,  label: "No" }
   - { from: pilot,   to: g1,      route: h }
   - { from: g1,      to: parked,  route: vu,   label: "No" }
   - { from: g1,      to: wd,      route: h,    label: "Yes" }
@@ -94,3 +101,40 @@ types:
 areas: [Finance, Customer Service, Sales, Operations, Data & Reporting]
 
 stale_after_days: 21
+
+# Use-case assessment before G0 and again at G1. Remove the block to hide it in the app.
+# K.O. questions: pass | fail | open. Criteria: 1-3 points, anchors = what 1, 2 and 3 mean.
+assessment:
+  ko:
+    - { id: owner,    label: Business owner named }
+    - { id: risk,     label: "Not high-risk (EU AI Act) or governance clear" }
+    - { id: data_use, label: "Data may be used (classification, GDPR)" }
+  criteria:
+    - id: volume
+      axis: value
+      label: Time saved / volume
+      anchors: ["< 0.2 FTE or rare", "0.2–1 FTE", "> 1 FTE or very frequent"]
+    - id: quality
+      axis: value
+      label: Quality / risk reduction
+      anchors: ["Little effect on errors or lead time", "Noticeably fewer errors or faster", "Removes a known error source or compliance risk"]
+    - id: reuse
+      axis: value
+      label: Leverage / reuse
+      anchors: ["One-off for one team", "Similar need in other teams", "Pattern for several use cases"]
+    - id: data
+      axis: feasibility
+      label: Data situation
+      anchors: ["Scattered, unstructured or no access", "Available, needs cleanup or an access request", "Structured, accessible, owner known"]
+    - id: path
+      axis: feasibility
+      label: Solution path
+      anchors: ["Custom build", "Buy / vendor product", "Orchestrate existing tools"]
+    - id: deps
+      axis: feasibility
+      label: Dependencies
+      anchors: ["Several teams, core systems or new approvals", "One other team or system", "Self-contained"]
+    - id: maturity
+      axis: feasibility
+      label: Process maturity
+      anchors: ["Ad hoc, everyone does it differently", "Mostly stable, rules partly implicit", "Stable, documented, clear rules"]

@@ -57,7 +57,7 @@ fn loads_fixture_with_one_parse_error() {
     assert_eq!(idx.project("NA").unwrap().project.usecase.as_ref().unwrap().decisions.len(), 2);
     assert_eq!(idx.task("WR-3").unwrap().task.agent.as_ref().unwrap().active.as_deref(), Some("codex"));
     let process = ws.process.as_ref().unwrap();
-    assert_eq!(process.steps.len(), 17);
+    assert_eq!(process.steps.len(), 19);
     assert!(process.validate().is_empty());
     assert_eq!(ws.config.task_statuses[2].wip_limit, Some(3));
 }
@@ -187,7 +187,7 @@ fn broken_config_and_process_are_reported() {
     let ws = Workspace::open(&root).unwrap();
     let msgs: Vec<String> = ws.index.errors.iter().map(|e| format!("{}: {}", e.path, e.message)).collect();
     assert!(msgs[0].starts_with(".workly/config.yml: "), "{msgs:?}");
-    assert_eq!(msgs[1], ".workly/process.yml: edge 20 (run -> nowhere) references unknown step 'nowhere'");
+    assert_eq!(msgs[1], ".workly/process.yml: edge 23 (run -> nowhere) references unknown step 'nowhere'");
     // Defaults keep the app usable.
     assert_eq!(ws.index.projects.len(), 6);
 }
