@@ -257,7 +257,7 @@
         : view === "list"
           ? "All use cases in one table. Click a column to sort, a row to open the details."
           : view === "matrix"
-            ? "Assessed use cases by value and feasibility. Scores change in the assessment; click a use case to open the details."
+            ? "Assessed use cases by value and feasibility. Click one to open the details."
             : "Lanes show the owner; diamonds are decisions. Drag a use case onto the step it is in."}
     </div>
   </div>

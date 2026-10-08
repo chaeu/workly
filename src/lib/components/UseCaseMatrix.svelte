@@ -1,6 +1,6 @@
 <script lang="ts">
   // Feasibility matrix: assessed use cases by value (up) and feasibility (right), with a list by quadrant beside it.
-  // Read-only; scores change in the editor (D5). Advanced adds quadrant tiles, bubble size by manual effort and quadrant colours.
+  // Read-only; scores change in the editor (D5). Advanced adds bubble size by manual effort and quadrant colours.
   import { projColor, type Process } from "$lib/stores/workspace.svelte";
   import {
     assess,
@@ -16,7 +16,6 @@
     stepName,
     stepOf,
     type AssessResult,
-    type Quadrant,
     type UC,
   } from "$lib/usecases.svelte";
   import { tip } from "$lib/tip";
@@ -38,7 +37,7 @@
   const byQuadrant = $derived(
     QUADRANTS.map((q) => {
       const list = placed.filter((d) => d.q === q).sort((a, b) => Math.hypot(3 - a.r.value!, 3 - a.r.feasibility!) - Math.hypot(3 - b.r.value!, 3 - b.r.feasibility!));
-      return { q, list, fte: list.reduce((s, d) => s + (d.fte ?? 0), 0), open: list.reduce((s, d) => s + d.r.open.length, 0) };
+      return { q, list, fte: list.reduce((s, d) => s + (d.fte ?? 0), 0) };
     }),
   );
 
@@ -48,11 +47,7 @@
   const early = (d: Dot) => phaseIndex(p, phaseOf(p, d.u)) === 0;
 
   let hover = $state<string | null>(null);
-  let focusQ = $state<Quadrant | null>(null);
-  $effect(() => {
-    if (!advanced) focusQ = null;
-  });
-  const dimmed = (d: Dot) => (hover ? hover !== d.u.key : !!focusQ && d.q !== focusQ);
+  const dimmed = (d: Dot) => !!hover && hover !== d.u.key;
 
   const dotTip = (d: Dot) =>
     [
@@ -124,23 +119,6 @@
     return () => ro.disconnect();
   });
 </script>
-
-{#if advanced}
-  <div class="tiles">
-    {#each byQuadrant as g (g.q)}
-      <button
-        type="button"
-        class="tile"
-        style:--c={QUADRANT_COLOR[g.q]}
-        aria-pressed={focusQ === g.q}
-        onclick={() => (focusQ = focusQ === g.q ? null : g.q)}
-        ><span class="w-caps">{g.q}</span><b>{g.list.length}</b><small>{fmtFte(g.fte)} FTE · {g.open} open</small></button
-      >
-    {/each}
-    <div class="tile static" style:--c={QUADRANT_COLOR["K.O."]}><span class="w-caps">K.O.</span><b>{ko.length}</b><small>stopped by a K.O. question</small></div>
-    <div class="tile static" style:--c="var(--w-muted)"><span class="w-caps">Not assessed</span><b>{unplaced.length}</b><small>no position yet</small></div>
-  </div>
-{/if}
 
 <div class="wrap" class:advanced>
   <div class="panel">
@@ -223,7 +201,6 @@
             type="button"
             class="li"
             class:hi={hover === d.u.key}
-            class:dim={!!focusQ && d.q !== focusQ}
             onclick={() => onopen(d.u.key)}
             onpointerenter={() => (hover = d.u.key)}
             onpointerleave={() => (hover = null)}
@@ -270,9 +247,6 @@
     gap: 2px;
     border-radius: var(--w-r-md);
     overflow: hidden;
-  }
-  .advanced .field {
-    height: clamp(320px, calc(100vh - 500px), 1000px);
   }
   .quad {
     background: color-mix(in srgb, var(--c) 7%, var(--w-surface));
@@ -556,45 +530,6 @@
   }
   .none {
     margin: 0 8px;
-    color: var(--w-muted);
-    font-size: var(--w-fs-caption);
-  }
-
-  /* ---------- advanced: quadrant tiles ---------- */
-  .tiles {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 8px;
-    margin-bottom: 12px;
-  }
-  .tile {
-    display: grid;
-    gap: 1px;
-    border: 0;
-    text-align: left;
-    padding: 8px 12px;
-    border-radius: var(--w-r-md);
-    background: color-mix(in srgb, var(--c) 8%, var(--w-surface));
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 30%, transparent);
-    color: var(--w-ink);
-    cursor: pointer;
-  }
-  .tile[aria-pressed="true"] {
-    box-shadow: inset 0 0 0 1.5px var(--c);
-  }
-  .tile.static {
-    cursor: default;
-  }
-  .tile .w-caps {
-    color: var(--c);
-  }
-  .tile b {
-    font-family: var(--w-font-label);
-    font-size: var(--w-fs-headline);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-  .tile small {
     color: var(--w-muted);
     font-size: var(--w-fs-caption);
   }
