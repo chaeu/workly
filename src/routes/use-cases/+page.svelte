@@ -310,6 +310,12 @@
         <button type="button" aria-pressed={compact} onclick={() => saveSettings({ usecase_compact: true })}>Compact</button>
       </div>
     {/if}
+    {#if view === "matrix"}
+      <div class="w-seg" role="group" aria-label="Matrix detail">
+        <button type="button" aria-pressed={!ui.matrixAdvanced} onclick={() => (ui.matrixAdvanced = false)}>Standard</button>
+        <button type="button" aria-pressed={ui.matrixAdvanced} onclick={() => (ui.matrixAdvanced = true)}>Advanced</button>
+      </div>
+    {/if}
     <select class="w-chip" class:on={fArea} bind:value={fArea} aria-label="Area">
       <option value="">All areas</option>
       {#each areas as a (a)}<option value={a}>{a}</option>{/each}
@@ -361,7 +367,7 @@
   {#if view === "list"}
     <UseCaseList process={p} ucs={ucs.filter(matches)} onopen={(key) => (openKey = key)} />
   {:else if view === "matrix"}
-    <UseCaseMatrix process={p} ucs={ucs.filter(matches)} onopen={(key) => (openKey = key)} />
+    <UseCaseMatrix process={p} ucs={ucs.filter(matches)} advanced={ui.matrixAdvanced} onopen={(key) => (openKey = key)} />
   {:else}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroll" class:map-wrap={view === "map"} {onpointerdown}>

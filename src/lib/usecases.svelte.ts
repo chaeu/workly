@@ -8,7 +8,7 @@ export type UC = ProjectEntry & { usecase: UseCase };
 export const PROCESS = ".workly/process.yml";
 
 /** View state that survives switching pages (not saved: no file needs it). */
-export const ui = $state({ view: "list" as "list" | "board" | "map" | "matrix", lanes: "area" as "area" | "type" | "status" });
+export const ui = $state({ view: "list" as "list" | "board" | "map" | "matrix", lanes: "area" as "area" | "type" | "status", matrixAdvanced: false });
 
 export const stepOf = (p: Process, id: string | null | undefined): Step | undefined => p.steps.find((s) => s.id === id);
 export const stepName = (s: Step) => (s.kind === "gate" && s.code ? `${s.code} ${s.label}` : s.label);
