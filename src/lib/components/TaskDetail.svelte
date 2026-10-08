@@ -1,6 +1,5 @@
 <script lang="ts">
   import { grow } from "$lib/grow";
-  import { outside } from "$lib/outside";
   import { tip } from "$lib/tip";
   import { renderMarkdown } from "$lib/markdown";
   import {
@@ -138,13 +137,13 @@
 </script>
 
 {#if t}
-  {#if mode === "popup"}<div class="w-scrim" onclick={onclose} aria-hidden="true"></div>{/if}
+  <!-- Side panel: a clear scrim, so a click outside only closes it and never opens what lies beneath. -->
+  <div class="w-scrim" class:w-scrim--clear={mode === "panel"} onclick={onclose} aria-hidden="true"></div>
   <div
     class={mode === "popup" ? "w-modal" : "panel"}
     role="dialog"
     aria-modal={mode === "popup"}
     aria-labelledby="t-title"
-    use:outside={mode === "panel" ? onclose : null}
   >
     <div class="t-head">
       <div class="t-meta">

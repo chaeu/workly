@@ -122,6 +122,7 @@
 
 /* ---------- Modal / detail card ---------- */
 .w-scrim { position: fixed; inset: 0; z-index: 39; background: var(--w-scrim); }
+.w-scrim--clear { background: transparent; }
 .w-modal { font-family: var(--w-font-sans); font-size: var(--w-fs-body); line-height: 1.4; color: var(--w-ink); }
 .w-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 40; width: min(780px, calc(100% - 32px));
   max-height: calc(100% - 48px); display: flex; flex-direction: column; background: var(--w-surface); border-radius: var(--w-r-xl);
