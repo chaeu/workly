@@ -105,4 +105,13 @@ export function ucTip(p: Process, u: UC) {
     .join("\n");
 }
 export const stepTip = (s: Step) => [stepName(s), s.kind === "gate" ? s.hint : s.sub, s.optional && "Optional"].filter(Boolean).join("\n");
-export const fteTip = (u: UC) => `Manual effort\n${fmtHours(savedHours(u))} h per year · ${fmtFte(savedFte(u) ?? 0)} FTE at ${fmtHours(fteHours())} h`;
+/** Manual effort: one line per activity, then the conversion. */
+export const fteTip = (u: UC) =>
+  [
+    "Manual effort",
+    ...u.usecase.savings.map((s) => {
+      const h = savingHours(s);
+      return `${s.what ?? "–"} · ${s.count ?? "–"}/${s.per ?? "–"} × ${s.minutes ?? "–"} min = ${h == null ? "–" : `${fmtHours(h)} h`}`;
+    }),
+    `${fmtHours(savedHours(u))} h per year · ${fmtFte(savedFte(u) ?? 0)} FTE at ${fmtHours(fteHours())} h`,
+  ].join("\n");
