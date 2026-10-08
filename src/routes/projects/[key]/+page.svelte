@@ -3,6 +3,8 @@
   import { page } from "$app/state";
   import ProjectFiles from "$lib/components/ProjectFiles.svelte";
   import ProjectForm from "$lib/components/ProjectForm.svelte";
+  import ProcessError from "$lib/components/ProcessError.svelte";
+  import UseCaseDetail from "$lib/components/UseCaseDetail.svelte";
   import TaskBoard from "$lib/components/TaskBoard.svelte";
   import { renderMarkdown, resolveLink } from "$lib/markdown";
   import {
@@ -16,16 +18,22 @@
     openUrl,
     readMarkdown,
     reveal,
+    moveUseCase,
   } from "$lib/stores/workspace.svelte";
-  import { fmtFte, label, savedFte, type UC } from "$lib/usecases.svelte";
+  import { fmtFte, label, PROCESS, savedFte, type UC } from "$lib/usecases.svelte";
 
-  const TABS = ["overview", "tasks", "files"] as const;
+  const TABS = ["overview", "usecase", "tasks", "files"] as const;
   type Tab = (typeof TABS)[number];
 
   const project = $derived(workspace.index?.projects.find((p) => p.key === page.params.key) ?? null);
   // No parameter = tasks, so older links keep working. The sidebar link remembers the last tab (layout).
-  const tab = $derived(TABS.find((t) => t === page.url.searchParams.get("tab")) ?? "tasks");
+  const asked = $derived(TABS.find((t) => t === page.url.searchParams.get("tab")) ?? "tasks");
+  // Use case only while the project has a usecase block; otherwise (e.g. after "Remove from cockpit") Overview.
+  const tab = $derived(asked === "usecase" && !project?.usecase ? "overview" : asked);
   const tabHref = (t: Tab) => `/projects/${project?.key}${t === "tasks" ? "" : `?tab=${t}`}`;
+  $effect(() => {
+    if (project && tab !== asked) goto(tabHref(tab), { replaceState: true });
+  });
 
   let selected = $state<string | null>(null);
   let editing = $state(false);
@@ -66,6 +74,8 @@
 
   const uc = $derived(project?.usecase ? (project as UC) : null);
   const fte = $derived(uc ? savedFte(uc) : null);
+  const proc = $derived(workspace.index?.process ?? null);
+  const procBroken = $derived(!proc || !!workspace.index?.errors.some((e) => e.path === PROCESS));
 </script>
 
 {#if !project}
@@ -83,6 +93,9 @@
     <section class="w-bar" aria-label="Project">
       <div class="w-seg" role="group" aria-label="View">
         <button type="button" aria-pressed={tab === "overview"} onclick={() => goto(tabHref("overview"))}>Overview</button>
+        {#if project.usecase}
+          <button type="button" aria-pressed={tab === "usecase"} onclick={() => goto(tabHref("usecase"))}>Use case</button>
+        {/if}
         <button type="button" aria-pressed={tab === "tasks"} onclick={() => goto(tabHref("tasks"))}>Tasks</button>
         <button type="button" aria-pressed={tab === "files"} onclick={() => goto(tabHref("files"))}>Files</button>
       </div>
@@ -112,6 +125,13 @@
     {@render bar()}
     {#if tab === "files"}
       <ProjectFiles {project} bind:selected />
+    {:else if tab === "usecase"}
+      {#if proc && !procBroken}
+        <!-- No toast here: the new step shows right away. -->
+        <UseCaseDetail key={project.key} process={proc} mode="page" onmove={(u, step) => step !== u.usecase.step && moveUseCase(u.key, step)} />
+      {:else}
+        <ProcessError />
+      {/if}
     {:else}
       <div class="overview">
         <section class="desc" aria-label="Description">
@@ -174,8 +194,7 @@
                 <dt>Manual effort</dt>
                 <dd>{fte === null ? "–" : `${fmtFte(fte)} FTE`}</dd>
               </dl>
-              <!-- ponytail: P9 points this at ?tab=usecase. -->
-              <a href="/use-cases">Open use case</a>
+              <a href={tabHref("usecase")}>Open use case</a>
             {:else}
               <button class="w-btn" onclick={() => (editing = true)}>Make use case…</button>
             {/if}
