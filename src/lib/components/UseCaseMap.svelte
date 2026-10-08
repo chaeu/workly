@@ -30,7 +30,6 @@
   type Drawn = { d: string; head: string; label: string | null; x: number; y: number; anchor: string; neg: boolean };
   let flow: HTMLDivElement;
   let drawn = $state<Drawn[]>([]);
-  let size = $state({ w: 0, h: 0 });
 
   function draw() {
     if (!flow) return;
@@ -99,7 +98,6 @@
       }
       out.push({ d, head: ah, label: e.label, x, y, anchor, neg: isNegative(e.label) });
     }
-    size = { w: flow.scrollWidth, h: flow.scrollHeight };
     drawn = out;
   }
 
@@ -192,7 +190,7 @@
     {/if}
   {/each}
 
-  <svg class="edges" width={size.w} height={size.h} aria-hidden="true">
+  <svg class="edges" aria-hidden="true">
     {#each drawn as e, i (i)}
       <path d={e.d} />
       <polygon class="ah" points={e.head} />
@@ -271,10 +269,13 @@
     min-height: 136px;
     box-sizing: border-box;
   }
+  /* Sized by CSS, not scrollHeight: scrollHeight includes this svg, so it never shrank and left a white strip under the last lane. */
   .edges {
     position: absolute;
     left: 0;
     top: 0;
+    width: 100%;
+    height: 100%;
     z-index: 1;
     pointer-events: none;
     overflow: visible;
