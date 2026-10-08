@@ -106,7 +106,7 @@ Der Streifen hat eine feste Höhe (`--w-bar-h`), leer wie voll. In der Projektan
 
 ### Detailkarte (Modal)
 
-Radius 14, `shadow-pop`, Hintergrund-Abdunklung `scrim`. Aufbau wie im Cockpit: Kopf (ID, Typ, Bereich, Schließen), Titel, Position/Fortschritt, Status-Pillen, Inhalt zweispaltig, Aktionsleiste unten auf `sunk`. Die Task-Karte ist als Popup `--w-detail-w` breit und mindestens `--w-detail-min-h` hoch, damit Beschreibung und Updates auch bei kurzen Tasks Platz haben; als Seitenleiste `--w-panel-w` breit (auch Use Cases). Fokus setzt ein Stern im Kopf (gefüllt = im Fokus, Tooltip „Focus #n“).
+Radius 14, `shadow-pop`, Hintergrund-Abdunklung `scrim`. Aufbau wie im Cockpit: Kopf (ID, Typ, Bereich, Schließen), Titel, Position/Fortschritt, Status-Pillen, Inhalt zweispaltig, Aktionsleiste unten auf `sunk`. Die Task-Karte ist als Popup `--w-detail-w` breit und mindestens `--w-detail-min-h` hoch, damit Beschreibung und Updates auch bei kurzen Tasks Platz haben; als Seitenleiste `--w-panel-w` breit (auch Use Cases). Die Use-Case-Karte ist als Popup `--w-uc-detail-w` breit und mindestens `--w-uc-detail-min-h` hoch; ihre volle Fassung ist der Tab Use case auf der Projektseite (zwei Karten wie Overview, ohne Scrim und Rahmen). Fokus setzt ein Stern im Kopf (gefüllt = im Fokus, Tooltip „Focus #n“).
 
 ### Tooltip
 
