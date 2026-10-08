@@ -40,6 +40,7 @@ export type ProjectEntry = {
   order: number | null;
   repos: string[];
   links: Link[];
+  created: string | null;
   usecase: UseCase | null;
   [field: string]: unknown;
 };

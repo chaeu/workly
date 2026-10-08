@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { renderMarkdown } from "$lib/markdown";
+  import { renderMarkdown, resolveLink } from "$lib/markdown";
   import {
     workspace,
     projectFiles,
@@ -79,16 +79,6 @@
   const inGroup = (dir: string, f: string) => f.slice(`${project.path}/${dir}/`.length);
   const shortPath = (f: string) => f.slice(project.path.length + 1);
 
-  /** `a/b/c.md` + `../d.md` -> `a/d.md`. */
-  function resolve(from: string, href: string) {
-    const parts = from.split("/").slice(0, -1);
-    for (const seg of decodeURIComponent(href.split("#")[0]).split("/")) {
-      if (seg === "..") parts.pop();
-      else if (seg && seg !== ".") parts.push(seg);
-    }
-    return parts.join("/");
-  }
-
   // Links in the preview must never navigate the app window.
   function onPreviewClick(e: MouseEvent) {
     const a = (e.target as HTMLElement).closest("a");
@@ -97,7 +87,7 @@
     const href = a.getAttribute("href") ?? "";
     if (/^(https?|mailto):/i.test(href)) openUrl(href);
     else if (href && !href.includes(":") && !href.startsWith("#")) {
-      const target = resolve(current, href);
+      const target = resolveLink(current, href);
       if (target === overview || files.includes(target)) selected = target;
     }
   }
