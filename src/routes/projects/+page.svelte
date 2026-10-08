@@ -56,7 +56,7 @@
   <a
     class="row"
     class:is-dragging={dragKey === p.key}
-    href="/projects/{p.key}"
+    href="/projects/{p.key}?tab=overview"
     draggable={sortable}
     ondragstart={(e) => dragstart(e, p)}
     ondragover={(e) => sortable && dragover(e, p)}

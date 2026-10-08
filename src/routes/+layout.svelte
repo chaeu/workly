@@ -43,11 +43,14 @@
 
   const theme = $derived(workspace.settings?.theme ?? "system");
   const sidebarProjects = $derived(workspace.index?.projects.filter((p) => p.status !== "archived") ?? []);
-  // A project in the sidebar opens the tab used last; /tasks counts as Tasks. Memory only.
-  let projectTab = $state<"tasks" | "files">("tasks");
+  // A project in the sidebar opens the tab used last (null = Tasks); /tasks counts as Tasks. Memory only.
+  let projectTab = $state<string | null>(null);
   $effect(() => {
     const path = page.url.pathname;
-    if (path === "/tasks" || path.startsWith("/projects/")) projectTab = page.url.searchParams.get("tab") === "files" ? "files" : "tasks";
+    if (path === "/tasks" || path.startsWith("/projects/")) {
+      const t = page.url.searchParams.get("tab");
+      projectTab = path !== "/tasks" && (t === "overview" || t === "files") ? t : null;
+    }
   });
 
   $effect(() => {
@@ -144,7 +147,7 @@
       <div class="w-nav">
         <div class="w-caps side-label">Projects</div>
         {#each sidebarProjects as p (p.key)}
-          <a class="w-nav-item" href="/projects/{p.key}{projectTab === 'files' ? '?tab=files' : ''}" aria-current={page.url.pathname === `/projects/${p.key}` ? "page" : undefined}
+          <a class="w-nav-item" href="/projects/{p.key}{projectTab ? `?tab=${projectTab}` : ''}" aria-current={page.url.pathname === `/projects/${p.key}` ? "page" : undefined}
             ><span class="w-proj-mark" style:--c={projColor(p.color)}></span><span class="side-title">{p.title}</span><span
               class="w-count w-mono">{openTasks(p)}</span
             ></a
