@@ -6,6 +6,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, State};
 use workly_core::agent::AgentContext;
+use workly_core::history::PhaseSpan;
 use workly_core::model::{Config, Process};
 use workly_core::project::{MissingRepo, NewProject, NewUseCase, init_workspace, is_workspace};
 use workly_core::scan::Index;
@@ -197,6 +198,11 @@ fn project_files(state: State<AppState>, key: String) -> Result<Vec<String>, Str
 #[tauri::command]
 fn read_markdown(state: State<AppState>, path: String) -> Result<String, String> {
     with_ws(&state, |ws| ws.read_markdown(&path))
+}
+
+#[tauri::command]
+fn usecase_history(state: State<AppState>, key: String) -> Result<Vec<PhaseSpan>, String> {
+    with_ws(&state, |ws| ws.usecase_history(&key))
 }
 
 // ----------------------------------------------------------------- agents
@@ -397,6 +403,7 @@ pub fn run() {
             delete_project,
             project_files,
             read_markdown,
+            usecase_history,
             agent_context,
             create_agents_md,
             cli_link,

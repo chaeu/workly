@@ -2,6 +2,7 @@
 
 pub mod agent;
 pub mod frontmatter;
+pub mod history;
 pub mod ids;
 pub mod model;
 pub mod patch;

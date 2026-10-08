@@ -915,3 +915,42 @@ fn missing_repos_skip_archived_and_existing() {
     assert!(!missing.iter().any(|(_, r)| r == &repo.display().to_string()));
     assert!(!missing.iter().any(|(k, _)| k == "OI"));
 }
+
+#[test]
+fn usecase_history_from_the_log() {
+    let (_dir, root) = fixture();
+    // Without log lines: the current phase from step_since, the decision placed by date.
+    let ws = Workspace::open(&root).unwrap();
+    let h = serde_json::to_value(ws.usecase_history("IE").unwrap()).unwrap();
+    assert_eq!(h[0]["phase"], "pilot");
+    assert_eq!(h[0]["start"], "2026-09-24");
+    assert_eq!(h[0]["end"], Value::Null);
+    assert_eq!(h[0]["events"][0]["kind"], "decision");
+
+    // A removed and re-made use case starts over; other ids are ignored.
+    let lines = [
+        json!({"ts":"2026-08-01T08:00:00Z","kind":"usecase.create","id":"IE","field":"usecase","from":null,"to":{"step":"pilot","status":"active"}}),
+        json!({"ts":"2026-08-20T08:00:00Z","kind":"usecase.remove","id":"IE","field":"usecase","from":{},"to":null}),
+        json!({"ts":"2026-09-01T08:00:00Z","kind":"usecase.create","id":"IE","field":"usecase","from":null,"to":{"step":"need","status":"active"}}),
+        json!({"ts":"2026-09-03T08:00:00Z","kind":"project.update","id":"IE","field":"usecase.blocked_by","from":null,"to":"numbers missing"}),
+        json!({"ts":"2026-09-03T08:01:00Z","kind":"project.update","id":"IE","field":"usecase.status","from":"active","to":"blocked"}),
+        json!({"ts":"2026-09-07T08:00:00Z","kind":"project.update","id":"IE","field":"usecase.status","from":"blocked","to":"active"}),
+        json!({"ts":"2026-09-08T08:00:00Z","kind":"project.update","id":"WR","field":"usecase.status","from":"active","to":"blocked"}),
+        json!({"ts":"2026-09-24T08:00:00Z","kind":"usecase.move","id":"IE","field":"usecase.step","from":"need","to":"pilot"}),
+        json!({"ts":"2026-09-26T08:00:00Z","kind":"project.update","id":"IE","field":"usecase.status","from":"active","to":"waiting"}),
+    ];
+    let text: String = lines.iter().map(|l| format!("{l}\n")).collect();
+    fs::write(root.join(".workly/log/2026-09.jsonl"), text + "not json\n").unwrap();
+    let h = serde_json::to_value(ws.usecase_history("IE").unwrap()).unwrap();
+    let phases: Vec<&str> = h.as_array().unwrap().iter().map(|s| s["phase"].as_str().unwrap()).collect();
+    assert_eq!(phases, ["idea", "pilot"]);
+    assert_eq!((&h[0]["start"], &h[0]["end"]), (&json!("2026-09-01"), &json!("2026-09-24")));
+    let idea = &h[0]["events"];
+    assert_eq!(idea[0]["status"], "active");
+    assert_eq!((&idea[1]["status"], &idea[1]["until"], &idea[1]["text"]), (&json!("blocked"), &json!("2026-09-07"), &json!("numbers missing")));
+    // The 2026-09-10 decision has no gate: it lands in the phase it was in on that day.
+    assert_eq!(idea[3]["kind"], "decision");
+    let pilot = &h[1];
+    assert_eq!((&pilot["start"], &pilot["end"]), (&json!("2026-09-24"), &Value::Null));
+    assert_eq!((&pilot["events"][0]["status"], &pilot["events"][0]["until"]), (&json!("waiting"), &Value::Null));
+}
