@@ -86,6 +86,10 @@ pub struct UseCase {
     #[serde(default, deserialize_with = "lenient_savings")]
     pub savings: Vec<Saving>,
     pub savings_note: Option<String>,
+    /// Current assessment (K.O. questions, 1-3 points per criterion). Value, feasibility
+    /// and quadrant are computed in the app, never stored.
+    #[serde(default, deserialize_with = "lenient_assessment")]
+    pub assessment: Option<UseCaseAssessment>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -149,6 +153,80 @@ pub fn saving_problems(v: &Value) -> Vec<String> {
 fn lenient_savings<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<Saving>, D::Error> {
     let v = Option::<Value>::deserialize(d)?;
     Ok(v.as_ref().and_then(Value::as_array).map(|a| a.iter().map(Saving::from_value).collect()).unwrap_or_default())
+}
+
+pub const KO_VALUES: [&str; 3] = ["pass", "fail", "open"];
+/// Keys of `usecase.assessment` the app writes.
+pub const ASSESSMENT_KEYS: [&str; 4] = ["date", "ko", "scores", "note"];
+
+/// `usecase.assessment`. Invalid hand-written entries are left out, so the use
+/// case still loads; the scan reports them. A missing K.O. or score = open.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct UseCaseAssessment {
+    pub date: Option<String>,
+    /// K.O. question id -> pass | fail | open
+    pub ko: BTreeMap<String, String>,
+    /// Criterion id -> 1..3
+    pub scores: BTreeMap<String, u8>,
+    pub note: Option<String>,
+}
+
+fn score(v: &Value) -> Option<u8> {
+    v.as_u64().filter(|n| (1..=3).contains(n)).map(|n| n as u8)
+}
+
+fn lenient_assessment<'de, D: Deserializer<'de>>(d: D) -> Result<Option<UseCaseAssessment>, D::Error> {
+    let v = Option::<Value>::deserialize(d)?;
+    let Some(v) = v.filter(Value::is_object) else { return Ok(None) };
+    let entries = |k: &str| v.get(k).and_then(Value::as_object).into_iter().flatten();
+    Ok(Some(UseCaseAssessment {
+        date: v.get("date").and_then(Value::as_str).map(String::from),
+        ko: entries("ko").filter_map(|(id, x)| x.as_str().filter(|x| KO_VALUES.contains(x)).map(|x| (id.clone(), x.into()))).collect(),
+        scores: entries("scores").filter_map(|(id, x)| score(x).map(|n| (id.clone(), n))).collect(),
+        note: v.get("note").and_then(Value::as_str).map(String::from),
+    }))
+}
+
+/// What is wrong with a `usecase.assessment` value; empty = valid. Checked on write
+/// and on scan. Ids are checked against `method` when there is one.
+pub fn assessment_problems(v: &Value, method: Option<&Assessment>) -> Vec<String> {
+    let map = match v {
+        Value::Null => return Vec::new(),
+        Value::Object(map) => map,
+        _ => return vec!["usecase.assessment must be a map".into()],
+    };
+    let mut out = Vec::new();
+    if let Some(d) = map.get("date").filter(|d| !d.is_null())
+        && !d.as_str().is_some_and(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").is_ok())
+    {
+        out.push(format!("usecase.assessment: date must be a date (YYYY-MM-DD), got {d}"));
+    }
+    if map.get("note").is_some_and(|n| !n.is_null() && !n.is_string()) {
+        out.push("usecase.assessment: note must be a text".into());
+    }
+    let ko_ids: Option<Vec<&str>> = method.map(|m| m.ko.iter().map(|k| k.id.as_str()).collect());
+    let criteria_ids: Option<Vec<&str>> = method.map(|m| m.criteria.iter().map(|c| c.id.as_str()).collect());
+    let ko_ok: fn(&Value) -> bool = |x| x.as_str().is_some_and(|x| KO_VALUES.contains(&x));
+    let checks = [
+        ("ko", "K.O. question", ko_ids, ko_ok, "pass, fail or open"),
+        ("scores", "criterion", criteria_ids, |x| score(x).is_some(), "1, 2 or 3"),
+    ];
+    for (key, what, ids, ok, allowed) in checks {
+        match map.get(key) {
+            None | Some(Value::Null) => {}
+            Some(Value::Object(entries)) => {
+                for (id, x) in entries {
+                    if ids.as_ref().is_some_and(|ids| !ids.contains(&id.as_str())) {
+                        out.push(format!("usecase.assessment: unknown {what} '{id}' (not in process.yml)"));
+                    } else if !ok(x) {
+                        out.push(format!("usecase.assessment: {key}.{id} must be {allowed}, got {x}"));
+                    }
+                }
+            }
+            Some(_) => out.push(format!("usecase.assessment: {key} must be a map")),
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

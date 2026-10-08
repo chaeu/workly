@@ -22,5 +22,10 @@ usecase:
     - { what: Capture invoice header, count: 1200, per: month, minutes: 6 }
     - { what: Clarify queries with suppliers, count: 80, per: month, minutes: 15 }
   savings_note: "Volume from the finance team, sample 09/2026"
+  assessment:
+    date: 2026-09-08
+    ko: { owner: pass, risk: pass, data_use: pass }
+    scores: { volume: 2, quality: 3, reuse: 2, data: 2, path: 3, deps: 2, maturity: 3 }
+    note: Header fields only, line items later
 ---
 Extract header fields from PDF invoices with an LLM, human check for low-confidence fields.

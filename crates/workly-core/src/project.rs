@@ -215,6 +215,7 @@ impl Workspace {
                     return Err(Error::Invalid(problems.join("; ")));
                 }
             }
+            "usecase.assessment" => return self.set_assessment(key, value, actor),
             f if MOVE_FIELDS.contains(&f) => return Err(Error::Invalid(format!("{f} only changes by moving the use case"))),
             "usecase.status" | "usecase.type" => {
                 if let Some(p) = &self.process {
@@ -241,6 +242,59 @@ impl Workspace {
         if field == "repos" {
             self.code_workspace(key, true)?;
         }
+        Ok(())
+    }
+
+    /// `usecase.assessment` = the whole block `{ date, ko, scores, note }`, `null` removes it.
+    /// The keys are set one by one (ko and scores as flow maps) in one write with one
+    /// log line; other keys in the block stay. Empty or null keys are removed.
+    fn set_assessment(&mut self, key: &str, value: &Value, actor: &str) -> Result<()> {
+        let method = self.process.as_ref().and_then(|p| p.assessment.as_ref());
+        let method = method.ok_or_else(|| Error::Invalid("process.yml has no assessment block".into()))?;
+        let mut problems = crate::model::assessment_problems(value, Some(method));
+        if let Some(map) = value.as_object() {
+            if !map.get("date").is_some_and(Value::is_string) {
+                problems.push("usecase.assessment: date is required".into());
+            }
+            let unknown = map.keys().filter(|k| !crate::model::ASSESSMENT_KEYS.contains(&k.as_str()));
+            problems.extend(unknown.map(|k| format!("usecase.assessment: unknown key '{k}'")));
+        }
+        if !problems.is_empty() {
+            return Err(Error::Invalid(problems.join("; ")));
+        }
+        let entry = self.index.project(key).ok_or_else(|| Error::NotFound(format!("project {key} not found")))?;
+        if entry.project.usecase.is_none() {
+            return Err(Error::Invalid(format!("{key} is not a use case")));
+        }
+        let file = self.root.join(&entry.path).join("_project.md");
+        let src = fs::read_to_string(&file)?;
+        let block = ["usecase", "assessment"];
+        let from = patch::get_field(&src, &block).map_err(Error::Invalid)?;
+        let set_keys = |src: &str| -> std::result::Result<String, String> {
+            let mut out = src.to_string();
+            for k in crate::model::ASSESSMENT_KEYS {
+                let path = ["usecase", "assessment", k];
+                out = match value.get(k) {
+                    None | Some(Value::Null) => patch::remove_field(&out, &path)?,
+                    Some(Value::Object(m)) if m.is_empty() => patch::remove_field(&out, &path)?,
+                    Some(v) => patch::set_field(&out, &path, v)?,
+                };
+            }
+            Ok(out)
+        };
+        let out = if value.is_null() {
+            patch::remove_field(&src, &block)
+        } else {
+            // A hand-written flow or scalar `assessment:` is not a block map: replace it whole.
+            set_keys(&src).or_else(|_| set_keys(&patch::remove_field(&src, &block)?))
+        }
+        .map_err(Error::Invalid)?;
+        if out == src {
+            return Ok(());
+        }
+        atomic_write(&file, &out, &self.own)?;
+        log(&self.root, &LogEntry::new(actor, "project.update", key, Some("usecase.assessment"), from, value.clone()))?;
+        self.rescan();
         Ok(())
     }
 

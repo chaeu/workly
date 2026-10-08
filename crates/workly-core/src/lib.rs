@@ -99,7 +99,7 @@ impl Workspace {
             let path = ".workly/process.yml".to_string();
             errors.extend(p.validate().into_iter().map(|message| ParseError { path: path.clone(), line: None, message }));
         }
-        self.index = scan::scan(&self.root, &self.config);
+        self.index = scan::scan(&self.root, &self.config, self.process.as_ref());
         self.index.errors.splice(0..0, errors);
     }
 

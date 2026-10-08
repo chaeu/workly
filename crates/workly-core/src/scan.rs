@@ -1,6 +1,6 @@
 //! Walk a workspace and build the in-memory index.
 
-use crate::model::{Config, ParseError, Project, Task, parse_file, saving_problems};
+use crate::model::{Config, ParseError, Process, Project, Task, assessment_problems, parse_file, saving_problems};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fs;
@@ -48,9 +48,9 @@ pub fn rel(root: &Path, path: &Path) -> String {
     path.strip_prefix(root).unwrap_or(path).to_string_lossy().into_owned()
 }
 
-pub fn scan(root: &Path, config: &Config) -> Index {
+pub fn scan(root: &Path, config: &Config, process: Option<&Process>) -> Index {
     let mut idx = Index::default();
-    walk(root, root, config, &mut idx);
+    walk(root, root, config, process, &mut idx);
     for file in md_files(&root.join(&config.inbox_dir)) {
         load_task(root, &file, None, &mut idx);
     }
@@ -73,17 +73,18 @@ pub fn scan(root: &Path, config: &Config) -> Index {
     idx
 }
 
-fn walk(root: &Path, dir: &Path, config: &Config, idx: &mut Index) {
+fn walk(root: &Path, dir: &Path, config: &Config, process: Option<&Process>, idx: &mut Index) {
     let project_file = dir.join("_project.md");
     if project_file.is_file() {
         let path = rel(root, dir);
         let file = rel(root, &project_file);
         match read(root, &project_file).and_then(|src| parse_file::<Project>(&file, &src).map(|p| (src, p))) {
             Ok((src, project)) => {
-                // Bad savings entries load as empty fields; say what is wrong.
+                // Bad savings and assessment entries load as empty fields; say what is wrong.
                 if project.usecase.is_some() {
-                    let raw = crate::patch::get_field(&src, &["usecase", "savings"]).unwrap_or_default();
-                    let problems = saving_problems(&raw).into_iter();
+                    let raw = |f| crate::patch::get_field(&src, &["usecase", f]).unwrap_or_default();
+                    let method = process.and_then(|p| p.assessment.as_ref());
+                    let problems = saving_problems(&raw("savings")).into_iter().chain(assessment_problems(&raw("assessment"), method));
                     idx.errors.extend(problems.map(|message| ParseError { path: file.clone(), line: None, message }));
                 }
                 idx.projects.push(ProjectEntry { path: path.clone(), project });
@@ -105,7 +106,7 @@ fn walk(root: &Path, dir: &Path, config: &Config, idx: &mut Index) {
         .collect();
     dirs.sort();
     for d in dirs {
-        walk(root, &d, config, idx);
+        walk(root, &d, config, process, idx);
     }
 }
 
