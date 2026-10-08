@@ -77,6 +77,26 @@ export function agentBadge(t: TaskEntry) {
   return `${agentName(a.active)} working · ${took}`;
 }
 
+/** Agent name for a task: its runner, else the workspace default, else "agent". */
+export function runnerOf(t: TaskEntry) {
+  const pick = (r: string | null | undefined) => (r && r !== "auto" ? r : null);
+  return pick(t.agent?.runner) ?? pick(workspace.index?.config.agent_defaults?.runner) ?? "agent";
+}
+
+/** What you paste into Copilot Chat or Codex: the context comes from `wly task show`, so the agent goes through the CLI. */
+export function agentPrompt(t: TaskEntry) {
+  const name = runnerOf(t);
+  return [
+    `Work on Workly task ${t.id} ("${t.title}") in this repo.`,
+    `1. Run \`wly task show ${t.id}\` first. Follow the workspace rules, project instructions and skills it prints.`,
+    t.status === "doing"
+      ? `2. Report through wly as agent "${name}". The task is already in progress, so skip \`wly task start\`.`
+      : `2. Report through wly as agent "${name}": start with \`wly task start ${t.id} --agent ${name}\`.`,
+    `3. After each meaningful step: \`wly task note ${t.id} "<short update>" --agent ${name}\`.`,
+    `4. When done: commit, then \`wly task review ${t.id} --commit <sha> --agent ${name}\`. Never set the task to done.`,
+  ].join("\n");
+}
+
 /** Column order: `order`, then priority, then id (`WR-9` before `WR-10`). Missing values go last. */
 export const byBoardOrder = (a: TaskEntry, b: TaskEntry) =>
   (a.order ?? Infinity) - (b.order ?? Infinity) ||

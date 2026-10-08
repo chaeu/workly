@@ -100,7 +100,10 @@ export type Process = {
 export type Criterion = { id: string; axis: "value" | "feasibility"; label: string; anchors: string[] };
 export type Snapshot = {
   root: string;
-  config: { task_statuses: { id: string; label: string; wip_limit: number | null }[] };
+  config: {
+    task_statuses: { id: string; label: string; wip_limit: number | null }[];
+    agent_defaults?: { runner: string; model: string; effort: string };
+  };
   process: Process | null;
   /** Repos of live projects that are not folders on this Mac. */
   missing_repos: { key: string; repo: string }[];
@@ -290,6 +293,12 @@ export const openUrl = (url: string) => run("open_url", { url });
 export const openInVscode = (path: string, line: number | null = null) => run("open_in_vscode", { path, line });
 export const openProjectInVscode = (key: string) => run("open_project_in_vscode", { key });
 export const openRepo = (repo: string) => run("open_repo", { repo });
+/** False when pbcopy failed; the reason goes to workspace.error like other commands. */
+export const copyText = (text: string) =>
+  invoke("copy_text", { text }).then(
+    () => true,
+    (e) => ((workspace.error = String(e)), false),
+  );
 export const reveal = (path: string) => run("reveal", { path });
 export const openInObsidian = (path: string) =>
   openUrl(`obsidian://open?path=${encodeURIComponent(`${workspace.index?.root}/${path}`)}`);

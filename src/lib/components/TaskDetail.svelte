@@ -15,8 +15,10 @@
     openUrl,
     openInObsidian,
     openInVscode,
+    openRepo,
+    copyText,
   } from "$lib/stores/workspace.svelte";
-  import { agentName, confirmDeleteTask, projectOf, rawDescription, shortDate, splitBody, today } from "$lib/tasks.svelte";
+  import { agentName, agentPrompt, confirmDeleteTask, projectOf, rawDescription, shortDate, splitBody, today } from "$lib/tasks.svelte";
 
   let { id, mode, focusIds, onclose }: { id: string; mode: "popup" | "panel"; focusIds: string[]; onclose: () => void } = $props();
 
@@ -58,6 +60,16 @@
       .filter(Boolean);
 
   let note = $state("");
+
+  // Agent hand-off: paste the prompt into Copilot Chat or Codex in VS Code (M7 trial, see /agents).
+  const repo = $derived(project?.repos[0] ?? null);
+  const repoMissing = $derived(!!repo && !!workspace.index?.missing_repos.some((m) => m.repo === repo));
+  let copied = $state(false);
+  async function copyPrompt() {
+    if (!t || !(await copyText(agentPrompt(t)))) return;
+    copied = true;
+    setTimeout(() => (copied = false), 1600);
+  }
   async function saveNote() {
     if (!note.trim()) return;
     await addTaskUpdate(id, note);
@@ -303,6 +315,14 @@
               <dt>Commit</dt>
               <dd class="w-mono">{t.agent?.commit ?? "–"}</dd>
             </dl>
+            <div class="t-agent-acts">
+              <button type="button" class="w-btn" onclick={copyPrompt}>{copied ? "Copied" : "Copy prompt"}</button>
+              {#if repo}
+                <button type="button" class="w-btn w-btn--quiet" disabled={repoMissing} use:tip={repoMissing ? `Not on this Mac: ${repo}` : repo} onclick={() => openRepo(repo)}
+                  >Open repo</button
+                >
+              {/if}
+            </div>
           </div>
         {/if}
 
@@ -565,6 +585,10 @@
     margin: 0;
     font-size: var(--w-fs-small);
     align-items: center;
+  }
+  .t-agent-acts {
+    display: flex;
+    gap: var(--w-s-2);
   }
   .t-kv dt {
     color: var(--w-muted);

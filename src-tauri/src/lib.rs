@@ -302,6 +302,21 @@ fn open_repo(state: State<AppState>, repo: String) -> Result<(), String> {
     open(&["-b", VSCODE, &path.to_string_lossy()])
 }
 
+/// Text to the macOS clipboard (`pbcopy`, no shell): the agent prompt.
+#[tauri::command]
+fn copy_text(text: String) -> Result<(), String> {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = Command::new("pbcopy").stdin(Stdio::piped()).spawn().map_err(|e| e.to_string())?;
+    child.stdin.take().expect("piped").write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+    let status = child.wait().map_err(|e| e.to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("pbcopy failed".into())
+    }
+}
+
 /// Workspace-relative path selected in Finder.
 #[tauri::command]
 fn reveal(state: State<AppState>, path: String) -> Result<(), String> {
@@ -412,6 +427,7 @@ pub fn run() {
             open_in_vscode,
             open_project_in_vscode,
             open_repo,
+            copy_text,
             reveal,
             get_settings,
             save_settings,
