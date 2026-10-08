@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Process } from "$lib/stores/workspace.svelte";
-  import { daysInStep, fmtFte, fteTip, isStale, label, phaseIndex, phaseOf, savedFte, statusColor, stepName, stepOf, type UC } from "$lib/usecases.svelte";
+  import AssessmentPill from "$lib/components/AssessmentPill.svelte";
+  import { assess, assessRank, daysInStep, fmtFte, fteTip, isStale, label, phaseIndex, phaseOf, savedFte, statusColor, stepName, stepOf, type UC } from "$lib/usecases.svelte";
   import { clipped, tip } from "$lib/tip";
 
   let { process: p, ucs, onopen }: { process: Process; ucs: UC[]; onopen: (key: string) => void } = $props();
@@ -20,9 +21,12 @@
     ["status", "Status", (u: UC) => p.statuses.findIndex((s) => s.id === u.usecase.status)],
     ["days", "Days", (u: UC) => daysInStep(u) ?? -1],
     ["fte", "Effort", savedFte],
+    ["assess", "Assessment", (u: UC) => assessRank(p, u)],
   ] as const;
   const NUM: string[] = ["days", "fte"];
   type Col = (typeof COLS)[number][0];
+  // The assessment column only exists when process.yml has an assessment block.
+  const cols = $derived(COLS.filter(([c]) => c !== "assess" || p.assessment));
 
   let sort = $state<{ col: Col; dir: 1 | -1 }>({ col: "step", dir: 1 });
   const rows = $derived.by(() => {
@@ -43,7 +47,7 @@
   <table>
     <thead>
       <tr>
-        {#each COLS as [col, text] (col)}
+        {#each cols as [col, text] (col)}
           <th aria-sort={sort.col === col ? (sort.dir === 1 ? "ascending" : "descending") : "none"} class:num={NUM.includes(col)}>
             <button type="button" onclick={() => by(col)}>{text}{#if sort.col === col}<span class="arrow">{sort.dir === 1 ? "↑" : "↓"}</span>{/if}</button>
           </th>
@@ -85,10 +89,11 @@
           </td>
           <td class="num w-mono" class:stale={isStale(p, u)}>{days ?? "–"}</td>
           <td class="num w-mono" use:tip={fte !== null && fteTip(u)}>{fte === null ? "" : fmtFte(fte)}</td>
+          {#if p.assessment}<td>{#if u.usecase.assessment}<AssessmentPill result={assess(p, u.usecase.assessment)} />{/if}</td>{/if}
           <td class="next" use:tip={clipped(next)}>{next ?? ""}</td>
         </tr>
       {:else}
-        <tr><td class="empty" colspan={COLS.length + 1}>No use case matches the filters.</td></tr>
+        <tr><td class="empty" colspan={cols.length + 1}>No use case matches the filters.</td></tr>
       {/each}
     </tbody>
   </table>
