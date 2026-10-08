@@ -217,10 +217,6 @@
         {:else}
           <button type="button" class="t-desc-add" onclick={editDesc}>Add description</button>
         {/if}
-        <div class="t-edit">
-          <button type="button" class="w-btn w-btn--quiet" onclick={() => openInObsidian(t.path)}>Edit in Obsidian</button>
-          <button type="button" class="w-btn w-btn--quiet" onclick={() => openInVscode(t.path)}>Edit in VS Code</button>
-        </div>
       </div>
 
       <div class="t-side">
@@ -322,6 +318,8 @@
 
     <div class="t-foot">
       <button type="button" class="w-btn w-btn--quiet danger" onclick={remove}>Delete…</button>
+      <button type="button" class="w-btn w-btn--quiet" onclick={() => openInObsidian(t.path)}>Obsidian</button>
+      <button type="button" class="w-btn w-btn--quiet" onclick={() => openInVscode(t.path)}>VS Code</button>
       <button type="button" class="w-btn w-btn--primary" disabled={!note.trim()} onclick={saveNote}>Save update</button>
     </div>
   </div>
@@ -536,11 +534,6 @@
     margin-top: var(--w-s-1);
     color: var(--w-warn);
     font-size: var(--w-fs-small);
-  }
-  .t-edit {
-    display: flex;
-    gap: var(--w-s-1);
-    margin-left: -14px;
   }
   .t-side {
     display: grid;
