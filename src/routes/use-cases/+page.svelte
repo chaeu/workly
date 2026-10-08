@@ -55,11 +55,13 @@
   ] as const;
   const laneField = $derived(ui.lanes);
   const laneValue = (u: UC) => u.usecase[laneField] ?? "";
-  /** Configured values first, then values only the files use, so no card goes missing. */
+  /** Configured values first, then values only the files use, so no card goes missing. Areas are free text: only those in use get a lane. */
   const lanes = $derived.by(() => {
     if (!p) return [];
-    const configured = ui.lanes === "area" ? p.areas.map((a) => ({ id: a, label: a })) : ui.lanes === "type" ? p.types : p.statuses;
-    const extra = [...new Set(ucs.map(laneValue))].filter((v) => !configured.some((c) => c.id === v));
+    const used = new Set(ucs.map(laneValue));
+    const configured =
+      ui.lanes === "area" ? p.areas.filter((a) => used.has(a)).map((a) => ({ id: a, label: a })) : ui.lanes === "type" ? p.types : p.statuses;
+    const extra = [...used].filter((v) => !configured.some((c) => c.id === v));
     return [...configured, ...extra.map((v) => ({ id: v, label: v || `No ${ui.lanes}` }))];
   });
 

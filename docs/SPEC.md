@@ -250,7 +250,7 @@ Claude Code folgt als weiterer Adapter.
 | Tasks | Board, Gruppierung nach Projekt, Filter, Suche, Drag & Drop, Schnelleingabe, bearbeiten, löschen | Jede Änderung landet verlustfrei in der Datei |
 | Detail card | Popup oder Seitenleiste, Status, Priorität, Fälligkeit, Tags, Beschreibung, Updates | Wie im Design System |
 | Focus | Streifen mit bis zu drei Tasks, ein- und ausblendbar | `focus`, `focus_order` gesetzt |
-| Use-case cockpit | Liste (sortierbare Tabelle, Standard), Board und Prozesslandkarte, Detailkarte mit Entscheidungen, Filter, Knopf „Edit process“ (öffnet `process.yml` in VS Code) | Wie im Prototyp, Prozess aus `process.yml`. Areas sind Freitext mit Vorschlägen (`process.yml`-Areas ∪ von Use Cases benutzte Areas), der Core prüft sie nicht gegen die Liste |
+| Use-case cockpit | Liste (sortierbare Tabelle, Standard), Board und Prozesslandkarte, Detailkarte mit Entscheidungen, Filter, Knopf „Edit process“ (öffnet `process.yml` in VS Code) | Wie im Prototyp, Prozess aus `process.yml`. Areas sind Freitext mit Vorschlägen (`process.yml`-Areas ∪ von Use Cases benutzte Areas), der Core prüft sie nicht gegen die Liste. Board nach Area zeigt nur Areas mit Use Cases (Reihenfolge aus `process.yml`) |
 | Agents | CLI `wly`, Agent-Dateien, Schalter, Live-Status; „Start agent“ (Codex, Copilot) nur nach Entscheidung im Probebetrieb | Ein Agent setzt einen Task über `wly` auf Review; Schalter aus zeigt keine Agent-Oberfläche |
 | Log | Jede Änderung in `.workly/log/` | |
 
