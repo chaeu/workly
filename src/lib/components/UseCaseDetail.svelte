@@ -151,7 +151,15 @@
     {#if moves.length}
       <span class="w-caps">{step?.kind === "gate" ? "Decision" : "Next"}</span>
       {#each moves as m (m.to)}
-        <button type="button" class="w-btn" class:w-btn--primary={!m.neg} onclick={() => onmove(u, m.to)}>{m.verdict} → {m.text}</button>
+        <!-- Page: quiet, so current state and next step keep the attention. -->
+        <button
+          type="button"
+          class="w-btn"
+          class:w-btn--primary={!m.neg && mode !== "page"}
+          class:w-btn--quiet={mode === "page"}
+          class:pos={!m.neg}
+          onclick={() => onmove(u, m.to)}>{m.verdict} → {m.text}</button
+        >
       {/each}
     {/if}
   {/snippet}
@@ -232,13 +240,16 @@
   {#if mode === "page"}
     <!-- Page: process flow on the left (status, texts, gates, history, tasks), content on the right. -->
     <div class="page">
-      <div class="card flow">
-        {@render statuses()}
-        {@render blocked()}
-        {@render texts()}
-        {#if moves.length}<div class="moves">{@render moveButtons()}</div>{/if}
-        <section class="sec"><ProcessHistory {u} process={p} /></section>
-        <div class="sec">{@render taskList()}</div>
+      <div class="flow-col">
+        <div class="card flow">
+          {@render statuses()}
+          {@render blocked()}
+          {@render texts()}
+          {#if moves.length}<div class="moves">{@render moveButtons()}</div>{/if}
+          <div class="sec">{@render taskList()}</div>
+        </div>
+        <!-- The one part that keeps growing: its own card, scrolling inside. -->
+        <section class="card flow proc"><ProcessHistory {u} process={p} /></section>
       </div>
       <div class="content">
         <div class="card desc">
@@ -716,11 +727,24 @@
     box-shadow: var(--w-shadow-panel);
     overflow-y: auto;
   }
+  .flow-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--w-s-4);
+    min-height: 0;
+  }
   .flow {
+    flex: 0 1 auto;
+    min-height: 0;
     padding: var(--w-s-5) 22px;
     display: flex;
     flex-direction: column;
     gap: 14px;
+  }
+  .flow.proc {
+    flex: 1 1 200px;
+    min-height: 160px;
+    gap: 8px;
   }
   .flow .status-row {
     gap: 4px;
@@ -750,7 +774,14 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
+  }
+  .moves .w-btn {
+    padding: 3px 8px;
+    font-size: var(--w-fs-caption);
+  }
+  .moves .w-btn.pos {
+    color: var(--w-accent);
   }
   .content {
     display: flex;
