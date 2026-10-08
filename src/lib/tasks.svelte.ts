@@ -40,6 +40,29 @@ export function dueTip(iso: string) {
 
 export const isOverdue = (t: TaskEntry) => !!t.due && t.status !== "done" && t.due.slice(0, 10) < today();
 
+/**
+ * The one open task to do next: overdue (oldest due first), then in today's focus (focus order),
+ * priority, due date, id. Backlog counts only when nothing else is open.
+ */
+export function nextUp(tasks: TaskEntry[]) {
+  const open = tasks.filter((t) => t.status !== "done");
+  const pool = open.some((t) => t.status !== "backlog") ? open.filter((t) => t.status !== "backlog") : open;
+  const day = today();
+  // "~" sorts after every date, so a missing value goes last.
+  const rank = (t: TaskEntry) => [
+    isOverdue(t) ? t.due!.slice(0, 10) : "~",
+    t.focus?.slice(0, 10) === day ? (t.focus_order ?? 9) : 99,
+    t.priority ?? 9,
+    t.due?.slice(0, 10) ?? "~",
+  ];
+  const cmp = (a: TaskEntry, b: TaskEntry) => {
+    const [x, y] = [rank(a), rank(b)];
+    const i = x.findIndex((v, n) => v !== y[n]);
+    return i >= 0 ? (x[i] < y[i] ? -1 : 1) : a.id.localeCompare(b.id, "en", { numeric: true });
+  };
+  return pool.sort(cmp)[0] ?? null;
+}
+
 const AGENT_NAMES: Record<string, string> = { codex: "Codex", copilot: "Copilot", "claude-code": "Claude Code" };
 export const agentName = (id: string) => AGENT_NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
 
