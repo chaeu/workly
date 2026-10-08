@@ -21,6 +21,7 @@
     type UC,
   } from "$lib/usecases.svelte";
   import { tip } from "$lib/tip";
+  import AssessmentEditor from "$lib/components/AssessmentEditor.svelte";
 
   let { process: p, ucs, advanced, onopen }: { process: Process; ucs: UC[]; advanced: boolean; onopen: (key: string) => void } = $props();
 
@@ -49,6 +50,8 @@
   const early = (d: Dot) => phaseIndex(p, phaseOf(p, d.u)) === 0;
 
   let hover = $state<string | null>(null);
+  // Assess straight from the matrix: the editor opens on top, saving keeps you here and the point moves.
+  let assessing = $state<string | null>(null);
   const dimmed = (d: Dot) => !!hover && hover !== d.u.key;
 
   // Each point carries its own arithmetic, so its position can be explained.
@@ -206,10 +209,12 @@
       <div class="row">
         <span class="w-caps">{name} ({list.length})</span>
         {#each list as { u, r } (u.key)}
-          <button type="button" class="chip" use:tip={chipTip(u, r)} onclick={() => onopen(u.key)}
-            ><span class="w-proj-mark" style:--c={projColor(u.color)}></span><span class="w-mono">{u.key}</span><span class="t">{u.title}</span>
-            {#if r?.failed.length}<span class="why ko">✕ {r.failed[0]}</span>{:else if r}<span class="why">Incomplete</span>{/if}</button
-          >
+          <span class="chip">
+            <button type="button" class="chip-open" use:tip={chipTip(u, r)} onclick={() => onopen(u.key)}
+              ><span class="w-proj-mark" style:--c={projColor(u.color)}></span><span class="w-mono">{u.key}</span><span class="t">{u.title}</span>
+              {#if r?.failed.length}<span class="why ko">✕ {r.failed[0]}</span>{:else if r}<span class="why">Incomplete</span>{/if}</button
+            >{@render pencil(u.key, !!r)}
+          </span>
         {/each}
       </div>
     {/each}
@@ -224,23 +229,26 @@
         </h3>
         {#each g.list as d (d.u.key)}
           {@const st = stepOf(p, d.u.usecase.step)}
-          <button
-            type="button"
-            class="li"
-            class:hi={hover === d.u.key}
-            onclick={() => onopen(d.u.key)}
-            onpointerenter={() => (hover = d.u.key)}
-            onpointerleave={() => (hover = null)}
-          >
-            <span class="w-mono key">{d.u.key}</span>
-            <span class="t">{d.u.title}</span>
-            <span class="w-mono fte">{d.fte != null ? `${fmtFte(d.fte)} FTE` : ""}</span>
-            <span class="meta"
-              ><span class="w-mono vf">V {fmtScore(d.r.value)} · F {fmtScore(d.r.feasibility)}</span>{#if st}<span>{stepName(st)}</span>{/if}{#if d.r.open.length}<span
-                  class="open">{d.r.open.length} open</span
-                >{/if}</span
+          <div class="item">
+            <button
+              type="button"
+              class="li"
+              class:hi={hover === d.u.key}
+              onclick={() => onopen(d.u.key)}
+              onpointerenter={() => (hover = d.u.key)}
+              onpointerleave={() => (hover = null)}
             >
-          </button>
+              <span class="w-mono key">{d.u.key}</span>
+              <span class="t">{d.u.title}</span>
+              <span class="w-mono fte">{d.fte != null ? `${fmtFte(d.fte)} FTE` : ""}</span>
+              <span class="meta"
+                ><span class="w-mono vf">V {fmtScore(d.r.value)} · F {fmtScore(d.r.feasibility)}</span>{#if st}<span>{stepName(st)}</span>{/if}{#if d.r.open.length}<span
+                    class="open">{d.r.open.length} open</span
+                  >{/if}</span
+              >
+            </button>
+            {@render pencil(d.u.key, true)}
+          </div>
         {:else}
           <p class="none">–</p>
         {/each}
@@ -249,6 +257,16 @@
   </aside>
 </div>
 {#if !ucs.length}<p class="empty">No use case matches the filters.</p>{/if}
+
+{#snippet pencil(key: string, assessed: boolean)}
+  <button type="button" class="pen" aria-label="{assessed ? 'Re-assess' : 'Assess'} {key}" use:tip={assessed ? "Re-assess…" : "Assess…"} onclick={() => (assessing = key)}
+    ><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"
+      ><path d="M4 20h4L19 9l-4-4L4 16v4z" /><path d="m13.5 6.5 4 4" /></svg
+    ></button
+  >
+{/snippet}
+
+{#if assessing && p.assessment}<AssessmentEditor key={assessing} process={p} onclose={() => (assessing = null)} />{/if}
 
 <style>
   .wrap {
@@ -502,20 +520,64 @@
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
     max-width: 100%;
-    border: 0;
-    background: none;
     box-shadow: inset 0 0 0 1px var(--w-line);
     border-radius: var(--w-r-pill);
-    padding: 2px 10px 2px 8px;
-    color: var(--w-ink);
-    font-size: var(--w-fs-caption);
-    cursor: pointer;
+    padding-right: 3px;
   }
   .chip:hover {
     background: var(--w-surface);
     box-shadow: var(--w-shadow-raised);
+  }
+  .chip-open {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    border: 0;
+    background: none;
+    padding: 2px 4px 2px 8px;
+    border-radius: var(--w-r-pill);
+    color: var(--w-ink);
+    font-size: var(--w-fs-caption);
+    cursor: pointer;
+  }
+  /* Pencil: opens the assessment editor on top of the matrix. Quiet until the row or chip is hovered. */
+  .pen {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border: 0;
+    padding: 0;
+    border-radius: var(--w-r-sm);
+    background: none;
+    color: var(--w-muted);
+    cursor: pointer;
+    opacity: 0.45;
+    transition: opacity var(--w-dur) var(--w-ease);
+  }
+  .chip:hover .pen,
+  .item:hover .pen,
+  .pen:focus-visible {
+    opacity: 1;
+  }
+  .pen:hover {
+    background: var(--w-accent-soft);
+    color: var(--w-accent);
+  }
+  .item {
+    position: relative;
+  }
+  .item .pen {
+    position: absolute;
+    right: 6px;
+    bottom: 5px;
+    opacity: 0;
+  }
+  .item:focus-within .pen {
+    opacity: 1;
   }
   .chip .w-mono {
     color: var(--w-muted);
@@ -610,6 +672,7 @@
   }
   .meta {
     grid-column: 2 / 4;
+    padding-right: 22px;
     display: flex;
     flex-wrap: wrap;
     gap: 0 10px;
