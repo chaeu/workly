@@ -1,12 +1,15 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { goto } from "$app/navigation";
+  import AssessmentEditor from "$lib/components/AssessmentEditor.svelte";
+  import AssessmentPill from "$lib/components/AssessmentPill.svelte";
   import EffortEditor from "$lib/components/EffortEditor.svelte";
   import ProcessHistory from "$lib/components/ProcessHistory.svelte";
   import { grow } from "$lib/grow";
   import { tip } from "$lib/tip";
   import { workspace, updateProjectField, updateTaskField, createTask, type Process } from "$lib/stores/workspace.svelte";
   import {
+    assess,
     daysInStep,
     fmtFte,
     fmtHours,
@@ -19,6 +22,7 @@
     phaseIndex,
     savedHours,
     savingHours,
+    scoreLine,
     statusColor,
     stepName,
     stepOf,
@@ -81,6 +85,10 @@
 
   const hours = $derived(u ? savedHours(u) : 0);
   let editingEffort = $state(false);
+  // Hidden everywhere when process.yml has no assessment block.
+  const assessed = $derived(p.assessment && uc?.assessment ? assess(p, uc.assessment) : null);
+  let editingAssessment = $state(false);
+  const OPEN_MAX = 5;
 
   // ponytail: unticking reopens as `todo` (or the first status); the task board covers other statuses.
   const reopen = $derived(workspace.index?.config.task_statuses.find((s) => s.id === "todo")?.id ?? workspace.index?.config.task_statuses[0]?.id ?? "todo");
@@ -215,6 +223,16 @@
       <h3 class="w-caps">Classification</h3>
       {@render classification()}
     </section>
+    {#if p.assessment}
+      <section>
+        <h3 class="w-caps">Assessment</h3>
+        {#if assessed}
+          <AssessmentPill result={assessed} />
+        {:else}
+          <span class="sum">Not assessed · <a href={pageHref}>Open page</a></span>
+        {/if}
+      </section>
+    {/if}
     <!-- Light version: the total only; the list and the editor are on the page. -->
     <section>
       <h3 class="w-caps">Manual effort</h3>
@@ -256,7 +274,34 @@
           <div class="cls">{@render classification()}</div>
           {@render description?.()}
         </div>
-        <!-- Always in the same place below the description, however long that gets. -->
+        <!-- Assessment and effort: always in the same place below the description, however long that gets. -->
+        {#if p.assessment}
+          {@const a = uc.assessment}
+          <section class="card effort" aria-label="Assessment">
+            <div class="eff-sum">
+              <span class="w-caps">Assessment</span>
+              {#if assessed && a}
+                <AssessmentPill result={assessed} />
+                <span class="w-sub">{scoreLine(assessed)}</span>
+                {#if a.date}<span class="w-sub">{a.date}</span>{/if}
+              {:else}
+                <span class="w-sub">Not assessed</span>
+              {/if}
+            </div>
+            <div class="eff-list">
+              {#if assessed}
+                {#each assessed.failed as f (f)}<p class="ko">K.O.: {f}</p>{/each}
+                {#if assessed.open.length}
+                  <span class="w-caps sub-h">Open for pilot</span>
+                  {#each assessed.open.slice(0, OPEN_MAX) as o (o)}<div class="eff-row"><span>{o}</span></div>{/each}
+                  {#if assessed.open.length > OPEN_MAX}<span class="w-sub more">+{assessed.open.length - OPEN_MAX}</span>{/if}
+                {/if}
+                {#if a?.note}<p class="w-sub">{a.note}</p>{/if}
+              {/if}
+            </div>
+            <button type="button" class="w-btn" onclick={() => (editingAssessment = true)}>{a ? "Re-assess…" : "Assess…"}</button>
+          </section>
+        {/if}
         <section class="card effort" aria-label="Manual effort">
           <div class="eff-sum">
             <span class="w-caps">Manual effort today</span>
@@ -279,6 +324,7 @@
       </div>
     </div>
     {#if editingEffort}<EffortEditor {key} onclose={() => (editingEffort = false)} />{/if}
+    {#if editingAssessment && p.assessment}<AssessmentEditor {key} process={p} onclose={() => (editingAssessment = false)} />{/if}
   {:else}
     {#if mode === "popup"}<div class="w-scrim" onclick={onclose} aria-hidden="true"></div>{/if}
     <div class={mode === "popup" ? "w-modal" : "panel"} role="dialog" aria-modal={mode === "popup"} aria-labelledby="u-title">
@@ -840,6 +886,18 @@
   }
   .eff-list p {
     margin: 6px 0 0;
+  }
+  .eff-list .sub-h {
+    margin-top: 2px;
+  }
+  .eff-list .ko {
+    margin: 0 0 6px;
+    font-size: var(--w-fs-small);
+    font-weight: 500;
+    color: var(--w-danger);
+  }
+  .more {
+    padding-top: 4px;
   }
   @media (max-width: 680px) {
     .page {
