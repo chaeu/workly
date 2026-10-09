@@ -66,7 +66,7 @@
             <span class="w-mono path">{r.repo}</span>
             <span class="msg">Linked in {p?.title ?? r.key}. Clone it there, or change the project's repos.</span>
           </div>
-          <a class="w-btn" href="/projects/{r.key}">Open project</a>
+          <a class="w-btn" href="/projects/{r.key}?tab=overview">Open project</a>
         </div>
       {/each}
     </div>
