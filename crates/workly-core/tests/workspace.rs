@@ -215,7 +215,7 @@ fn empty_folder_becomes_workspace() {
     let mut ws = Workspace::open(&root).unwrap();
     assert!(ws.index.errors.is_empty() && ws.index.projects.is_empty(), "{:?}", ws.index.errors);
     assert_eq!(ws.suggest_key("Test Alpha"), "TA");
-    let new = NewProject { title: "Test Alpha".into(), key: "TA".into(), color: "proj-1".into(), repos: vec![], usecase: None, adopt: false };
+    let new = NewProject { title: "Test Alpha".into(), key: "TA".into(), color: "proj-1".into(), repos: vec![], usecase: None, adopt: false, tracked: true };
     assert_eq!(ws.create_project(&new, "app").unwrap(), "projects/test-alpha");
     assert_eq!(ws.create_task("First", Some("TA"), None, "app").unwrap(), "TA-1");
 }
@@ -225,7 +225,7 @@ fn create_project_builds_structure() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
     let repo = workly_core::settings::home().join("repos/alpha");
-    let new = NewProject { title: "Über: Alpha".into(), key: "UA".into(), color: "proj-3".into(), repos: vec!["~/repos/alpha".into()], usecase: None, adopt: false };
+    let new = NewProject { title: "Über: Alpha".into(), key: "UA".into(), color: "proj-3".into(), repos: vec!["~/repos/alpha".into()], usecase: None, adopt: false, tracked: true };
     let dir = ws.create_project(&new, "app").unwrap();
     assert_eq!(dir, "projects/ueber-alpha");
     let d = root.join(&dir);
@@ -242,7 +242,7 @@ fn create_project_builds_structure() {
     assert_eq!(log_lines(&root).pop().unwrap()["kind"], "project.create");
 
     let mut bad = |key: &str, title: &str, color: &str| {
-        let n = NewProject { title: title.into(), key: key.into(), color: color.into(), repos: vec![], usecase: None, adopt: false };
+        let n = NewProject { title: title.into(), key: key.into(), color: color.into(), repos: vec![], usecase: None, adopt: false, tracked: true };
         matches!(ws.create_project(&n, "app"), Err(Error::Invalid(_)))
     };
     assert!(bad("WR", "Other", "proj-1"), "key taken");
@@ -280,7 +280,7 @@ fn adopt_existing_folder_keeps_every_file() {
     fs::write(dir.join("FOO.code-workspace"), "{ \"folders\": [] }").unwrap();
     let before = snapshot(&dir);
     let mut ws = Workspace::open(&root).unwrap();
-    let mut new = NewProject { title: "Foo".into(), key: "FOO".into(), color: "proj-2".into(), repos: vec![], usecase: None, adopt: false };
+    let mut new = NewProject { title: "Foo".into(), key: "FOO".into(), color: "proj-2".into(), repos: vec![], usecase: None, adopt: false, tracked: true };
 
     // Without adopt: a distinguishable refusal, nothing written.
     assert!(matches!(ws.create_project(&new, "app"), Err(Error::Conflict(_))));
@@ -304,7 +304,7 @@ fn adopt_existing_folder_keeps_every_file() {
     // A folder with _project.md already is a project, adopt or not.
     let wr = root.join("projects/website-relaunch/_project.md");
     let wr_before = fs::read(&wr).unwrap();
-    let n = NewProject { title: "Website Relaunch".into(), key: "WEB".into(), color: "proj-1".into(), repos: vec![], usecase: None, adopt: true };
+    let n = NewProject { title: "Website Relaunch".into(), key: "WEB".into(), color: "proj-1".into(), repos: vec![], usecase: None, adopt: true, tracked: true };
     assert!(matches!(ws.create_project(&n, "app"), Err(Error::Invalid(m)) if m.contains("already a project")));
     assert_eq!(fs::read(&wr).unwrap(), wr_before);
 }
@@ -612,7 +612,7 @@ fn create_usecase_starts_at_first_phase() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
     let uc = Some(workly_core::project::NewUseCase { kind: "ai".into(), area: Some("Finance".into()) });
-    let new = NewProject { title: "Mail Sorting".into(), key: "MS".into(), color: "proj-1".into(), repos: vec![], usecase: uc, adopt: false };
+    let new = NewProject { title: "Mail Sorting".into(), key: "MS".into(), color: "proj-1".into(), repos: vec![], usecase: uc, adopt: false, tracked: true };
     let dir = ws.create_project(&new, "app").unwrap();
     let src = fs::read_to_string(root.join(dir).join("_project.md")).unwrap();
     let today = workly_core::today();
@@ -623,7 +623,7 @@ fn create_usecase_starts_at_first_phase() {
     assert_eq!(ws.index.project("MS").unwrap().project.usecase.as_ref().unwrap().step.as_deref(), Some("need"));
 
     let bad = Some(workly_core::project::NewUseCase { kind: "ml".into(), area: None });
-    let n = NewProject { title: "Other".into(), key: "OT".into(), color: "proj-2".into(), repos: vec![], usecase: bad, adopt: false };
+    let n = NewProject { title: "Other".into(), key: "OT".into(), color: "proj-2".into(), repos: vec![], usecase: bad, adopt: false, tracked: true };
     assert!(matches!(ws.create_project(&n, "app"), Err(Error::Invalid(_))));
     assert!(!root.join("projects/other").exists());
 }
@@ -688,6 +688,68 @@ fn remove_usecase_keeps_project_tasks_and_logs_the_block() {
 
     assert!(matches!(ws.remove_usecase("IE", "app"), Err(Error::Invalid(_))));
     assert!(matches!(ws.remove_usecase("NOPE", "app"), Err(Error::NotFound(_))));
+}
+
+// ---------------------------------------------------- tracked (A5)
+
+#[test]
+fn create_untracked_usecase_writes_tracked_false() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let uc = Some(workly_core::project::NewUseCase { kind: "ai".into(), area: None });
+    let new = NewProject { title: "Mail Sorting".into(), key: "MS".into(), color: "proj-1".into(), repos: vec![], usecase: uc, adopt: false, tracked: false };
+    let dir = ws.create_project(&new, "app").unwrap();
+    let src = fs::read_to_string(root.join(dir).join("_project.md")).unwrap();
+    assert!(src.contains(&format!("created: {}\ntracked: false\nusecase:\n", workly_core::today())), "{src}");
+    assert_eq!(ws.index.project("MS").unwrap().project.tracked, Some(false));
+
+    // A plain project cannot start untracked.
+    let plain = NewProject { title: "Other".into(), key: "OT".into(), color: "proj-2".into(), repos: vec![], usecase: None, adopt: false, tracked: false };
+    assert!(matches!(ws.create_project(&plain, "app"), Err(Error::Invalid(_))));
+    assert!(!root.join("projects/other").exists());
+}
+
+#[test]
+fn tracked_toggle_is_lossless_and_guarded() {
+    let (_tmp, root) = fixture();
+    let file = root.join("projects/invoice-extraction/_project.md");
+    let before = fs::read_to_string(&file).unwrap();
+    let wr8 = fs::read(root.join(WR8)).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    assert_eq!(ws.index.project("IE").unwrap().project.tracked, None);
+
+    // Off: one line at the end of the frontmatter, the rest byte-identical.
+    ws.update_project_field("IE", "tracked", &json!(false), "app").unwrap();
+    let end = before.rfind("---\n").unwrap();
+    assert_eq!(fs::read_to_string(&file).unwrap(), format!("{}tracked: false\n{}", &before[..end], &before[end..]));
+    assert_eq!(ws.index.project("IE").unwrap().project.tracked, Some(false));
+    let last = log_lines(&root).pop().unwrap();
+    assert_eq!((&last["field"], &last["from"], &last["to"]), (&json!("tracked"), &Value::Null, &json!(false)));
+
+    // While untracked, removing the use case is refused: it would vanish everywhere.
+    assert!(matches!(ws.remove_usecase("IE", "app"), Err(Error::Invalid(_))));
+
+    // On again removes the line: back to the original bytes; on when missing writes nothing.
+    ws.update_project_field("IE", "tracked", &json!(true), "app").unwrap();
+    assert_eq!(fs::read_to_string(&file).unwrap(), before);
+    let lines = log_lines(&root).len();
+    ws.update_project_field("IE", "tracked", &json!(true), "app").unwrap();
+    assert_eq!(log_lines(&root).len(), lines);
+
+    // A plain project cannot be untracked; a non-bool is refused.
+    let wr = root.join("projects/website-relaunch/_project.md");
+    let wr_before = fs::read(&wr).unwrap();
+    assert!(matches!(ws.update_project_field("WR", "tracked", &json!(false), "app"), Err(Error::Invalid(_))));
+    assert!(matches!(ws.update_project_field("IE", "tracked", &json!("no"), "app"), Err(Error::Invalid(_))));
+    assert_eq!(fs::read(&wr).unwrap(), wr_before);
+    assert_eq!(fs::read(root.join(WR8)).unwrap(), wr8);
+}
+
+#[test]
+fn fixture_support_triage_is_untracked() {
+    let (_tmp, root) = fixture();
+    let ws = Workspace::open(&root).unwrap();
+    assert_eq!(ws.index.project("ST").unwrap().project.tracked, Some(false));
 }
 
 // ----------------------------------------------------------- savings (P4)

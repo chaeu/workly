@@ -40,6 +40,8 @@ pub const PROJECT_STATUSES: [&str; 3] = ["active", "paused", "archived"];
 pub const COLORS: [&str; 6] = ["proj-1", "proj-2", "proj-3", "proj-4", "proj-5", "proj-6"];
 /// Use-case fields only `move_usecase` writes, so every move takes the same path.
 const MOVE_FIELDS: [&str; 3] = ["usecase.step", "usecase.step_since", "usecase.decisions"];
+/// Something that is neither a project nor a use case is archived, not untracked.
+const UNTRACK_PLAIN: &str = "only a use case can be untracked; archive a plain project instead";
 /// Folders the project detail shows as a tree.
 pub const DOC_DIRS: [&str; 4] = ["docs", "notes", "decisions", "agent"];
 
@@ -80,6 +82,13 @@ pub struct NewProject {
     /// Use the folder when it already exists without `_project.md`; existing files stay untouched.
     #[serde(default)]
     pub adopt: bool,
+    /// False writes `tracked: false` (only for a use case).
+    #[serde(default = "yes")]
+    pub tracked: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -143,6 +152,9 @@ impl Workspace {
         if !COLORS.contains(&new.color.as_str()) {
             return Err(Error::Invalid(format!("unknown colour {}", new.color)));
         }
+        if !new.tracked && new.usecase.is_none() {
+            return Err(Error::Invalid(UNTRACK_PLAIN.into()));
+        }
         let dir = self.root.join(&self.config.new_projects_dir).join(ids::slug(title));
         let rel_dir = rel(&self.root, &dir);
         let exists = fs::symlink_metadata(&dir).is_ok();
@@ -169,6 +181,9 @@ impl Workspace {
             .replace("{{date}}", &today);
         if !new.repos.is_empty() {
             content = patch::set_field(&content, &["repos"], &json!(new.repos)).map_err(Error::Invalid)?;
+        }
+        if !new.tracked {
+            content = patch::set_field(&content, &["tracked"], &Value::Bool(false)).map_err(Error::Invalid)?;
         }
         if let Some(uc) = &new.usecase {
             content = self.with_usecase(&content, uc, &today)?;
@@ -209,6 +224,10 @@ impl Workspace {
             "color" if !value.as_str().is_some_and(|s| COLORS.contains(&s)) => {
                 return Err(Error::Invalid(format!("unknown colour {value}")));
             }
+            "tracked" if !value.is_boolean() => return Err(Error::Invalid(format!("tracked must be true or false, got {value}"))),
+            "tracked" if value == &Value::Bool(false) && self.index.project(key).is_some_and(|e| e.project.usecase.is_none()) => {
+                return Err(Error::Invalid(UNTRACK_PLAIN.into()));
+            }
             "usecase.savings" => {
                 let problems = crate::model::saving_problems(value);
                 if !problems.is_empty() {
@@ -235,7 +254,16 @@ impl Workspace {
         if &from == value {
             return Ok(());
         }
-        let out = patch::set_field(&src, &path, value).map_err(Error::Invalid)?;
+        // `tracked` is true when missing: true removes the line instead of writing it.
+        let out = if field == "tracked" && value == &Value::Bool(true) {
+            patch::remove_field(&src, &path)
+        } else {
+            patch::set_field(&src, &path, value)
+        }
+        .map_err(Error::Invalid)?;
+        if out == src {
+            return Ok(());
+        }
         atomic_write(&file, &out, &self.own)?;
         log(&self.root, &LogEntry::new(actor, "project.update", key, Some(field), from, value.clone()))?;
         self.rescan();
@@ -323,6 +351,9 @@ impl Workspace {
         let from = patch::get_field(&src, &["usecase"]).map_err(Error::Invalid)?;
         if from.is_null() {
             return Err(Error::Invalid(format!("{key} is not a use case")));
+        }
+        if patch::get_field(&src, &["tracked"]).map_err(Error::Invalid)? == Value::Bool(false) {
+            return Err(Error::Invalid(format!("{key} is not tracked as a project: track it first or archive it")));
         }
         let out = patch::remove_field(&src, &["usecase"]).map_err(Error::Invalid)?;
         atomic_write(&file, &out, &self.own)?;

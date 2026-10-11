@@ -58,6 +58,8 @@ pub struct Project {
     #[serde(default)]
     pub links: Vec<Link>,
     pub created: Option<String>,
+    /// `false` = a use case that is not a project: only in the cockpit. Missing = true.
+    pub tracked: Option<bool>,
     pub usecase: Option<UseCase>,
     #[serde(flatten)]
     pub extra: Extra,
