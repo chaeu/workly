@@ -17,6 +17,7 @@
     openInVscode,
     openRepo,
     copyText,
+    inDailyWork,
   } from "$lib/stores/workspace.svelte";
   import { agentName, agentPrompt, confirmDeleteTask, projectOf, rawDescription, shortDate, splitBody, today } from "$lib/tasks.svelte";
 
@@ -27,7 +28,7 @@
 
   const t = $derived(workspace.index?.tasks.find((x) => x.id === id));
   const project = $derived(t && projectOf(t));
-  const projects = $derived(workspace.index?.projects.filter((p) => p.status !== "archived" || p.key === project?.key) ?? []);
+  const projects = $derived(workspace.index?.projects.filter((p) => inDailyWork(p) || p.key === project?.key) ?? []);
   const statuses = $derived(workspace.index?.config.task_statuses ?? []);
   const focusAt = $derived(focusIds.indexOf(id));
 

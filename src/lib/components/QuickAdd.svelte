@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { workspace, createTask } from "$lib/stores/workspace.svelte";
+  import { workspace, createTask, inDailyWork } from "$lib/stores/workspace.svelte";
 
   let { project: initial, onclose }: { project: string | null; onclose: (id?: string) => void } = $props();
 
-  const projects = $derived(workspace.index?.projects.filter((p) => p.status !== "archived") ?? []);
+  const projects = $derived(workspace.index?.projects.filter(inDailyWork) ?? []);
   let title = $state("");
   // svelte-ignore state_referenced_locally
   let project = $state(initial ?? "");

@@ -11,6 +11,7 @@
     moveTask,
     reorderTasks,
     setFocus,
+    inDailyWork,
     type ProjectEntry,
     type TaskEntry,
   } from "$lib/stores/workspace.svelte";
@@ -79,7 +80,7 @@
   const clearFilters = () => ([query, fProject, fPrio, fTag, fDue] = ["", "", null, "", ""]);
   // ⌘N anywhere on this board suggests the filtered project.
   $effect(() => {
-    quickAdd.hint = project ? (project.status !== "archived" ? project.key : null) : fProject && fProject !== "inbox" ? fProject : null;
+    quickAdd.hint = project ? (inDailyWork(project) ? project.key : null) : fProject && fProject !== "inbox" ? fProject : null;
     return () => (quickAdd.hint = null);
   });
 

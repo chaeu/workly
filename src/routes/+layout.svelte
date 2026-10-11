@@ -26,6 +26,7 @@
     openWorkspace,
     agentsEnabled,
     problemCount,
+    inDailyWork,
   } from "$lib/stores/workspace.svelte";
 
   startWorkspace();
@@ -42,7 +43,7 @@
   const views = $derived(ALL_VIEWS.filter((v) => v.href !== "/agents" || agentsEnabled()));
 
   const theme = $derived(workspace.settings?.theme ?? "system");
-  const sidebarProjects = $derived(workspace.index?.projects.filter((p) => p.status !== "archived") ?? []);
+  const sidebarProjects = $derived(workspace.index?.projects.filter(inDailyWork) ?? []);
   // A project in the sidebar opens the tab used last (null = Tasks); /tasks counts as Tasks. Memory only.
   let projectTab = $state<string | null>(null);
   $effect(() => {
@@ -101,7 +102,7 @@
       goto("/settings");
     } else if (key === "n" && workspace.index) {
       e.preventDefault();
-      const here = workspace.index.projects.find((p) => p.key === page.params.key && p.status !== "archived");
+      const here = workspace.index.projects.find((p) => p.key === page.params.key && inDailyWork(p));
       if (!quickAdd.open) openQuickAdd(here?.key ?? quickAdd.hint);
     } else if (key === "k" && workspace.index) {
       e.preventDefault();

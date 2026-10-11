@@ -265,6 +265,16 @@ export const stepLabel = (p: ProjectEntry) => {
   return workspace.index?.process?.steps.find((s) => s.id === step)?.label ?? step;
 };
 
+/** Sidebar, Projects table and task pickers. Archived projects are out, and so are use cases
+ *  whose step is in the first phase or a parked phase: those live only in the cockpit. */
+export function inDailyWork(p: ProjectEntry) {
+  if (p.status === "archived") return false;
+  const proc = workspace.index?.process;
+  const phase = p.usecase && proc?.steps.find((s) => s.id === p.usecase?.step)?.phase;
+  if (!proc || !phase) return true;
+  return phase !== proc.phases[0]?.id && !proc.phases.find((x) => x.id === phase)?.parked;
+}
+
 /** First colour no active project uses; round robin when all are taken. */
 export function nextColor() {
   const live = workspace.index?.projects.filter((p) => p.status !== "archived") ?? [];

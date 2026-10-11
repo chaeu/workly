@@ -2,7 +2,7 @@
   import { goto } from "$app/navigation";
   import ProjectForm from "$lib/components/ProjectForm.svelte";
   import TaskDetail from "$lib/components/TaskDetail.svelte";
-  import { workspace, openTasks, stepLabel, projColor, reorderProjects, type ProjectEntry, type TaskEntry } from "$lib/stores/workspace.svelte";
+  import { workspace, inDailyWork, openTasks, stepLabel, projColor, reorderProjects, type ProjectEntry, type TaskEntry } from "$lib/stores/workspace.svelte";
   import { dueTip, isOverdue, nextUp, openQuickAdd, shortDate, startClock, today } from "$lib/tasks.svelte";
   import { daysInStep, isStale, label, phaseIndex, phaseOf, statusColor, stepOf, type UC } from "$lib/usecases.svelte";
   import { clipped, tip } from "$lib/tip";
@@ -14,10 +14,13 @@
   const detailMode = $derived(workspace.settings?.task_detail ?? "popup");
 
   const projects = $derived(workspace.index?.projects ?? []);
-  const live = $derived(projects.filter((p) => p.status !== "archived"));
+  const live = $derived(projects.filter(inDailyWork));
   const archived = $derived(projects.filter((p) => p.status === "archived"));
   const statuses = $derived(workspace.index?.config.task_statuses ?? []);
   const proc = $derived(workspace.index?.process ?? null);
+  // Use cases in the first or a parked phase: only in the cockpit, counted below the table.
+  const cockpitOnly = $derived(projects.filter((p) => p.status !== "archived" && !inDailyWork(p)));
+  const cockpitPhases = $derived(proc?.phases.filter((x, i) => i === 0 || x.parked).map((x) => x.name).join(" or ") ?? "");
 
   // ------------------------------------------------------------ per project
 
@@ -162,7 +165,7 @@
     if (!dragKey) return;
     e.preventDefault();
     dropped = true;
-    if (draft) reorderProjects([...draft, ...archived.map((p) => p.key)]);
+    if (draft) reorderProjects([...draft, ...cockpitOnly.map((p) => p.key), ...archived.map((p) => p.key)]);
   }
 
   function dragend() {
@@ -303,6 +306,13 @@
     {#each statuses as s (s.id)}<span><i style:background={barColor(s.id)}></i>{s.label}</span>{/each}
     <span>Next up = overdue first, then today's focus, priority, due date. Without a sorted column, drag a row to change the order.</span>
   </div>
+{/if}
+
+{#if cockpitOnly.length}
+  <p class="w-sub cockpit-only">
+    {cockpitOnly.length}
+    {cockpitOnly.length === 1 ? "use case" : "use cases"} in {cockpitPhases} → <a href="/use-cases">Use cases</a>
+  </p>
 {/if}
 
 {#if archived.length}
@@ -539,6 +549,13 @@
     width: 9px;
     height: 9px;
     border-radius: 2px;
+  }
+  .cockpit-only {
+    margin: 0;
+    font-size: var(--w-fs-caption);
+  }
+  .cockpit-only a {
+    color: var(--w-accent);
   }
   .archive summary {
     cursor: pointer;
