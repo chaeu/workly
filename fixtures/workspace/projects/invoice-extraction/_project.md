@@ -24,8 +24,7 @@ usecase:
   savings_note: "Volume from the finance team, sample 09/2026"
   assessment:
     date: 2026-09-08
-    ko: { owner: pass, risk: pass, data_use: pass }
-    scores: { volume: 2, quality: 3, reuse: 2, data: 2, path: 3, deps: 2, maturity: 3 }
+    scores: { quality: 3, access: 2, integration: 3, maturity: 3, compliance: 2 }
     note: Header fields only, line items later
 ---
 Extract header fields from PDF invoices with an LLM, human check for low-confidence fields.

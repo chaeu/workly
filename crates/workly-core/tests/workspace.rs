@@ -580,8 +580,8 @@ fn move_usecase_without_decisions_and_off_edge() {
     // No edge g3 -> parked: the decision says where it went.
     ws.move_usecase("ST", "parked", "app").unwrap();
     let want = before.replace("  step: need\n  step_since: 2026-10-02\n", &format!("  step: parked\n  step_since: {today}\n")).replace(
-        "    note: Risk depends on whether suggestions reach customers\n",
-        &format!("    note: Risk depends on whether suggestions reach customers\n  decisions: [{{ date: {today}, gate: G3, text: Moved to Parked }}]\n"),
+        "    note: Ticket export only as a sample so far\n",
+        &format!("    note: Ticket export only as a sample so far\n  decisions: [{{ date: {today}, gate: G3, text: Moved to Parked }}]\n"),
     );
     assert_eq!(fs::read_to_string(&file).unwrap(), want);
 }
@@ -724,8 +724,8 @@ fn savings_write_is_lossless_and_logged() {
     let before = fs::read_to_string(&file).unwrap();
     ws.update_project_field("ST", "usecase.savings", &json!([{ "what": "Route ticket", "count": 300, "per": "week", "minutes": 2 }]), "app").unwrap();
     let want = before.replace(
-        "    note: Risk depends on whether suggestions reach customers\n",
-        "    note: Risk depends on whether suggestions reach customers\n  savings: [{ what: Route ticket, count: 300, per: week, minutes: 2 }]\n",
+        "    note: Ticket export only as a sample so far\n",
+        "    note: Ticket export only as a sample so far\n  savings: [{ what: Route ticket, count: 300, per: week, minutes: 2 }]\n",
     );
     assert_eq!(fs::read_to_string(&file).unwrap(), want);
 }
@@ -784,45 +784,57 @@ fn hand_written_bad_savings_are_problems_not_breakage() {
 
 // ------------------------------------------------------------- assessment (A1)
 
-const ST_ASSESSMENT: &str = "  assessment:\n    date: 2026-10-06\n    ko: { owner: pass, risk: open, data_use: pass }\n    scores: { volume: 3, quality: 2, data: 2, path: 3, maturity: 2 }\n    note: Risk depends on whether suggestions reach customers\n";
+const ST_ASSESSMENT: &str = "  assessment:\n    date: 2026-10-06\n    scores: { volume: 3, quality: 2, access: 1, maturity: 2 }\n    note: Ticket export only as a sample so far\n";
+
+/// The template has no K.O. questions (ASSESSMENT.md D8); the mechanism stays, so tests add some back.
+fn with_ko(root: &Path) {
+    let p = root.join(".workly/process.yml");
+    let src = fs::read_to_string(&p).unwrap();
+    let ko = "assessment:\n  ko:\n    - { id: owner, label: Business owner named }\n    - { id: risk, label: Not high-risk }\n    - { id: data_use, label: Data may be used }\n";
+    fs::write(&p, src.replacen("assessment:\n", ko, 1)).unwrap();
+}
 
 #[test]
 fn fixture_assessments_load() {
     let ws = Workspace::open(FIXTURE).unwrap();
     let a = ws.index.project("ST").unwrap().project.usecase.as_ref().unwrap().assessment.clone().unwrap();
-    assert_eq!((a.date.as_deref(), a.ko["risk"].as_str(), a.scores.len(), a.scores.get("reuse")), (Some("2026-10-06"), "open", 5, None));
+    assert_eq!((a.date.as_deref(), a.ko.len(), a.scores.len(), a.scores.get("integration")), (Some("2026-10-06"), 0, 4, None));
+    // IE's volume comes from Manual effort (fte on the criterion), so it is not stored.
     let ie = ws.index.project("IE").unwrap().project.usecase.as_ref().unwrap().assessment.clone().unwrap();
-    assert_eq!((ie.ko.values().all(|v| v == "pass"), ie.scores.len()), (true, 7));
+    assert_eq!((ie.scores.len(), ie.scores.get("volume")), (5, None));
     let method = ws.process.as_ref().unwrap().assessment.as_ref().unwrap();
-    assert_eq!((method.ko.len(), method.criteria.len()), (3, 7));
+    assert_eq!((method.ko.len(), method.criteria.len()), (0, 6));
+    assert_eq!(method.criteria[0].fte.as_deref(), Some(&[0.5, 2.0][..]));
+    assert!(ws.process.as_ref().unwrap().validate().is_empty());
     assert!(ws.index.project("NA").unwrap().project.usecase.as_ref().unwrap().assessment.is_none());
 }
 
 #[test]
 fn assessment_write_is_lossless_and_logged() {
     let (_tmp, root) = fixture();
+    with_ko(&root);
     let file = root.join("projects/support-triage/_project.md");
     // Hand-written: comments, a block-style ko, an unknown key in the block.
-    let hand = "  assessment:   # G0\n    date: 2026-10-06\n    ko:\n      owner: pass   # Mia\n      risk: open\n    scores: { volume: 3, quality: 2, data: 2, path: 3, maturity: 2 }\n    source: workshop\n    note: Risk depends on whether suggestions reach customers\n";
+    let hand = "  assessment:   # G0\n    date: 2026-10-06\n    ko:\n      owner: pass   # Mia\n      risk: open\n    scores: { volume: 3, quality: 2, access: 1, maturity: 2 }\n    source: workshop\n    note: Ticket export only as a sample so far\n";
     let before = fs::read_to_string(&file).unwrap().replace(ST_ASSESSMENT, hand);
     fs::write(&file, &before).unwrap();
     let wr8 = fs::read(root.join(WR8)).unwrap();
     let mut ws = Workspace::open(&root).unwrap();
     let n = log_lines(&root).len();
-    let old = json!({ "date": "2026-10-06", "ko": { "owner": "pass", "risk": "open" }, "scores": { "volume": 3, "quality": 2, "data": 2, "path": 3, "maturity": 2 }, "source": "workshop", "note": "Risk depends on whether suggestions reach customers" });
-    let new = json!({ "date": "2026-10-08", "ko": { "owner": "pass", "risk": "pass", "data_use": "pass" }, "scores": { "volume": 3, "quality": 2, "reuse": 1, "data": 2, "path": 3, "maturity": 2 }, "note": "Output stays internal" });
+    let old = json!({ "date": "2026-10-06", "ko": { "owner": "pass", "risk": "open" }, "scores": { "volume": 3, "quality": 2, "access": 1, "maturity": 2 }, "source": "workshop", "note": "Ticket export only as a sample so far" });
+    let new = json!({ "date": "2026-10-08", "ko": { "owner": "pass", "risk": "pass", "data_use": "pass" }, "scores": { "volume": 3, "quality": 2, "access": 2, "integration": 3, "maturity": 2 }, "note": "Output stays internal" });
     ws.update_project_field("ST", "usecase.assessment", &new, "app").unwrap();
     let want = before.replace(
-        "    date: 2026-10-06\n    ko:\n      owner: pass   # Mia\n      risk: open\n    scores: { volume: 3, quality: 2, data: 2, path: 3, maturity: 2 }\n",
-        "    date: 2026-10-08\n    ko: { owner: pass, risk: pass, data_use: pass }\n    scores: { volume: 3, quality: 2, reuse: 1, data: 2, path: 3, maturity: 2 }\n",
-    ).replace("    note: Risk depends on whether suggestions reach customers\n", "    note: Output stays internal\n");
+        "    date: 2026-10-06\n    ko:\n      owner: pass   # Mia\n      risk: open\n    scores: { volume: 3, quality: 2, access: 1, maturity: 2 }\n",
+        "    date: 2026-10-08\n    ko: { owner: pass, risk: pass, data_use: pass }\n    scores: { volume: 3, quality: 2, access: 2, integration: 3, maturity: 2 }\n",
+    ).replace("    note: Ticket export only as a sample so far\n", "    note: Output stays internal\n");
     assert_eq!(fs::read_to_string(&file).unwrap(), want);
     let lines = log_lines(&root);
     assert_eq!(lines.len(), n + 1);
     let last = lines.last().unwrap();
     assert_eq!((&last["kind"], &last["field"], &last["from"], &last["to"]), (&json!("project.update"), &json!("usecase.assessment"), &old, &new));
     let a = ws.index.project("ST").unwrap().project.usecase.as_ref().unwrap().assessment.clone().unwrap();
-    assert_eq!((a.ko["risk"].as_str(), a.scores["reuse"], a.note.as_deref()), ("pass", 1, Some("Output stays internal")));
+    assert_eq!((a.ko["risk"].as_str(), a.scores["integration"], a.note.as_deref()), ("pass", 3, Some("Output stays internal")));
 
     // Same value again: no write, no log line.
     ws.update_project_field("ST", "usecase.assessment", &new, "app").unwrap();
@@ -845,15 +857,16 @@ fn assessment_appended_to_use_case_without_one() {
     let file = root.join("projects/newsletter-automation/_project.md");
     let before = fs::read_to_string(&file).unwrap();
     let mut ws = Workspace::open(&root).unwrap();
-    let value = json!({ "date": "2026-10-08", "ko": { "owner": "pass" }, "scores": { "volume": 1 }, "note": "Rare: 2 newsletters a month" });
+    // No K.O. questions in the method: an empty ko map is not written.
+    let value = json!({ "date": "2026-10-08", "ko": {}, "scores": { "volume": 1 }, "note": "Rare: 2 newsletters a month" });
     ws.update_project_field("NA", "usecase.assessment", &value, "app").unwrap();
     let want = before.replace(
         "Demand needed: touches CRM\" }\n",
-        "Demand needed: touches CRM\" }\n  assessment:\n    date: 2026-10-08\n    ko: { owner: pass }\n    scores: { volume: 1 }\n    note: \"Rare: 2 newsletters a month\"\n",
+        "Demand needed: touches CRM\" }\n  assessment:\n    date: 2026-10-08\n    scores: { volume: 1 }\n    note: \"Rare: 2 newsletters a month\"\n",
     );
     assert_eq!(fs::read_to_string(&file).unwrap(), want);
     // A hand-written flow-style block is replaced whole.
-    let flow = fs::read_to_string(&file).unwrap().replace(&want[want.find("  assessment:").unwrap()..want.find("---\nDraft").unwrap()], "  assessment: { date: 2026-10-01, ko: { owner: maybe } }\n");
+    let flow = fs::read_to_string(&file).unwrap().replace(&want[want.find("  assessment:").unwrap()..want.find("---\nDraft").unwrap()], "  assessment: { date: 2026-10-01, scores: { volume: 9 } }\n");
     fs::write(&file, flow).unwrap();
     ws.rescan();
     ws.update_project_field("NA", "usecase.assessment", &value, "app").unwrap();
@@ -863,6 +876,7 @@ fn assessment_appended_to_use_case_without_one() {
 #[test]
 fn assessment_is_validated_on_write() {
     let (_tmp, root) = fixture();
+    with_ko(&root);
     let file = root.join("projects/support-triage/_project.md");
     let before = fs::read_to_string(&file).unwrap();
     let mut ws = Workspace::open(&root).unwrap();
@@ -873,9 +887,9 @@ fn assessment_is_validated_on_write() {
     };
     let cases = [
         (json!({ "date": "2026-10-08", "ko": { "owner": "yes" } }), "usecase.assessment: ko.owner must be pass, fail or open, got \"yes\""),
-        (json!({ "date": "2026-10-08", "scores": { "data": 4 } }), "usecase.assessment: scores.data must be 1, 2 or 3, got 4"),
-        (json!({ "date": "2026-10-08", "scores": { "data": 2.5 } }), "usecase.assessment: scores.data must be 1, 2 or 3, got 2.5"),
-        (json!({ "date": "2026-10-08", "scores": { "data": "2" } }), "usecase.assessment: scores.data must be 1, 2 or 3, got \"2\""),
+        (json!({ "date": "2026-10-08", "scores": { "access": 4 } }), "usecase.assessment: scores.access must be 1, 2 or 3, got 4"),
+        (json!({ "date": "2026-10-08", "scores": { "access": 2.5 } }), "usecase.assessment: scores.access must be 1, 2 or 3, got 2.5"),
+        (json!({ "date": "2026-10-08", "scores": { "access": "2" } }), "usecase.assessment: scores.access must be 1, 2 or 3, got \"2\""),
         (json!({ "date": "2026-10-08", "scores": { "cost": 2 } }), "usecase.assessment: unknown criterion 'cost' (not in process.yml)"),
         (json!({ "date": "2026-10-08", "ko": { "budget": "pass" } }), "usecase.assessment: unknown K.O. question 'budget' (not in process.yml)"),
         (json!({ "date": "2026-10-08", "ko": ["owner"] }), "usecase.assessment: ko must be a map"),
@@ -904,8 +918,7 @@ fn hand_written_bad_assessment_is_problems_not_breakage() {
     let (_tmp, root) = fixture();
     let st = root.join("projects/support-triage/_project.md");
     let src = fs::read_to_string(&st).unwrap()
-        .replace("ko: { owner: pass, risk: open", "ko: { owner: maybe, budget: pass, risk: open")
-        .replace("scores: { volume: 3, quality: 2,", "scores: { volume: 5, quality: 2, cost: 1,");
+        .replace("    scores: { volume: 3, quality: 2,", "    ko: { budget: pass }\n    scores: { volume: 5, quality: 2, cost: 1,");
     fs::write(&st, src).unwrap();
     let ie = root.join("projects/invoice-extraction/_project.md");
     let src = fs::read_to_string(&ie).unwrap().replace("    date: 2026-09-08\n", "    date: 2026-09-08\n    note: [a, b]\n").replace("    note: Header fields only, line items later\n", "");
@@ -917,7 +930,7 @@ fn hand_written_bad_assessment_is_problems_not_breakage() {
     let ws = Workspace::open(&root).unwrap();
     let a = ws.index.project("ST").unwrap().project.usecase.as_ref().unwrap().assessment.clone().unwrap();
     // Bad values load as open; unknown ids ride along (the app ignores them).
-    assert_eq!((a.ko.get("owner"), a.ko.get("budget").map(String::as_str), a.scores.get("volume"), a.scores.get("cost")), (None, Some("pass"), None, Some(&1)));
+    assert_eq!((a.ko.get("budget").map(String::as_str), a.scores.get("volume"), a.scores.get("cost")), (Some("pass"), None, Some(&1)));
     assert_eq!(ws.index.project("IE").unwrap().project.usecase.as_ref().unwrap().assessment.as_ref().unwrap().note, None);
     let na_uc = ws.index.project("NA").unwrap().project.usecase.clone().unwrap();
     assert!(na_uc.assessment.is_none() && na_uc.status.as_deref() == Some("blocked"));
@@ -927,7 +940,6 @@ fn hand_written_bad_assessment_is_problems_not_breakage() {
         [
             ("projects/invoice-extraction/_project.md", "usecase.assessment: note must be a text"),
             ("projects/newsletter-automation/_project.md", "usecase.assessment must be a map"),
-            ("projects/support-triage/_project.md", "usecase.assessment: ko.owner must be pass, fail or open, got \"maybe\""),
             ("projects/support-triage/_project.md", "usecase.assessment: unknown K.O. question 'budget' (not in process.yml)"),
             ("projects/support-triage/_project.md", "usecase.assessment: scores.volume must be 1, 2 or 3, got 5"),
             ("projects/support-triage/_project.md", "usecase.assessment: unknown criterion 'cost' (not in process.yml)"),

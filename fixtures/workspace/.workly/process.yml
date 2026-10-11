@@ -22,9 +22,9 @@ phases:
 # col 4 stays empty: room for the "No" branch from G0 up to Parked.
 steps:
   - { id: start,   kind: term, col: 0,  lane: fb,  label: Start }
-  - { id: need,    kind: box,  col: 1,  lane: fb,  phase: idea,    label: Capture,          sub: "Problem, owner, volume" }
+  - { id: need,    kind: box,  col: 1,  lane: fb,  phase: idea,    label: Capture,          sub: "Problem, volume" }
   - { id: assess,  kind: box,  col: 2,  lane: me,  phase: idea,    label: Assess,           sub: Score value & feasibility }
-  - { id: g0,      kind: gate, col: 3,  lane: me,  phase: idea,    code: G0, label: "Pilot?", hint: "No K.O., value and feasibility worth a timeboxed pilot" }
+  - { id: g0,      kind: gate, col: 3,  lane: me,  phase: idea,    code: G0, label: "Pilot?", hint: "Value and feasibility worth a timeboxed pilot" }
   - { id: pilot,   kind: box,  col: 5,  lane: me,  phase: pilot,   label: Pilot / quick PoC, sub: "Feasible? 2-4 weeks" }
   - { id: g1,      kind: gate, col: 6,  lane: me,  phase: pilot,   code: G1, label: "Pursue?", hint: "Pilot shows feasibility and value. Re-assess with pilot results" }
   - { id: parked,  kind: box,  col: 6,  lane: fb,  phase: parked,  label: Parked,           sub: No-go or later, parked: true }
@@ -102,39 +102,37 @@ areas: [Finance, Customer Service, Sales, Operations, Data & Reporting]
 
 stale_after_days: 21
 
-# Use-case assessment before G0 and again at G1. Remove the block to hide it in the app.
-# K.O. questions: pass | fail | open. Criteria: 1-3 points, anchors = what 1, 2 and 3 mean.
+# Use-case assessment before G0 and again at G1.
+# Criteria: 1-3 points, anchors = what 1, 2 and 3 mean. With `fte: [low, high]` the points come from
+# Manual effort as soon as the use case has entries: <= low -> 1, > high -> 3, else 2.
+# compliance: if GDPR and the EU AI Act come out differently, the worse one counts.
+# K.O. questions (pass | fail | open) can be added back as `ko:` with id and label, e.g.
+#   ko:
+#     - { id: owner, label: Business owner named }
 assessment:
-  ko:
-    - { id: owner,    label: Business owner named }
-    - { id: risk,     label: "Not high-risk (EU AI Act) or governance clear" }
-    - { id: data_use, label: "Data may be used (classification, GDPR)" }
   criteria:
     - id: volume
       axis: value
-      label: Time saved / volume
-      anchors: ["< 0.2 FTE or rare", "0.2–1 FTE", "> 1 FTE or very frequent"]
+      label: Time saved
+      fte: [0.5, 2]
+      anchors: ["≤ 0.5 FTE", "0.5–2 FTE", "> 2 FTE"]
     - id: quality
       axis: value
       label: Quality / risk reduction
       anchors: ["Little effect on errors or lead time", "Noticeably fewer errors or faster", "Removes a known error source or compliance risk"]
-    - id: reuse
-      axis: value
-      label: Leverage / reuse
-      anchors: ["One-off for one team", "Similar need in other teams", "Pattern for several use cases"]
-    - id: data
+    - id: access
       axis: feasibility
-      label: Data situation
-      anchors: ["Scattered, unstructured or no access", "Available, needs cleanup or an access request", "Structured, accessible, owner known"]
-    - id: path
+      label: Data access
+      anchors: ["Only a sample or no access; depends on another department or a licence", "Access by request in sight, or partial", "I have full access now"]
+    - id: integration
       axis: feasibility
-      label: Solution path
-      anchors: ["Custom build", "Buy / vendor product", "Orchestrate existing tools"]
-    - id: deps
-      axis: feasibility
-      label: Dependencies
-      anchors: ["Several teams, core systems or new approvals", "One other team or system", "Self-contained"]
+      label: Integration
+      anchors: ["Must be built into core systems, or another team has to change something", "Reads or writes through existing interfaces (API, export)", "Stands alone: own endpoint, touches no other system"]
     - id: maturity
       axis: feasibility
       label: Process maturity
       anchors: ["Ad hoc, everyone does it differently", "Mostly stable, rules partly implicit", "Stable, documented, clear rules"]
+    - id: compliance
+      axis: feasibility
+      label: Compliance (GDPR, EU AI Act)
+      anchors: ["Sensitive data (e.g. health) or the AI decides about individuals", "Personal data within existing rules, or the AI talks to customers", "No personal data, no decisions about individuals"]

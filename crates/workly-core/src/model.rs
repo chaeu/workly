@@ -359,6 +359,8 @@ pub struct Criterion {
     /// What 1, 2 and 3 points mean.
     #[serde(default)]
     pub anchors: Vec<String>,
+    /// `[low, high]`: the app derives the points from Manual effort (FTE) when there is any.
+    pub fte: Option<Vec<f64>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -467,6 +469,11 @@ impl Process {
                 if c.anchors.len() != 3 {
                     errors.push(format!("assessment: criterion '{}' needs exactly 3 anchors, has {}", c.id, c.anchors.len()));
                 }
+                if let Some(f) = c.fte.as_deref()
+                    && !matches!(f, [a, b] if *a > 0.0 && a < b)
+                {
+                    errors.push(format!("assessment: criterion '{}' fte needs two ascending numbers > 0, e.g. [0.5, 2], got {f:?}", c.id));
+                }
             }
             for axis in AXES {
                 if !a.criteria.iter().any(|c| c.axis == axis) {
@@ -524,7 +531,9 @@ mod tests {
             ]
         );
         let p: Process = serde_yaml::from_str(
-            "assessment:\n  ko: [{id: a, label: A}]\n  criteria:\n    - {id: a, axis: value, label: X, anchors: [1, 2, 3]}\n    - {id: b, axis: cost, label: Y, anchors: [1, 2]}\n",
+            "assessment:\n  ko: [{id: a, label: A}]\n  criteria:\n    - {id: a, axis: value, label: X, anchors: [1, 2, 3]}\n    - {id: b, axis: cost, label: Y, anchors: [1, 2]}\n\
+             \x20   - {id: c, axis: value, label: Z, anchors: [1, 2, 3], fte: [2, 0.5]}\n    - {id: d, axis: value, label: W, anchors: [1, 2, 3], fte: [0, 1, 2]}\n\
+             \x20   - {id: e, axis: value, label: V, anchors: [1, 2, 3], fte: [0.5, 2]}\n",
         )
         .unwrap();
         assert_eq!(
@@ -533,6 +542,8 @@ mod tests {
                 "assessment: id 'a' is used twice",
                 "assessment: criterion 'b' has unknown axis 'cost' (value | feasibility)",
                 "assessment: criterion 'b' needs exactly 3 anchors, has 2",
+                "assessment: criterion 'c' fte needs two ascending numbers > 0, e.g. [0.5, 2], got [2.0, 0.5]",
+                "assessment: criterion 'd' fte needs two ascending numbers > 0, e.g. [0.5, 2], got [0.0, 1.0, 2.0]",
                 "assessment: no criterion on the feasibility axis",
             ]
         );
