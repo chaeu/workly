@@ -89,7 +89,7 @@
           </td>
           <td class="num w-mono" class:stale={isStale(p, u)}>{days ?? "–"}</td>
           <td class="num w-mono" use:tip={fte !== null && fteTip(u)}>{fte === null ? "" : fmtFte(fte)}</td>
-          {#if p.assessment}<td>{#if u.usecase.assessment}<AssessmentPill result={assess(p, u.usecase.assessment)} />{/if}</td>{/if}
+          {#if p.assessment}<td>{#if u.usecase.assessment}<AssessmentPill result={assess(p, u.usecase.assessment, savedFte(u))} />{/if}</td>{/if}
           <td class="next" use:tip={clipped(next)}>{next ?? ""}</td>
         </tr>
       {:else}

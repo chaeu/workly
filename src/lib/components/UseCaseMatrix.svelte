@@ -25,7 +25,7 @@
 
   let { process: p, ucs, advanced, onopen }: { process: Process; ucs: UC[]; advanced: boolean; onopen: (key: string) => void } = $props();
 
-  const rated = $derived(ucs.filter((u) => u.usecase.assessment).map((u) => ({ u, r: assess(p, u.usecase.assessment!) })));
+  const rated = $derived(ucs.filter((u) => u.usecase.assessment).map((u) => ({ u, r: assess(p, u.usecase.assessment!, savedFte(u)) })));
   const ko = $derived(rated.filter((x) => x.r.ko === "fail"));
   // Incomplete (one axis unscored) has no position, so it waits with the unassessed ones.
   const placed = $derived(
@@ -34,6 +34,8 @@
       .map((x) => ({ ...x, q: x.r.quadrant!, fte: savedFte(x.u), x: ((x.r.feasibility! - 1) / 2) * 100, y: (1 - (x.r.value! - 1) / 2) * 100 })),
   );
   const unplaced = $derived([...rated.filter((x) => x.r.ko !== "fail" && !x.r.quadrant), ...ucs.filter((u) => !u.usecase.assessment).map((u) => ({ u, r: null }))]);
+  // Without K.O. questions in process.yml there is no K.O. row.
+  const rows = $derived([...(p.assessment!.ko.length ? [["K.O.", ko] as const] : []), ["Not assessed", unplaced] as const]);
   type Dot = (typeof placed)[number];
 
   /** Best first: closest to the top-right corner. */
@@ -59,8 +61,8 @@
     [
       `${d.u.key} ${d.u.title}`,
       `${d.q}${d.fte != null ? ` · ${fmtFte(d.fte)} FTE` : ""}`,
-      `Value ${axisCalc(p, d.u.usecase.assessment!, "value")}`,
-      `Feasibility ${axisCalc(p, d.u.usecase.assessment!, "feasibility")}`,
+      `Value ${axisCalc(p, d.r.scores, "value")}`,
+      `Feasibility ${axisCalc(p, d.r.scores, "feasibility")}`,
       ...(d.r.open.length ? ["Open for pilot:", ...d.r.open.map((x) => `· ${x}`)] : []),
     ].join("\n");
   const chipTip = (u: UC, r: AssessResult | null) => `${u.key} ${u.title}\n${r ? assessTip(r) : "Not assessed"}`;
@@ -199,13 +201,18 @@
             <span class="w-caps">Value ≥ {fmtScore(ASSESS_THRESHOLD)}</span><span style:--c={QUADRANT_COLOR["Quick win"]}>Quick win</span><span style:--c={QUADRANT_COLOR["Big bet"]}>Big bet</span>
             <span class="w-caps">Value &lt; {fmtScore(ASSESS_THRESHOLD)}</span><span style:--c={QUADRANT_COLOR["Fill-in"]}>Fill-in</span><span style:--c={QUADRANT_COLOR.Drop}>Drop</span>
           </span>
-          <span><b>K.O.</b>: one failed question ({p.assessment!.ko.map((k) => k.label).join(" · ")}) stops the assessment; the use case gets no position.</span>
+          {#each p.assessment!.criteria.filter((c) => c.fte) as c (c.id)}
+            <span><b>{c.label}</b> comes from Manual effort once there are entries: ≤ {fmtFte(c.fte![0])} FTE = 1, over {fmtFte(c.fte![1])} FTE = 3, else 2.</span>
+          {/each}
+          {#if p.assessment!.ko.length}
+            <span><b>K.O.</b>: one failed question ({p.assessment!.ko.map((k) => k.label).join(" · ")}) stops the assessment; the use case gets no position.</span>
+          {/if}
           {#if advanced}<span><b>Bubble size</b> = manual effort in FTE.</span>{/if}
         </span>
       </span>
     </div>
 
-    {#each [["K.O.", ko], ["Not assessed", unplaced]] as const as [name, list] (name)}
+    {#each rows as [name, list] (name)}
       <div class="row">
         <span class="w-caps">{name} ({list.length})</span>
         {#each list as { u, r } (u.key)}

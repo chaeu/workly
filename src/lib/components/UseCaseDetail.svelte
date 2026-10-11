@@ -20,6 +20,7 @@
     label,
     nextMoves,
     phaseIndex,
+    savedFte,
     savedHours,
     savingHours,
     scoreLine,
@@ -86,7 +87,7 @@
   const hours = $derived(u ? savedHours(u) : 0);
   let editingEffort = $state(false);
   // Hidden everywhere when process.yml has no assessment block.
-  const assessed = $derived(p.assessment && uc?.assessment ? assess(p, uc.assessment) : null);
+  const assessed = $derived(u && p.assessment && uc?.assessment ? assess(p, uc.assessment, savedFte(u)) : null);
   let editingAssessment = $state(false);
   const OPEN_MAX = 5;
 

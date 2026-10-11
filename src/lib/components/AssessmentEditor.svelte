@@ -5,7 +5,7 @@
   import AssessmentPill from "$lib/components/AssessmentPill.svelte";
   import { workspace, updateProjectField, type KoValue, type Process, type UseCaseAssessment } from "$lib/stores/workspace.svelte";
   import { today } from "$lib/tasks.svelte";
-  import { assess, axisCalc, type UC } from "$lib/usecases.svelte";
+  import { assess, axisCalc, fmtFte, fteScore, savedFte, type UC } from "$lib/usecases.svelte";
 
   let { key, process: p, onclose }: { key: string; process: Process; onclose: () => void } = $props();
 
@@ -16,7 +16,8 @@
 
   // ponytail: assumes p.assessment exists; the callers only open the editor when it does.
   const m = $derived(p.assessment!);
-  // Only ids the method knows: the core refuses unknown ones. Every K.O. question is written, open by default.
+  // Only ids the method knows (the core refuses unknown ones), so re-assessing an old assessment drops ids
+  // that left process.yml. Every K.O. question is written, open by default.
   // svelte-ignore state_referenced_locally
   const cur = u?.usecase.assessment;
   // svelte-ignore state_referenced_locally
@@ -26,7 +27,9 @@
     scores: Object.fromEntries(p.assessment!.criteria.filter((c) => cur?.scores[c.id] != null).map((c) => [c.id, cur!.scores[c.id]])),
     note: cur?.note ?? "",
   });
-  const r = $derived(assess(p, draft));
+  // A criterion with `fte` takes its points from Manual effort while there is any (D10): fixed here, never written.
+  const fte = $derived(u ? savedFte(u) : null);
+  const r = $derived(assess(p, draft, fte));
 
   const KO: KoValue[] = ["pass", "fail", "open"];
   const AXES = [
@@ -50,7 +53,11 @@
       busy = false;
     }
   }
-  const save = () => write({ ...$state.snapshot(draft), date: today(), note: draft.note?.trim() || null });
+  function save() {
+    const d = $state.snapshot(draft);
+    const scores = Object.fromEntries(Object.entries(d.scores).filter(([id]) => !m.criteria.some((c) => c.id === id && fteScore(c, fte) != null)));
+    write({ ...d, scores, date: today(), note: d.note?.trim() || null });
+  }
   async function clear() {
     const ok = await ask(`Remove the assessment of ${key}? The log keeps the old one.`, { title: "Clear assessment", kind: "warning", okLabel: "Clear" });
     if (ok) await write(null);
@@ -72,24 +79,27 @@
       <button type="button" class="x" aria-label="Close" onclick={onclose}>✕</button>
     </div>
     <div class="body">
-      <section>
-        <h3 class="w-caps">K.O. questions</h3>
-        {#each m.ko as k (k.id)}
-          <div class="row">
-            <span class="lbl">{k.label}</span>
-            <div class="w-seg" role="group" aria-label={k.label}>
-              {#each KO as v (v)}
-                <button type="button" class:fail={v === "fail"} aria-pressed={draft.ko[k.id] === v} onclick={() => (draft.ko[k.id] = v)}>{v}</button>
-              {/each}
+      {#if m.ko.length}
+        <section>
+          <h3 class="w-caps">K.O. questions</h3>
+          {#each m.ko as k (k.id)}
+            <div class="row">
+              <span class="lbl">{k.label}</span>
+              <div class="w-seg" role="group" aria-label={k.label}>
+                {#each KO as v (v)}
+                  <button type="button" class:fail={v === "fail"} aria-pressed={draft.ko[k.id] === v} onclick={() => (draft.ko[k.id] = v)}>{v}</button>
+                {/each}
+              </div>
             </div>
-          </div>
-        {/each}
-      </section>
+          {/each}
+        </section>
+      {/if}
       {#each AXES as [axis, name] (axis)}
         <section>
           <h3 class="w-caps">{name}</h3>
           {#each m.criteria.filter((c) => c.axis === axis) as c (c.id)}
-            {@const s = draft.scores[c.id] ?? null}
+            {@const derived = fteScore(c, fte)}
+            {@const s = derived ?? draft.scores[c.id] ?? null}
             <div class="row crit">
               <div>
                 <span class="lbl">{c.label}</span>
@@ -100,11 +110,15 @@
                   {/each}
                 </ol>
               </div>
-              <div class="w-seg" role="group" aria-label={c.label}>
-                {#each [1, 2, 3, null] as n (n)}
-                  <button type="button" aria-pressed={s === n} title={n === null ? "Open" : c.anchors[n - 1]} onclick={() => setScore(c.id, n)}>{n ?? "?"}</button>
-                {/each}
-              </div>
+              {#if derived !== null}
+                <span class="derived"><b class="w-mono">{derived}</b>From Manual effort: {fmtFte(fte ?? 0)} FTE</span>
+              {:else}
+                <div class="w-seg" role="group" aria-label={c.label}>
+                  {#each [1, 2, 3, null] as n (n)}
+                    <button type="button" aria-pressed={s === n} title={n === null ? "Open" : c.anchors[n - 1]} onclick={() => setScore(c.id, n)}>{n ?? "?"}</button>
+                  {/each}
+                </div>
+              {/if}
             </div>
           {/each}
         </section>
@@ -118,8 +132,8 @@
       <div class="result">
         <AssessmentPill result={r} />
         <!-- The arithmetic, so a score can be explained: mean of the scored criteria per axis. -->
-        <span>Value <span class="w-mono calc">{axisCalc(p, draft, "value")}</span></span>
-        <span>Feasibility <span class="w-mono calc">{axisCalc(p, draft, "feasibility")}</span></span>
+        <span>Value <span class="w-mono calc">{axisCalc(p, r.scores, "value")}</span></span>
+        <span>Feasibility <span class="w-mono calc">{axisCalc(p, r.scores, "feasibility")}</span></span>
         <span class="w-sub">{r.open.length} open</span>
       </div>
       {#if u.usecase.assessment}<button type="button" class="w-btn w-btn--quiet" disabled={busy} onclick={clear}>Clear…</button>{/if}
@@ -195,6 +209,18 @@
   }
   .w-seg button.fail[aria-pressed="true"] {
     color: var(--w-danger);
+  }
+  .derived {
+    flex: none;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: var(--w-fs-caption);
+    color: var(--w-muted);
+  }
+  .derived b {
+    font-size: var(--w-fs-small);
+    color: var(--w-ink);
   }
   .anchors {
     list-style: none;
