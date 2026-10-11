@@ -18,9 +18,8 @@
   const archived = $derived(projects.filter((p) => p.status === "archived"));
   const statuses = $derived(workspace.index?.config.task_statuses ?? []);
   const proc = $derived(workspace.index?.process ?? null);
-  // Use cases in the first or a parked phase: only in the cockpit, counted below the table.
+  // Use cases not tracked as projects: only in the cockpit, counted below the table.
   const cockpitOnly = $derived(projects.filter((p) => p.status !== "archived" && !inDailyWork(p)));
-  const cockpitPhases = $derived(proc?.phases.filter((x, i) => i === 0 || x.parked).map((x) => x.name).join(" or ") ?? "");
 
   // ------------------------------------------------------------ per project
 
@@ -311,7 +310,7 @@
 {#if cockpitOnly.length}
   <p class="w-sub cockpit-only">
     {cockpitOnly.length}
-    {cockpitOnly.length === 1 ? "use case" : "use cases"} in {cockpitPhases} → <a href="/use-cases">Use cases</a>
+    {cockpitOnly.length === 1 ? "use case" : "use cases"} not tracked as {cockpitOnly.length === 1 ? "a project" : "projects"} → <a href="/use-cases">Use cases</a>
   </p>
 {/if}
 

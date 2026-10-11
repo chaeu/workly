@@ -19,7 +19,7 @@
     type Link,
   } from "$lib/stores/workspace.svelte";
 
-  // `usecase`: create as a use case (type + area); `oncreated` replaces the jump to the project page.
+  // `usecase`: start as a use case only (not tracked as a project); `oncreated` replaces the jump to the project page.
   let {
     project = null,
     usecase = false,
@@ -40,9 +40,12 @@
   const process = $derived(workspace.index?.process);
   let ucType = $state(workspace.index?.process?.types[0]?.id ?? "");
   let ucArea = $state("");
-  // Edit form: "Make use case…" reveals type + area; Save then writes the usecase block.
-  let makeUc = $state(false);
-  const ucFields = $derived(!!process && (p ? makeUc : usecase));
+  // Two boxes, at least one on (neither = archive). Ticking Use case on a project reveals type + area.
+  // svelte-ignore state_referenced_locally
+  let isProject = $state(p ? p.tracked !== false : !usecase);
+  // svelte-ignore state_referenced_locally
+  let isUc = $state(p ? !!p.usecase : usecase);
+  const ucFields = $derived(!!process && isUc && !p?.usecase);
   // Title whose folder already exists without _project.md: offer to use it.
   let existsFor = $state<string | null>(null);
   let error = $state<string | null>(null);
@@ -63,7 +66,7 @@
     if (workspace.index?.projects.some((x) => x.key === key)) return "Already used";
     return null;
   });
-  const canSave = $derived(!!title.trim() && (p || (key && !keyProblem)) && !busy);
+  const canSave = $derived(!!title.trim() && (p || (key && !keyProblem)) && (isProject || isUc) && !busy);
 
   async function addRepo() {
     const repo = await pickRepo();
@@ -77,7 +80,7 @@
   const ucValue = () => ({ type: ucType, area: ucArea.trim() || null });
 
   async function create(adopt: boolean) {
-    const dir = await createProject({ title: title.trim(), key, color, repos: $state.snapshot(repos), usecase: usecase ? ucValue() : null, adopt });
+    const dir = await createProject({ title: title.trim(), key, color, repos: $state.snapshot(repos), usecase: isUc ? ucValue() : null, adopt, tracked: isProject });
     if (dir === null) {
       existsFor = title.trim();
       return;
@@ -97,6 +100,7 @@
         await create(adopt);
         return;
       }
+      if (p.usecase && !isUc && !(await confirmRemoveUc(p))) return;
       const changes: [string, unknown, unknown][] = [
         ["title", p.title, title.trim()],
         ["color", p.color, color],
@@ -107,7 +111,11 @@
       for (const [field, before, after] of changes) {
         if (JSON.stringify(before) !== JSON.stringify(after)) await updateProjectField(p.key, field, after);
       }
-      if (makeUc) await makeUseCase(p.key, ucValue());
+      // Order matters: the core only untracks a use case and only removes a tracked one.
+      if (isProject && p.tracked === false) await updateProjectField(p.key, "tracked", true);
+      if (isUc && !p.usecase) await makeUseCase(p.key, ucValue());
+      if (!isUc && p.usecase) await removeUseCase(p.key);
+      if (!isProject && p.tracked !== false) await updateProjectField(p.key, "tracked", false);
       onclose();
     } catch (err) {
       error = String(err);
@@ -129,18 +137,14 @@
     goto("/projects");
   }
 
-  // Back to a plain project: rare, so it lives here next to "Make use case…", not on the use-case page.
-  async function removeFromCockpit() {
-    if (!p?.usecase) return;
-    const n = p.usecase.decisions.length;
-    const ok = await ask(`Removes the use-case fields including ${n} decision${n === 1 ? "" : "s"} from _project.md. The log keeps a copy.`, {
+  // Unticking Use case deletes the block: rare, so it lives here, not on the use-case page.
+  function confirmRemoveUc(p: ProjectEntry) {
+    const n = p.usecase?.decisions.length ?? 0;
+    return ask(`Removes the use-case fields including ${n} decision${n === 1 ? "" : "s"} from _project.md. The log keeps a copy.`, {
       title: `Remove ${p.key} from cockpit`,
       kind: "warning",
       okLabel: "Remove",
     });
-    if (!ok) return;
-    await removeUseCase(p.key);
-    onclose();
   }
 
   function onkeydown(e: KeyboardEvent) {
@@ -195,15 +199,16 @@
         </div>
       </div>
 
-      {#if p && !p.usecase && process && !makeUc}
+      {#if process}
         <div class="field">
-          <span class="w-caps">Use case</span>
-          <div><button type="button" class="w-btn" onclick={() => (makeUc = true)}>Make use case…</button></div>
-        </div>
-      {:else if p?.usecase}
-        <div class="field">
-          <span class="w-caps">Use case</span>
-          <div><button type="button" class="w-btn w-btn--quiet danger" onclick={removeFromCockpit}>Remove from cockpit…</button></div>
+          <span class="w-caps">Show as</span>
+          <div class="checks">
+            <label><input type="checkbox" bind:checked={isProject} />Project <span class="hint">sidebar, Projects</span></label>
+            <label><input type="checkbox" bind:checked={isUc} />Use case <span class="hint">cockpit</span></label>
+          </div>
+          {#if !isProject && !isUc}
+            <span class="hint bad">Pick at least one. To put it away, set the status to Archived.</span>
+          {/if}
         </div>
       {/if}
 
@@ -300,7 +305,7 @@
     flex-direction: column;
     gap: var(--w-s-2);
   }
-  input {
+  input:not([type="checkbox"]) {
     border: 0;
     outline: none;
     background: var(--w-tray);
@@ -309,8 +314,22 @@
     font-size: var(--w-fs-small);
     min-width: 0;
   }
-  input:focus {
+  input:not([type="checkbox"]):focus {
     box-shadow: 0 0 0 2px var(--w-accent-soft);
+  }
+  .checks {
+    display: flex;
+    gap: var(--w-s-5);
+    font-size: var(--w-fs-small);
+  }
+  .checks label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--w-s-2);
+  }
+  .checks input {
+    margin: 0;
+    accent-color: var(--w-accent);
   }
   .key {
     width: 9ch;
