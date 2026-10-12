@@ -152,7 +152,8 @@
       ghost.classList.add("w-drag-ghost");
       ghost.classList.remove("is-dim");
       ghost.style.width = `${Math.max(r.width, 170)}px`;
-      document.body.appendChild(ghost);
+      // Inside .w-app, which carries the font and colour of the card.
+      (pending.el.closest(".w-app") ?? document.body).appendChild(ghost);
       dragKey = pending.key;
     }
     e.preventDefault();

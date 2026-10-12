@@ -162,7 +162,8 @@
       ghost = pending.el.cloneNode(true) as HTMLElement;
       ghost.classList.add("w-drag-ghost");
       ghost.style.width = `${r.width}px`;
-      document.body.appendChild(ghost);
+      // Inside .w-app, which carries the font and colour of the card.
+      (pending.el.closest(".w-app") ?? document.body).appendChild(ghost);
       dragId = pending.id;
       dragFromFocus = pending.fromFocus;
     }
