@@ -336,6 +336,78 @@ fn open_repo(state: State<AppState>, repo: String) -> Result<(), String> {
     open(&["-b", VSCODE, &path.to_string_lossy()])
 }
 
+/// Start a task for an agent from the app: status doing (from doing only the agent
+/// fields), refused while another agent works in the same repo.
+#[tauri::command]
+fn start_agent_task(app: AppHandle, state: State<AppState>, id: String, agent: String) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.start_task(&id, Some(&agent), ACTOR)))
+}
+
+/// Hand a started task to its runner, off the UI thread. Copilot: the project's
+/// `<key>.code-workspace` in VS Code, then an agent-mode chat with prompt.md attached.
+/// Codex: `.workly/runs/<ID>/start.command` in a new Terminal window. Errors carry
+/// the stderr tail; the frontend then falls back to the clipboard.
+#[tauri::command]
+async fn launch_agent(state: State<'_, AppState>, id: String, runner: String, prompt: String) -> Result<(), String> {
+    let job: Box<dyn FnOnce() -> Result<(), String> + Send> = match runner.as_str() {
+        "codex" => {
+            let script = with_ws(&state, |ws| ws.write_codex_start(&id, &prompt))?;
+            Box::new(move || open(&["-a", "Terminal", &script.to_string_lossy()]))
+        }
+        "copilot" => {
+            let (workspace, prompt) = with_ws(&state, |ws| {
+                ws.repo_dir(&id)?;
+                let folder = ws.index.task(&id).and_then(|t| t.project.clone());
+                let key = (ws.index.projects.iter()).find(|p| Some(&p.path) == folder.as_ref()).map(|p| p.project.key.clone());
+                let key = key.ok_or_else(|| workly_core::Error::Invalid(format!("{id} has no project")))?;
+                Ok((ws.code_workspace(&key, true)?, ws.write_run_prompt(&id, &prompt)?))
+            })?;
+            Box::new(move || {
+                let code = vscode_cli()?;
+                exec(&code, &[&workspace.to_string_lossy()])?;
+                // ponytail: `code` returns before VS Code has the window; `chat -r` goes to the
+                // last active one. Fixed pause; raise it if chats land in the wrong window.
+                thread::sleep(Duration::from_millis(1500));
+                let line = format!("Work on Workly task {id}. Follow the attached prompt.md exactly.");
+                exec(&code, &["chat", "-m", "agent", "-r", "-a", &prompt.to_string_lossy(), &line])
+            })
+        }
+        _ => return Err(format!("No adapter for runner {runner}: pick Copilot or Codex")),
+    };
+    tauri::async_runtime::spawn_blocking(job).await.map_err(|e| e.to_string())?
+}
+
+/// `code` of the newest VS Code ≥ 1.98 (for `code chat`): /Applications first, then
+/// Spotlight by bundle id. Never PATH: an app started from Finder does not get the user's.
+fn vscode_cli() -> Result<std::path::PathBuf, String> {
+    let mut apps = vec![std::path::PathBuf::from("/Applications/Visual Studio Code.app")];
+    if let Ok(out) = Command::new("/usr/bin/mdfind").arg(format!("kMDItemCFBundleIdentifier == '{VSCODE}'")).output() {
+        apps.extend(String::from_utf8_lossy(&out.stdout).lines().map(std::path::PathBuf::from));
+    }
+    let version = |app: &Path| -> Option<Vec<u32>> {
+        let plist = app.join("Contents/Info.plist");
+        let out = Command::new("/usr/bin/plutil").args(["-extract", "CFBundleShortVersionString", "raw", "-o", "-"]).arg(plist).output().ok()?;
+        String::from_utf8_lossy(&out.stdout).trim().split('.').map(|n| n.parse().ok()).collect()
+    };
+    (apps.iter())
+        .map(|app| (version(app), app.join("Contents/Resources/app/bin/code")))
+        .filter(|(v, code)| v.as_ref().is_some_and(|v| v[..] >= [1, 98][..]) && code.is_file())
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, code)| code)
+        .ok_or_else(|| "VS Code 1.98 or newer not found".into())
+}
+
+/// Run a program with argv (no shell); a failure returns the stderr tail.
+fn exec(program: &Path, args: &[&str]) -> Result<(), String> {
+    let out = Command::new(program).args(args).output().map_err(|e| format!("{}: {e}", program.display()))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&out.stderr);
+    let tail: Vec<&str> = err.lines().rev().take(5).collect();
+    Err(tail.into_iter().rev().collect::<Vec<_>>().join("\n"))
+}
+
 /// Text to the macOS clipboard (`pbcopy`, no shell): the agent prompt.
 #[tauri::command]
 fn copy_text(text: String) -> Result<(), String> {
@@ -564,6 +636,8 @@ pub fn run() {
             agent_context,
             run_log,
             clear_agent,
+            start_agent_task,
+            launch_agent,
             create_agents_md,
             cli_link,
             install_cli,
