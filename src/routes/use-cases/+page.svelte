@@ -502,7 +502,11 @@
   .scroll {
     --lane-w: 140px;
     --col-w: 192px;
+    /* A flex item of .w-main with overflow other than visible may shrink below its content and
+       scroll on its own; flex: none keeps the full height, so only .w-main scrolls vertically. */
+    flex: none;
     overflow-x: auto;
+    overflow-y: hidden;
     border-radius: var(--w-r-lg);
     background: var(--w-tray);
   }

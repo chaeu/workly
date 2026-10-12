@@ -337,7 +337,11 @@
     gap: var(--w-s-2);
   }
   .list {
-    overflow: auto;
+    /* A flex item of .w-main with overflow other than visible may shrink below its content and
+       scroll on its own; flex: none keeps the full height, so only .w-main scrolls vertically. */
+    flex: none;
+    overflow-x: auto;
+    overflow-y: hidden;
     border-radius: var(--w-r-lg);
     background: var(--w-surface);
     box-shadow: var(--w-shadow-panel);
