@@ -1016,6 +1016,7 @@ fn start_and_review_are_lossless_and_logged() {
     let (_tmp, root) = fixture();
     let before = fs::read_to_string(root.join(WR8)).unwrap();
     let mut ws = Workspace::open(&root).unwrap();
+    ws.clear_agent("WR-3", "app").unwrap(); // WR-3's agent works in the same repo
     let n = log_lines(&root).len();
     ws.start_task("WR-8", Some("codex"), "agent:codex").unwrap();
     let after = fs::read_to_string(root.join(WR8)).unwrap();
@@ -1068,6 +1069,7 @@ fn review_summary_is_one_updates_item() {
 fn run_notes_leave_the_task_file_alone() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
+    ws.clear_agent("WR-3", "app").unwrap(); // WR-3's agent works in the same repo
     ws.start_task("WR-8", Some("codex"), "agent:codex").unwrap();
     let before = fs::read_to_string(root.join(WR8)).unwrap();
     let n = log_lines(&root).len();
@@ -1123,6 +1125,7 @@ fn clear_agent_keeps_the_status() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
     assert_eq!(ws.config.agent_defaults.stale_after_minutes, 30);
+    ws.clear_agent("WR-3", "app").unwrap(); // WR-3's agent works in the same repo
     ws.start_task("WR-8", Some("codex"), "agent:codex").unwrap();
     let before = fs::read_to_string(root.join(WR8)).unwrap();
     let n = log_lines(&root).len();
@@ -1158,8 +1161,8 @@ fn run_log_needs_a_plain_id() {
 fn transition_rules() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
-    // WR-3 is doing, WR-1 done: no start. WR-5 is todo: no review.
-    assert!(matches!(ws.start_task("WR-3", Some("codex"), "cli"), Err(Error::InvalidTransition(_))));
+    // WR-3 is doing without an agent name, WR-1 done: no start. WR-5 is todo: no review.
+    assert!(matches!(ws.start_task("WR-3", None, "cli"), Err(Error::InvalidTransition(_))));
     assert!(matches!(ws.start_task("WR-1", None, "cli"), Err(Error::InvalidTransition(_))));
     assert!(matches!(ws.review_task("WR-5", None, None, "cli"), Err(Error::InvalidTransition(_))));
     assert!(matches!(ws.start_task("XX-1", None, "cli"), Err(Error::NotFound(_))));
@@ -1171,6 +1174,42 @@ fn transition_rules() {
     assert_eq!((t.status.as_str(), t.agent.as_ref().unwrap().active.as_deref()), ("doing", None));
     ws.review_task("WR-3", None, None, "agent:codex").unwrap();
     assert_eq!(ws.index.task("WR-3").unwrap().task.agent.as_ref().unwrap().active, None);
+}
+
+#[test]
+fn one_agent_per_repo() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    // WR-3: codex active in ~/repos/website, the first repo of website-relaunch.
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    let Err(Error::InvalidTransition(msg)) = ws.start_task("WR-8", Some("copilot"), "app") else { panic!("not refused") };
+    assert_eq!(msg, "WR-3 already has an agent working in ~/repos/website");
+    assert_eq!(fs::read_to_string(root.join(WR8)).unwrap(), before);
+    // Without an agent there is no check; restarting WR-3 itself is fine.
+    ws.start_task("WR-5", None, "cli").unwrap();
+    ws.start_task("WR-3", Some("copilot"), "app").unwrap();
+    // Another repo is not affected.
+    ws.start_task("IE-2", Some("codex"), "app").unwrap();
+    // Free again after review.
+    ws.review_task("WR-3", None, None, "app").unwrap();
+    ws.start_task("WR-8", Some("copilot"), "app").unwrap();
+}
+
+#[test]
+fn start_from_doing_sets_only_the_agent() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    ws.clear_agent("WR-3", "app").unwrap(); // WR-3's agent works in the same repo
+    ws.start_task("WR-8", None, "cli").unwrap();
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    let n = log_lines(&root).len();
+    ws.start_task("WR-8", Some("copilot"), "app").unwrap();
+    let after = fs::read_to_string(root.join(WR8)).unwrap();
+    // The status line stays, the agent block is appended to the frontmatter, the body stays.
+    let (head, tail) = after.split_once("agent:\n").unwrap();
+    assert_eq!(head, before.split_once("---\nBody").unwrap().0);
+    assert!(tail.starts_with("  active: copilot\n  since: 20") && after.ends_with(before.split_once("---\nBody").unwrap().1), "{tail}");
+    assert_eq!(log_lines(&root).len(), n + 2);
 }
 
 #[test]

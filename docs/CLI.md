@@ -25,7 +25,7 @@ Options can stand anywhere on the line: `wly task show WR-5 --json`.
 ```
 wly task list [--project WR] [--status todo] [--json]
 wly task show WR-12 [--json]                  # task + project + agent context
-wly task start WR-12 [--agent codex]          # -> doing; with an agent also agent.active, agent.since
+wly task start WR-12 [--agent codex]          # -> doing; with an agent also agent.active, agent.since (from doing: only those)
 wly task note WR-12 "text"                    # appends to the run log .workly/runs/WR-12/log.jsonl; task file untouched
 wly task note WR-12 "text" --to-body          # appends "- YYYY-MM-DD HH:MM · <who>: text" under ## Updates instead
 wly task review WR-12 [--summary "text"] [--commit a3f9c1e]   # -> review; clears agent.active/since, stamps agent.last_run
@@ -69,9 +69,11 @@ The first line follows the stamp, further lines are continuation lines indented 
 
 | Command | Allowed from | Else |
 | --- | --- | --- |
-| `start` | backlog, todo, review | exit 3 |
+| `start` | backlog, todo, review; with an agent also doing (sets only the agent fields) | exit 3 |
 | `review` | doing | exit 3 |
 | `done` | any status, actor `cli` only | exit 3 when `--agent` / `WORKLY_AGENT` is set |
+
+One agent per repo: `start` with an agent is exit 3 (`WR-3 already has an agent working in ~/repos/website`) while another task whose project has the same first repo has `agent.active`. Without an agent there is no check. Clear the other run first (`review`, or Clear agent in the app).
 
 Agents never set `done`. `wly task done` is not in the spec's command list; it exists so a human can close a task from the terminal and so the refusal for agents is testable. It is a rule for well-behaved agents, not a security boundary: anything that can run `wly` can also edit the files.
 

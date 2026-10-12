@@ -7,6 +7,7 @@ use std::process::{Command, Output};
 
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/workspace");
 const WR5: &str = "projects/website-relaunch/tasks/WR-5-navigation.md";
+const WR3: &str = "projects/website-relaunch/tasks/WR-3-header-component.md";
 
 fn copy_dir(from: &Path, to: &Path) {
     fs::create_dir_all(to).unwrap();
@@ -37,6 +38,12 @@ fn wly(ws: Option<&Path>, args: &[&str]) -> Output {
         cmd.env("WORKLY_WORKSPACE", ws);
     }
     cmd.output().unwrap()
+}
+
+/// WR-3's agent works in the website repo, which blocks agent starts there (one agent per repo).
+fn free_website_repo(root: &Path) {
+    let file = root.join(WR3);
+    fs::write(&file, fs::read_to_string(&file).unwrap().replace("  active: codex\n", "  active: null\n")).unwrap();
 }
 
 fn code(o: &Output) -> i32 {
@@ -93,6 +100,12 @@ fn agent_flow_start_note_review() {
     let (_tmp, root) = fixture();
     let ws = Some(root.as_path());
     let before = fs::read_to_string(root.join(WR5)).unwrap();
+    // One agent per repo: refused with the other task's id, nothing written.
+    let out = wly(ws, &["task", "start", "WR-5", "--agent", "codex"]);
+    assert_eq!(code(&out), 3);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("WR-3 already has an agent working in ~/repos/website"));
+    assert_eq!(fs::read_to_string(root.join(WR5)).unwrap(), before);
+    free_website_repo(&root);
     let out = wly(ws, &["task", "start", "WR-5", "--agent", "codex"]);
     assert_eq!((code(&out), String::from_utf8_lossy(&out.stdout).trim()), (0, "WR-5 doing"));
     let started = fs::read_to_string(root.join(WR5)).unwrap();
@@ -183,6 +196,7 @@ fn app_watcher_sees_cli_writes() {
     use std::sync::mpsc;
     use std::time::Duration;
     let (_tmp, root) = fixture();
+    free_website_repo(&root);
     let mut app = workly_core::Workspace::open(&root).unwrap();
     let (tx, rx) = mpsc::channel();
     let _watcher = app.watch(move |changes| tx.send(changes).unwrap()).unwrap();

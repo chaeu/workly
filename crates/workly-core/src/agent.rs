@@ -5,6 +5,7 @@ use crate::ids::split_id;
 use crate::model::parse_file;
 use crate::project::AGENTS_TEMPLATE;
 use crate::scan::rel;
+use crate::settings::expand_home;
 use crate::write::{LogEntry, atomic_write, log};
 use crate::{Error, Result, Workspace};
 use serde::{Deserialize, Serialize};
@@ -114,19 +115,41 @@ impl Workspace {
     }
 
     /// Status `doing` from backlog, todo or review. With an agent name, also
-    /// `agent.active` and `agent.since` (now). One write.
+    /// `agent.active` and `agent.since` (now); from `doing` only those. One write.
+    /// One agent per repo: refused while another task of a project with the
+    /// same first repo has an active agent.
     pub fn start_task(&mut self, id: &str, agent: Option<&str>, actor: &str) -> Result<()> {
         let status = self.status_of(id)?;
-        if !STARTABLE.contains(&status.as_str()) {
+        let from_doing = status == "doing" && agent.is_some();
+        if !STARTABLE.contains(&status.as_str()) && !from_doing {
             return Err(Error::InvalidTransition(format!("{id} is {status}; start works from {}", STARTABLE.join(", "))));
         }
-        let mut changes = vec![("status", Value::from("doing"))];
+        let mut changes = if from_doing { vec![] } else { vec![("status", Value::from("doing"))] };
         if let Some(name) = agent {
             check_name(name)?;
+            if let Some((other, repo)) = self.agent_in_repo(id) {
+                return Err(Error::InvalidTransition(format!("{other} already has an agent working in {repo}")));
+            }
             changes.push(("agent.active", Value::from(name)));
             changes.push(("agent.since", now()));
         }
         self.set_task_fields(id, &changes, actor)
+    }
+
+    /// First repo of the task's project, if the project has one.
+    pub fn task_repo(&self, id: &str) -> Option<String> {
+        let folder = self.index.task(id)?.project.as_ref()?;
+        let p = self.index.projects.iter().find(|p| &p.path == folder)?;
+        p.project.repos.first().cloned()
+    }
+
+    /// Another task with an active agent in the same first repo: its id and the repo.
+    fn agent_in_repo(&self, id: &str) -> Option<(String, String)> {
+        let repo = self.task_repo(id)?;
+        let other = (self.index.tasks.iter())
+            .filter(|t| t.task.id != id && t.task.agent.as_ref().is_some_and(|a| a.active.is_some()))
+            .find(|t| self.task_repo(&t.task.id).is_some_and(|r| expand_home(&r) == expand_home(&repo)))?;
+        Some((other.task.id.clone(), repo))
     }
 
     /// Status `review` from doing. Clears `agent.active`/`agent.since` and stamps
