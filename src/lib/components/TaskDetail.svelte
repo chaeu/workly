@@ -342,7 +342,7 @@
             <span class="w-caps">Agent activity · {runs.length}</span>
             {#if stale && t.agent?.active}
               <div class="t-stale" role="status">
-                <span>{agentName(t.agent.active)} has not reported since {stamp(workspace.index?.agent_activity?.[t.id] ?? t.agent.since)}. Agent inactive?</span>
+                <span>Agent inactive? {agentName(t.agent.active)} has not reported since {stamp(workspace.index?.agent_activity?.[t.id] ?? t.agent.since)}.</span>
                 <button type="button" class="w-btn w-btn--quiet" use:tip={"Clears agent.active and agent.since; the status stays"} onclick={() => clearAgent(id)}
                   >Clear agent</button
                 >
@@ -677,6 +677,10 @@
     gap: var(--w-s-2);
     color: var(--w-warn);
     font-size: var(--w-fs-small);
+  }
+  .t-stale .w-btn {
+    flex: none;
+    white-space: nowrap;
   }
   .t-run {
     display: flex;
