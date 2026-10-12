@@ -1,6 +1,7 @@
 //! All file logic for Workly workspaces. App and CLI only call into this crate.
 
 pub mod agent;
+pub mod backup;
 pub mod frontmatter;
 pub mod history;
 pub mod ids;

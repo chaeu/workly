@@ -46,14 +46,15 @@ pub fn watch(
 }
 
 /// Markdown files, folders (moved or deleted as a whole) and the two config
-/// files. Skips dotfiles (temp files, .DS_Store) and excluded folders.
+/// files. Skips dotfiles (temp files, .DS_Store), excluded folders and `.git`
+/// (a backup commit must never trigger a rescan, whatever `scan_exclude` says).
 fn relevant(root: &Path, path: &Path, exclude: &[String]) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
     let s = rel.to_string_lossy();
     if s == ".workly/config.yml" || s == ".workly/process.yml" {
         return Some(s.into_owned());
     }
-    if rel.components().any(|c| exclude.iter().any(|x| c.as_os_str() == x.as_str())) {
+    if rel.components().any(|c| c.as_os_str() == ".git" || exclude.iter().any(|x| c.as_os_str() == x.as_str())) {
         return None;
     }
     let name = rel.file_name()?.to_string_lossy();
@@ -82,5 +83,8 @@ mod tests {
         assert_eq!(r("/ws/.DS_Store"), None);
         assert_eq!(r("/ws/a/b.png"), None);
         assert_eq!(r("/elsewhere/a.md"), None);
+        // .git is ignored even when a config.yml drops it from scan_exclude.
+        assert_eq!(relevant(root, Path::new("/ws/.git/refs/heads/main"), &[]), None);
+        assert_eq!(relevant(root, Path::new("/ws/.git/objects/ab"), &[]), None);
     }
 }
