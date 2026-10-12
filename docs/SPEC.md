@@ -59,7 +59,7 @@ Ein Workspace ist ein Ordner, zugleich Obsidian-Vault und Git-Repo. Menschenlesb
 | Ebene | Ort | Inhalt |
 | --- | --- | --- |
 | Gerät | `~/Library/Application Support/Workly/settings.json` | Workspaces (Name + Pfad, mehrere, umschaltbar), Repos-Ordner, Theme, UI-Präferenzen, Agent-Funktionen an/aus, Stunden pro FTE und Jahr, Backup je Workspace (`backup: {interval: off | 15m | hourly | daily, push}` im Eintrag des Workspace, Standard hourly und Push an). Fenster (Größe, Position, maximiert) speichert das Plugin `window-state` daneben in `~/Library/Application Support/dev.chaeu.workly/.window-state.json` |
-| Workspace | `<workspace>/.workly/config.yml` | Ordner für neue Projekte und Inbox, Scan-Ausschlüsse, Task-Status, WIP-Limits, Agent-Standards |
+| Workspace | `<workspace>/.workly/config.yml` | Ordner für neue Projekte und Inbox, Scan-Ausschlüsse, Task-Status, WIP-Limits, Agent-Standards (`agent_defaults`: `runner`, `model`, `effort`, `stale_after_minutes`, Standard 30) |
 | Workspace | `<workspace>/.workly/process.yml` | Use-Case-Prozess (Phasen, Schritte, Gates, Kanten) und Bewertungskriterien (`assessment:` mit Kriterien je Achse samt Ankern, optional `fte`-Schwellen; K.-o.-Fragen optional) |
 
 ### Ordnerstruktur
@@ -85,7 +85,7 @@ Ein Workspace ist ein Ordner, zugleich Obsidian-Vault und Git-Repo. Menschenlesb
     process.yml
     agent/AGENTS.md            # global agent rules
     log/2026-10.jsonl          # every change, append-only
-    runs/<run-id>/             # agent runs (v1.5)
+    runs/<ID>/log.jsonl        # agent run log per task (wly task note), not in the backup
     trash/                     # deleted items, restorable
 ```
 
@@ -141,8 +141,7 @@ focus_order: 1                # 1-3
 order: 2                      # optional, manual position in its board column
 created: 2026-10-06
 done_at: null
-agent:                        # optional
-  ready: false
+agent:                        # optional; ready: (old files) is still read, never written
   runner: auto                # auto | codex | copilot | claude-code
   model: auto
   effort: auto                # auto | low | medium | high
@@ -155,6 +154,7 @@ Description and acceptance criteria.
 
 ## Updates
 - 2026-10-06 09:12 · codex: Pipeline green on dev.
+  Verify: open /blog on staging
 ```
 
 ### Regeln
@@ -162,7 +162,7 @@ Description and acceptance criteria.
 - **IDs:** Nächste Nummer = höchste vorhandene Nummer dieses Keys im Workspace + 1 (inklusive Papierkorb und aller IDs im Log, damit auch ein geleerter Papierkorb keine Nummer freigibt), kein gespeicherter Zähler. Eine ID bleibt beim Verschieben in ein anderes Projekt unverändert.
 - **Keys:** Vorschlag aus dem Titel: ist das erste Wort ein Kürzel in Großbuchstaben, wird es übernommen; sonst Anfangsbuchstaben der ersten bis zu drei Wörter; bei einem Wort die ersten drei Buchstaben. Bei Kollision Ziffer anhängen. `IN` ist reserviert.
 - **Verlustfreies Schreiben:** Nur betroffene Felder ändern. Unbekannte Felder, Reihenfolge, Kommentare, Leerzeilen und Body bleiben byte-gleich. Wichtigster Test im Projekt.
-- **Updates** werden als Zeile unter `## Updates` im Body angehängt (Abschnitt wird bei Bedarf angelegt). Format `- JJJJ-MM-TT HH:MM · <wer>: <Text>`; `wer` = Agent-Name, `me` für die App.
+- **Updates** werden als Zeile unter `## Updates` im Body angehängt (Abschnitt wird bei Bedarf angelegt). Format `- JJJJ-MM-TT HH:MM · <wer>: <Text>`; `wer` = Agent-Name, `me` für die App. Eine Review-Zusammenfassung (`wly task review --summary`) ist ein Eintrag mit Folgezeilen, je zwei Leerzeichen eingerückt; die App zeigt sie als einen Eintrag mit Zeilenumbrüchen. Agent-Notizen landen nicht hier, sondern im Run-Log (Abschnitt 5).
 - **Board-Reihenfolge:** In einer Spalte sortiert nach `order`, dann Priorität, dann ID; Tasks ohne `order` stehen hinten. Ziehen in eine andere Spalte ändert nur `status`; erst Umsortieren innerhalb einer Spalte schreibt `order` 1..n für die Tasks dieser Spalte (bzw. Zelle in der Projekt-Gruppierung).
 - **`done_at`** folgt dem Status: wird beim Wechsel auf `done` auf das heutige Datum gesetzt, beim Verlassen von `done` auf `null`.
 - **Fokus:** höchstens drei Tasks. Hinzufügen setzt `focus: <heute>` und `focus_order`; Entfernen löscht beide Zeilen. Werte von anderen Tagen bleiben liegen und werden ignoriert.
@@ -172,7 +172,7 @@ Description and acceptance criteria.
 - **Tasks-Board:** Tasks archivierter Projekte erscheinen nicht. In der Gruppierung nach Projekt hat die Inbox eine eigene Bahn; Ziehen in eine andere Bahn verschiebt die Datei (ID bleibt). Filter „Diese Woche“ = fällig bis einschließlich Sonntag, „Überfällig“ = fällig vor heute und nicht `done`.
 - **Löschen** verschiebt nach `.workly/trash/` (Pfad erhalten), wiederherstellbar. Ein gelöschtes Projekt ist ein Eintrag; seine vorher einzeln gelöschten Tasks bleiben beim Wiederherstellen im Papierkorb. **Papierkorb leeren** verschiebt alles in den macOS-Papierkorb (dort noch wiederherstellbar) und schreibt jede ID ins Log.
 - **Problems:** Je Problem Pfad, Meldung und, wo bekannt, ein Hinweis zur Behebung. Eindeutige Fälle (Zahl als Text, leerer Zahlwert, `process.yml` ohne `assessment:`) behebt ein Fix-Knopf: der Core berechnet den Fix beim Klick neu aus der Datei, ändert genau ein Feld oder hängt einen Block an und loggt. Alles andere: Hinweis, „Open in VS Code“ und Papierkorb (kaputte `_project.md` = ganzer Ordner; nie unter `.workly/`). Kein Ignorieren. Details: `docs/PROBLEMS.md`.
-- **Log:** Jede Änderung als JSON-Zeile in `.workly/log/JJJJ-MM.jsonl`: `{ts, actor, kind, id, field, from, to}`. `actor` = `app`, `cli`, `agent:<name>`. Ein Backup-Commit: `kind: backup`, `id` leer, `to: {sha, files, pushed, error}`.
+- **Log:** Jede Änderung als JSON-Zeile in `.workly/log/JJJJ-MM.jsonl`: `{ts, actor, kind, id, field, from, to}`. `actor` = `app`, `cli`, `agent:<name>`. Notizen im Run-Log stehen nur dort (Abschnitt 5). Ein Backup-Commit: `kind: backup`, `id` leer, `to: {sha, files, pushed, error}`.
 - **Use-Case-Verlauf:** Der Core liest das Log (nur lesen) und baut daraus pro Phase Zeitraum, Status-Episoden (mit dem letzten „Blocked by“) und die Entscheidungen aus `usecase.decisions` (Gate-Entscheidungen in der Phase des Gates, sonst nach Datum). `usecase.remove` setzt den Verlauf zurück. Der Verlauf kennt nur Änderungen über Workly; weicht die Datei vom Log ab, gilt die Datei (`step`, `step_since`).
 - **Ersparnis (`usecase.savings`):** Stunden und FTE werden berechnet, nie gespeichert. Stunden/Jahr = Σ `count` × Faktor(`per`) × `minutes` / 60 mit Faktor year 1, month 12, week 46, day 220 (Arbeitswochen/-tage, Konstanten in der App); FTE = Stunden / `fte_hours_per_year` (Geräte-Einstellung, Standard 1720). Die App schreibt immer die ganze Liste und prüft dabei: `what` nicht leer, `count` und `minutes` Zahlen ≥ 0, `per` aus der Liste. Ungültige Einträge von Hand stehen unter Problems, der Use Case lädt trotzdem. Anzeige: auf der Use-Case-Seite eine Karte unter der Beschreibung (Summe, eine Zeile pro Tätigkeit, Notiz), bearbeitet im Popup „Edit…“ (Tabelle, Notiz, Umrechnung); Detailkarte (Popup, Seitenleiste) zeigt in der Seitenspalte nur die Summe „≈ FTE · h/yr“, der Tooltip listet jede Tätigkeit und die Umrechnung (ohne Einträge: „No effort recorded“ mit Link zur Seite); sortierbare Spalte Effort (FTE-Wert) in der Liste (leer = hinten), Pill auf der Board-Karte bei > 0. Keine Summe im Cockpit, kein Automatisierungsgrad, keine Geldbeträge. UI-Label *Manual effort*, der Feldname bleibt `savings`.
 - **Bewertung (`usecase.assessment`):** Vor G0 „Pilot?“ und nach dem Pilot an G1 erneut. Die Methode steht in `process.yml` unter `assessment:` (`criteria:` mit `id`, `axis` value | feasibility, `label`, genau 3 `anchors` für 1, 2, 3, optional `fte: [a, b]` mit zwei aufsteigenden Zahlen > 0; optional `ko:` mit `id`, `label` – die Vorlage hat keine K.-o.-Fragen, ohne sie blendet die App jede K.-o.-Oberfläche aus); fehlt der Block, blendet die App jede Bewertung aus und zeigt unter Problems „Add default assessment“ (hängt den Block aus der eingebauten Vorlage an, siehe `docs/PROBLEMS.md`). Pro Use Case gibt es eine aktuelle Bewertung; eine Neubewertung überschreibt sie, der alte Stand steht im Log (`from`). K.-o.-Werte sind `pass` / `fail` / `open` (nicht yes/no, YAML 1.1), Punkte 1–3; ein fehlender Schlüssel heißt offen. Hat ein Kriterium `fte` und der Use Case Einträge in Manual effort, rechnet die App seine Punkte aus den FTE (≤ a → 1, > b → 3, sonst 2; Vorlage: `volume` mit `[0.5, 2]`); ein von Hand gesetzter Wert gilt nur ohne Effort-Einträge. Value, Feasibility (Durchschnitt der bewerteten Kriterien je Achse samt abgeleiteter, ohne Gewichte), Quadrant (Grenze 2,0: Quick win, Big bet, Fill-in, Drop; ein `fail` = K.O.) und offene Punkte werden berechnet, nie gespeichert. Die App schreibt immer den ganzen Block (ein Write, eine Logzeile, `ko` und `scores` als Flow-Maps, `null` entfernt ihn) und prüft dabei Werte, Datum und dass jede ID in `process.yml` steht. Ungültige Werte von Hand stehen unter Problems und gelten als offen, der Use Case lädt trotzdem. **Anzeige:** bewertet wird im Popup „Assess…“ auf dem Tab Use case (K.-o.-Fragen pass / fail / open, je Kriterium 1 · 2 · 3 · ? mit den drei Ankern sichtbar, ein abgeleitetes Kriterium fix mit „From Manual effort: 0.8 FTE“, Notiz, Ergebnis live im Fuß samt Rechenweg je Achse, z. B. „Value (3 + 2 + 2) / 3 = 2.3“); „Save“ schreibt den Block mit heutigem Datum, ohne abgeleitete Kriterien und ohne IDs, die nicht mehr in `process.yml` stehen (so räumt „Re-assess…“ alte Bewertungen auf), „Clear…“ nach Rückfrage `null`. Die Pill zeigt den Quadranten (Quick win `--w-ok`, Big bet `--w-info`, Fill-in `--w-warn`, Drop `--w-hold`), K.O. (`--w-danger`) sticht den Quadranten, „Incomplete“, solange eine Achse keine Punkte hat. Ein offenes K.-o. zeigt weiter den Quadranten und steht unter den offenen Punkten.
@@ -217,8 +217,9 @@ Läuft auf demselben Core wie die App. Agents (und der Nutzer) lesen und ändern
 wly task list [--project WR] [--status todo] [--json]
 wly task show WR-12 [--json]          # task + project + agent files as context
 wly task start WR-12 --agent codex    # status doing, agent.active + agent.since set
-wly task note WR-12 "text"            # appends to ## Updates
-wly task review WR-12 [--commit a3f9c1]   # status review, agent.active cleared; never done
+wly task note WR-12 "text"            # appends to the run log .workly/runs/WR-12/log.jsonl
+wly task note WR-12 "text" --to-body  # appends to ## Updates instead (escape hatch)
+wly task review WR-12 [--summary "…"] [--commit a3f9c1]   # status review, agent.active cleared; never done
 wly task add "title" [--project WR | --inbox] [--priority 2]
 wly project list [--json]
 ```
@@ -229,7 +230,16 @@ Exit-Codes: 0 ok, 1 Nutzungsfehler, 2 nicht gefunden, 3 ungültiger Übergang. `
 
 - `<projekt>/agent/AGENTS.md`: Projekt-Anweisungen.
 - `<projekt>/agent/skills/<name>/SKILL.md`: wiederkehrende Abläufe.
-- `<workspace>/.workly/agent/AGENTS.md`: globale Regeln (Status nur über `wly`, nie `done`, nichts löschen).
+- `<workspace>/.workly/agent/AGENTS.md`: globale Regeln. Die eingebaute Vorlage (= Fixture):
+  1. Task-Status nur über `wly`; Start `wly task start <ID> --agent <name>`.
+  2. Nie `git init`, nie Repos anlegen, nie Remotes ändern.
+  3. Nie committen, pushen, stashen oder resetten; Änderungen bleiben im Working Tree, der Nutzer committet aus Workly.
+  4. Kein Repo oder das Repo nicht gefunden: `wly task note <ID> "BLOCKED: <Grund>"` und aufhören.
+  5. `wly task note` sparsam, nur für Meilensteine, die einen Menschen interessieren.
+  6. Abschluss mit genau einem `wly task review <ID> --summary "<3–6 Zeilen: was geändert, wie prüfen, was offen>"`; nie `done`.
+  7. Nur im Repo arbeiten, in dem der Agent gestartet wurde; außerhalb nichts löschen.
+
+  `init` überschreibt eine vorhandene `AGENTS.md` nie. Deshalb trägt „Copy prompt“ dieselben Regeln; bestehende Workspaces passt der Nutzer von Hand an.
 
 Beim Start setzt Workly den Kontext zusammen: globale Regeln, Projekt-Anweisungen, Skills, Task.
 
@@ -244,11 +254,21 @@ Claude Code folgt als weiterer Adapter.
 
 ### Übergabe per Prompt (Probebetrieb)
 
-Bis zur Entscheidung über M7 startet Workly keinen Agent selbst. Die Task-Detailkarte hat im Agent-Bereich „Copy prompt“ (kurzer Prompt: Task-ID, zuerst `wly task show <ID>`, dann `start`/`note`/`review` mit `--agent <runner>`; bei `doing` ohne `start`) und „Open repo“ (erstes Repo des Projekts in VS Code). Der Prompt wird in Copilot Chat oder Codex in VS Code eingefügt. Runner = `agent.runner`, sonst `agent_defaults.runner`, sonst `agent`. Die Ansicht „Agents“ zeigt die Agent-Aktivität (Working, Back for review, Ready) und eine Anleitung für den Test von `wly`.
+Bis zur Entscheidung über M7 startet Workly keinen Agent selbst. Die Task-Detailkarte hat im Agent-Bereich „Copy prompt“ (Prompt: Task-ID, zuerst `wly task show <ID>`, dann die globalen Regeln mit `--agent <runner>`; bei `doing` ohne `start`) und „Open repo“ (erstes Repo des Projekts in VS Code). Der Prompt wird in Copilot Chat oder Codex in VS Code eingefügt. Runner = `agent.runner`, sonst `agent_defaults.runner`, sonst `agent`. Die Ansicht „Agents“ zeigt die Agent-Aktivität (Working, Back for review) und eine Anleitung für den Test von `wly`. `agent.ready` ist veraltet: alte Dateien laden weiter, Workly schreibt es nie und zeigt es nicht.
+
+### Run-Log
+
+`wly task note` hängt eine JSON-Zeile an `.workly/runs/<ID>/log.jsonl`: `{ts, agent, run, text}`. `run` = `agent.since` des laufenden Laufs (solange `agent.active` gesetzt ist), sonst `null`. Die Task-Datei bleibt unverändert, `.workly/log/` bekommt keine Zeile, das Backup ignoriert `.workly/runs/`. `--to-body` schreibt wie früher unter `## Updates`; Notizen aus der App gehen immer dorthin. Workly baut den Pfad nur aus einer ID der Form `KEY-N`.
+
+Der Watcher meldet Änderungen unter `.workly/runs/` ohne Rescan des Index; die Detailkarte liest den Run-Log neu. Abschnitt **Agent activity** (hinter `agents_enabled`, nur bei Einträgen oder stale): eingeklappt der jüngste Eintrag und „N more“, ausgeklappt alle, neueste zuerst, je Zeit und eine Zeile; lange Zeilen gekürzt, ein Klick zeigt die ganze.
+
+### Stale
+
+Letzte Aktivität = jüngster Run-Log-Eintrag des laufenden Laufs, sonst `agent.since`. Ist sie bei gesetztem `agent.active` älter als `agent_defaults.stale_after_minutes` (Standard 30), zeigt die Karte „Agent inactive?“ (`--w-warn`, ohne Ring) statt „Codex working · n min“, und die Detailkarte bietet „Clear agent“: löscht `agent.active` und `agent.since` in einem Write mit Log, der Status bleibt. Kein PID-Watching, kein `agent.status`, kein `last_seen`: Copilot und Codex laufen als VS-Code-Extensions, es gibt keinen Prozess, den Workly sehen könnte.
 
 ### Schalter Agent-Funktionen
 
-`agents_enabled` in den Geräte-Einstellungen (Standard: aus). Aus blendet jede Agent-Oberfläche aus: Ansicht und Menüpunkt „Agents“, Agent-Bereich der Task-Detailkarte, Agent-Badge, -Ring und Commit auf Karten, Agent-Dateien in der Projektansicht, „Install CLI“ und später „Start agent“. Nichts wird gelöscht: `agent:`-Felder bleiben in den Dateien, `wly` funktioniert weiter. Jede neue Agent-Oberfläche hängt an diesem einen Schalter.
+`agents_enabled` in den Geräte-Einstellungen (Standard: aus). Aus blendet jede Agent-Oberfläche aus: Ansicht und Menüpunkt „Agents“, Agent-Bereich und Agent activity der Task-Detailkarte samt „Clear agent“, Agent-Badge (auch „Agent inactive?“), -Ring und Commit auf Karten, Agent-Dateien in der Projektansicht, „Install CLI“ und später „Start agent“. Nichts wird gelöscht: `agent:`-Felder bleiben in den Dateien, `wly` funktioniert weiter. Jede neue Agent-Oberfläche hängt an diesem einen Schalter.
 
 ### Stufen
 
