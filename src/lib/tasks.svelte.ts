@@ -83,17 +83,25 @@ export function runnerOf(t: TaskEntry) {
   return pick(t.agent?.runner) ?? pick(workspace.index?.config.agent_defaults?.runner) ?? "agent";
 }
 
-/** What you paste into Copilot Chat or Codex: the context comes from `wly task show`, so the agent goes through the CLI. */
+/**
+ * What you paste into Copilot Chat or Codex: the context comes from `wly task show`, so the agent goes through the CLI.
+ * Carries the global rules too: existing workspaces keep their own .workly/agent/AGENTS.md.
+ */
 export function agentPrompt(t: TaskEntry) {
   const name = runnerOf(t);
+  const id = t.id;
   return [
-    `Work on Workly task ${t.id} ("${t.title}") in this repo.`,
-    `1. Run \`wly task show ${t.id}\` first. Follow the workspace rules, project instructions and skills it prints.`,
+    `Work on Workly task ${id} ("${t.title}") in this repo. Report through wly as agent "${name}".`,
+    `1. Run \`wly task show ${id}\` first. Follow the workspace rules, project instructions and skills it prints.`,
     t.status === "doing"
-      ? `2. Report through wly as agent "${name}". The task is already in progress, so skip \`wly task start\`.`
-      : `2. Report through wly as agent "${name}": start with \`wly task start ${t.id} --agent ${name}\`.`,
-    `3. After each meaningful step: \`wly task note ${t.id} "<short update>" --agent ${name}\`.`,
-    `4. When done: commit, then \`wly task review ${t.id} --commit <sha> --agent ${name}\`. Never set the task to done.`,
+      ? `2. The task is already in progress, so skip \`wly task start\`. Change task state only through wly.`
+      : `2. Start with \`wly task start ${id} --agent ${name}\`. Change task state only through wly.`,
+    `3. Never run git init, never create repositories, never change remotes.`,
+    `4. Never commit, push, stash or reset. Leave your changes in the working tree; the user commits from Workly.`,
+    `5. No repo, or you cannot find the repo you are supposed to work in: \`wly task note ${id} "BLOCKED: <reason>" --agent ${name}\` and stop.`,
+    `6. Use \`wly task note ${id} "<text>" --agent ${name}\` sparingly: only for milestones a human cares about.`,
+    `7. Finish with exactly one \`wly task review ${id} --summary "<3-6 lines: what changed, how to verify, open points>" --agent ${name}\`. Never set the task to done.`,
+    `8. Work only inside this repo. Delete nothing outside it.`,
   ].join("\n");
 }
 
