@@ -21,6 +21,7 @@ export type TaskEntry = {
   [field: string]: unknown;
 };
 export type AgentState = {
+  /** Deprecated (B2): still loaded from old files, never written. */
   ready: boolean;
   runner: string | null;
   model: string | null;

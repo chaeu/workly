@@ -296,10 +296,6 @@
           <div class="t-group">
             <span class="w-caps">Agent</span>
             <dl class="t-kv">
-              <dt>Ready</dt>
-              <dd>
-                <input type="checkbox" checked={t.agent?.ready ?? false} aria-label="Ready for an agent" onchange={(e) => save("agent.ready", e.currentTarget.checked)} />
-              </dd>
               <dt>Runner</dt>
               <dd>
                 <select class="field" value={t.agent?.runner ?? "auto"} aria-label="Runner" onchange={(e) => save("agent.runner", e.currentTarget.value)}>

@@ -2,7 +2,7 @@
   import { goto } from "$app/navigation";
   import TaskDetail from "$lib/components/TaskDetail.svelte";
   import { agentsEnabled, tilde, workspace, type TaskEntry } from "$lib/stores/workspace.svelte";
-  import { agentBadge, agentName, byBoardOrder, projectOf, today } from "$lib/tasks.svelte";
+  import { agentBadge, byBoardOrder, projectOf, today } from "$lib/tasks.svelte";
 
   // Agent features off: the view does not exist.
   $effect(() => {
@@ -14,12 +14,11 @@
   const groups = $derived([
     { title: "Working", list: tasks.filter((t) => t.agent?.active) },
     { title: "Back for review", list: tasks.filter((t) => t.status === "review" && (t.agent?.last_run || t.agent?.commit)) },
-    { title: "Ready for an agent", list: tasks.filter((t) => t.agent?.ready && !t.agent.active && !["doing", "review", "done"].includes(t.status)) },
   ].map((g) => ({ ...g, list: g.list.sort(byBoardOrder) })));
   const active = $derived(groups.some((g) => g.list.length));
 
   const stateOf = (t: TaskEntry) =>
-    agentBadge(t) ?? (t.agent?.commit ? `commit ${t.agent.commit.slice(0, 7)}` : t.status === "review" ? "review" : t.agent?.runner && t.agent.runner !== "auto" ? agentName(t.agent.runner) : "ready");
+    agentBadge(t) ?? (t.agent?.commit ? `commit ${t.agent.commit.slice(0, 7)}` : "review");
 
   // A real id for the examples: a todo task in a project with a repo, else any task.
   const example = $derived(

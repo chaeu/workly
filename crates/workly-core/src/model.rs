@@ -31,6 +31,7 @@ pub struct Task {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentState {
+    /// Deprecated: still loaded from old files, never written.
     #[serde(default)]
     pub ready: bool,
     pub runner: Option<String>,
