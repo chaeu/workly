@@ -215,6 +215,8 @@ Danach entscheiden und in `docs/SPEC.md`, Abschnitt 7, nachtragen:
 
 ## M7 – „Start agent“ (Opus, optional)
 
+**Superseded by B9 in `docs/BACKLOG-2026-10.md`.** The prompt below is kept for history only.
+
 Nur bauen, wenn der Probebetrieb dafür spricht.
 
 ```

@@ -15,8 +15,8 @@ Workly ist eine eigenständige, leichte macOS-App. Dateien sind die Quelle der W
 | Tasks | Liegen im Projektordner unter `tasks/`, Tasks ohne Projekt in `inbox/` | Alles zu einem Projekt an einem Ort, auch für Agents |
 | IDs | Projekt-Key + Nummer (`WR-12`); Key wird aus dem Namen vorgeschlagen, beim Anlegen änderbar, danach fest; Inbox-Tasks nutzen den reservierten Key `IN` | Lesbar in Commits und Branches |
 | Einstellungen | Pfade pro Gerät in der App, Regeln pro Workspace in `.workly/config.yml` | Standalone-fähig; derselbe Workspace funktioniert auf mehreren Macs |
-| Agents | CLI `wly` als einzige Schreibschnittstelle für Agents; Ausführung durch Runner-Adapter (Codex CLI, Copilot in VS Code), erst nach dem Probebetrieb | Workly koordiniert und protokolliert, Agents arbeiten in ihren eigenen Werkzeugen |
-| Agent-Funktionen | Abschaltbar per Geräte-Einstellung `agents_enabled` (Standard: aus). Aus = Basisversion ohne Agent-Oberfläche; Felder in den Dateien und die CLI bleiben | Workly bleibt ohne Agents ein schlankes PM-Werkzeug; ob „Start agent“ gebaut wird, entscheidet der Probebetrieb |
+| Agents | CLI `wly` als einzige Schreibschnittstelle für Agents; Ausführung durch Runner-Adapter (Copilot per `code chat` in VS Code, Codex CLI im Terminal), „Start agent“ seit B9 | Workly koordiniert und protokolliert, Agents arbeiten in ihren eigenen Werkzeugen |
+| Agent-Funktionen | Abschaltbar per Geräte-Einstellung `agents_enabled` (Standard: aus). Aus = Basisversion ohne Agent-Oberfläche; Felder in den Dateien und die CLI bleiben | Workly bleibt ohne Agents ein schlankes PM-Werkzeug |
 | Sprache | UI-Labels Englisch, Deutsch später als zweite Sprache; Datei-IDs immer Englisch | |
 | Name | Workly (Bundle-ID z. B. `dev.chaeu.workly`, CLI `wly`, Ordner `.workly/`) | |
 | Design | Workly Design System (`docs/design/`) | Steht bereits, inklusive Prototypen |
@@ -86,6 +86,8 @@ Ein Workspace ist ein Ordner, zugleich Obsidian-Vault und Git-Repo. Menschenlesb
     agent/AGENTS.md            # global agent rules
     log/2026-10.jsonl          # every change, append-only
     runs/<ID>/log.jsonl        # agent run log per task (wly task note), not in the backup
+    runs/<ID>/prompt.md        # prompt of the last Start agent
+    runs/<ID>/start.command    # Codex start script of the last Start agent (mode 700)
     trash/                     # deleted items, restorable
 ```
 
@@ -216,7 +218,7 @@ Läuft auf demselben Core wie die App. Agents (und der Nutzer) lesen und ändern
 ```
 wly task list [--project WR] [--status todo] [--json]
 wly task show WR-12 [--json]          # task + project + agent files as context
-wly task start WR-12 --agent codex    # status doing, agent.active + agent.since set
+wly task start WR-12 --agent codex    # status doing, agent.active + agent.since set; from doing only the agent fields
 wly task note WR-12 "text"            # appends to the run log .workly/runs/WR-12/log.jsonl
 wly task note WR-12 "text" --to-body  # appends to ## Updates instead (escape hatch)
 wly task review WR-12 [--summary "…"] [--commit a3f9c1]   # status review, agent.active cleared; never done
@@ -245,16 +247,20 @@ Beim Start setzt Workly den Kontext zusammen: globale Regeln, Projekt-Anweisunge
 
 ### Runner-Adapter
 
-Jeder Agent ist ein Adapter: Kontext zusammensetzen, starten, Status über `wly`. v1:
+Jeder Agent ist ein Adapter: Kontext zusammensetzen, starten, Status über `wly`. Workly übergibt an die Werkzeuge, in denen der Nutzer ohnehin arbeitet, und sieht danach keinen Prozess mehr (siehe Stale). v1, Knopf **„Start agent“** im Agent-Bereich der Task-Detailkarte (Primärknopf, hinter `agents_enabled`):
 
-- **Codex CLI:** öffnet Terminal im Repo und startet Codex mit dem zusammengesetzten Prompt.
-- **Copilot in VS Code:** öffnet die `.code-workspace`-Datei und legt den Prompt in die Zwischenablage.
+1. **Ein Agent pro Repo:** `start_task` im Core (also auch `wly task start`, Exit 3) verweigert mit der ID des anderen Tasks, solange ein anderer Task, dessen Projekt dasselbe erste Repo hat, `agent.active` gesetzt hat. Ohne Agent-Namen gibt es keine Prüfung.
+2. **Start** über dieselbe Core-Funktion als App: Status `doing`, `agent.active` = Runner, `agent.since`. Aus `doing` setzt sie nur die Agent-Felder.
+3. Der Prompt (derselbe wie „Copy prompt“, mit „bereits gestartet“) landet in `.workly/runs/<ID>/prompt.md`; im argv steht nie der Prompt, nur sein Pfad.
+4. **Copilot:** `code` aus dem App-Bundle der neuesten VS-Code-Installation ab 1.98 (`/Applications`, sonst Spotlight nach `com.microsoft.VSCode`; nie PATH, eine aus dem Finder gestartete App hat den Shell-PATH nicht). Erst `code <key>.code-workspace` (vorher neu geschrieben), nach einer kurzen Pause `code chat -m agent -r -a <prompt.md> "<Zeile>"`: Chat im Agent-Modus im zuletzt aktiven Fenster, mit dem Prompt als angehängter Datei, sofort abgeschickt. Ein nicht vertrauter Workspace fragt vorher nach Workspace Trust.
+5. **Codex:** `.workly/runs/<ID>/start.command` (Modus 700), geöffnet mit `open -a Terminal` (kein AppleScript, keine Bedienungshilfen-Freigabe). Terminal führt es in der Login-Shell des Nutzers aus, `codex` kommt also aus dessen PATH, sonst aus der neuesten VS-Code-Extension (`~/.vscode/extensions/openai.chatgpt-*/bin/macos-aarch64/codex`), sonst eine lesbare Meldung. Das Skript wechselt ins erste Repo, setzt `WORKLY_WORKSPACE` und `WORKLY_AGENT=codex` und startet `codex [-m <model>] [-c model_reasoning_effort=<effort>] "$(cat prompt.md)"`; Modell und Effort aus dem Task, sonst `agent_defaults`, „auto“ = kein Flag. Jeder Pfad im Skript ist in einfachen Anführungszeichen (ein Helfer), der Prompt steht nie im Skript.
+6. **Rückfall** (VS Code oder `code` fehlt, Startfehler): Prompt in die Zwischenablage, Workspace in VS Code öffnen, Banner mit Grund und „Prompt copied – paste into the chat“. Der Task bleibt gestartet. Nie im UI-Thread.
 
-Claude Code folgt als weiterer Adapter.
+Deaktiviert mit Grund: Projekt ohne Repo, Repo fehlt auf diesem Mac, Task `done`, anderer Agent im Repo, Agent schon aktiv an diesem Task, Runner weder Copilot noch Codex. „Copy prompt“ bleibt immer verfügbar. Runner = `agent.runner`, sonst `agent_defaults.runner`. Claude Code folgt als weiterer Adapter.
 
-### Übergabe per Prompt (Probebetrieb)
+### Übergabe per Prompt
 
-Bis zur Entscheidung über M7 startet Workly keinen Agent selbst. Die Task-Detailkarte hat im Agent-Bereich „Copy prompt“ (Prompt: Task-ID, zuerst `wly task show <ID>`, dann die globalen Regeln mit `--agent <runner>`; bei `doing` ohne `start`) und „Open repo“ (erstes Repo des Projekts in VS Code). Der Prompt wird in Copilot Chat oder Codex in VS Code eingefügt. Runner = `agent.runner`, sonst `agent_defaults.runner`, sonst `agent`. Die Ansicht „Agents“ zeigt die Agent-Aktivität (Working, Back for review) und eine Anleitung für den Test von `wly`. `agent.ready` ist veraltet: alte Dateien laden weiter, Workly schreibt es nie und zeigt es nicht.
+„Copy prompt“ im Agent-Bereich der Task-Detailkarte (Prompt: Task-ID, zuerst `wly task show <ID>`, dann die globalen Regeln mit `--agent <runner>`; bei `doing` ohne `start`; danach Beschreibung und Acceptance-Punkte des Tasks, wenn vorhanden) und „Open repo“ (erstes Repo des Projekts in VS Code). Der Prompt wird in Copilot Chat oder Codex eingefügt; „Start agent“ nimmt denselben Text. Runner = `agent.runner`, sonst `agent_defaults.runner`, sonst `agent`. Die Ansicht „Agents“ zeigt die Agent-Aktivität (Working, Back for review) und eine Anleitung für den Test von `wly`. `agent.ready` ist veraltet: alte Dateien laden weiter, Workly schreibt es nie und zeigt es nicht.
 
 ### Run-Log
 
@@ -268,13 +274,13 @@ Letzte Aktivität = jüngster Run-Log-Eintrag des laufenden Laufs, sonst `agent.
 
 ### Schalter Agent-Funktionen
 
-`agents_enabled` in den Geräte-Einstellungen (Standard: aus). Aus blendet jede Agent-Oberfläche aus: Ansicht und Menüpunkt „Agents“, Agent-Bereich und Agent activity der Task-Detailkarte samt „Clear agent“, Agent-Badge (auch „Agent inactive?“), -Ring und Commit auf Karten, Agent-Dateien in der Projektansicht, „Install CLI“ und später „Start agent“. Nichts wird gelöscht: `agent:`-Felder bleiben in den Dateien, `wly` funktioniert weiter. Jede neue Agent-Oberfläche hängt an diesem einen Schalter.
+`agents_enabled` in den Geräte-Einstellungen (Standard: aus). Aus blendet jede Agent-Oberfläche aus: Ansicht und Menüpunkt „Agents“, Agent-Bereich und Agent activity der Task-Detailkarte samt „Clear agent“, Agent-Badge (auch „Agent inactive?“), -Ring und Commit auf Karten, Agent-Dateien in der Projektansicht, „Install CLI“ und „Start agent“. Nichts wird gelöscht: `agent:`-Felder bleiben in den Dateien, `wly` funktioniert weiter. Jede neue Agent-Oberfläche hängt an diesem einen Schalter.
 
 ### Stufen
 
 | Stufe | Inhalt |
 | --- | --- |
-| v1 | Agent-Dateien, CLI, Schalter, Live-Status auf der Karte; Button „Start agent“ mit zwei Adaptern nur, wenn der Probebetrieb dafür spricht (M7) |
+| v1 | Agent-Dateien, CLI, Schalter, Live-Status auf der Karte; „Start agent“ mit zwei Adaptern (Copilot per `code chat`, Codex im Terminal), ein Agent pro Repo (M7, gebaut als B9) |
 | v1.5 | Queue: Läufe ohne Fenster nacheinander, Git-Worktree je Task auf Branch `wly/WR-12`, Agent-Ansicht (Queue, Running, Review, Failed) mit Live-Log |
 | v2 | Parallele Läufe, automatische Modellwahl, Budgets, Folge-Tasks, MCP-Server |
 
@@ -291,7 +297,7 @@ Letzte Aktivität = jüngster Run-Log-Eintrag des laufenden Laufs, sonst `agent.
 | Detail card | Popup oder Seitenleiste (schließt mit Esc, ✕ oder einem Klick außerhalb; beide liegen über einem grauen Overlay, ein Klick daneben schließt nur und öffnet nichts), Status, Priorität, Fälligkeit, Tags, Beschreibung, Updates | Wie im Design System |
 | Focus | Streifen mit bis zu drei Tasks, ein- und ausblendbar | `focus`, `focus_order` gesetzt |
 | Use-case cockpit | Liste (sortierbare Tabelle, Standard; Spalte „Assessment“ sortiert Quick win, Big bet, Fill-in, Drop, K.O., Incomplete, unbewertet immer zuletzt), Board, Prozesslandkarte und Matrix (nur mit `assessment:` in `process.yml`, sonst kein Knopf: 2×2-Feld, x = Feasibility 1–3 nach rechts leichter, y = Value 1–3 nach oben mehr, Mittellinien bei 2,0, Quadrantnamen in den Ecken; ein Punkt pro bewertetem Use Case in seiner Projektfarbe, daneben ein Label mit Key und Titel – kollidierende Labels weichen aus und behalten eine Linie zum Punkt; Tooltip mit Titel, FTE, Rechenweg je Achse und offenen Punkten, Klick öffnet die Detailkarte; rechts eine Liste nach Quadranten (Anzahl, Σ FTE; je Use Case V/F, Schritt, offene Punkte), so hoch wie das Feld und intern scrollend, Hover verbindet Liste und Punkt; ein Stift an jeder Listenzeile und jedem Chip öffnet „Assess…“ direkt über der Matrix, nach dem Speichern bleibt die Matrix offen und der Punkt springt; „How is this calculated?“ unter dem Feld zeigt beim Hover die Methode aus `process.yml` (Kriterien je Achse, Durchschnitt ohne Gewichte, Grenze 2,0 mit Quadrant-Tabelle, FTE-Schwellen abgeleiteter Kriterien, K.-o.-Fragen nur mit `ko:`); darunter die Zeilen „K.O. (n)“ (nur mit `ko:`) und „Not assessed (n)“ mit Chips, Incomplete steht bei Not assessed; Schalter Standard | Advanced links neben „Details“: Advanced zeigt Blasengröße nach FTE, Farbe nach Quadrant, gestrichelt = noch in der ersten Phase; dieselben Filter wie die Liste; kein Drag, Punkte gibt es nur im Formular), Detailkarte als leichte Version der Use-Case-Seite (Popup `--w-uc-detail-w` breit, mindestens `--w-uc-detail-min-h` hoch, oder Seitenleiste; Hauptspalte: Blocked by, Current state, Next step; Seitenspalte: Classification, Assessment (nur die Pill, Tooltip mit Value/Feasibility und offenen Punkten), Manual effort (nur Summe), Tasks, Entscheidungen; bearbeitbar sind Titel, Status, Texte, Classification, Task-Häkchen und Gate-Buttons; keine Beschreibung; „Open page ↗“ im Kopf neben ✕ oder ⌘↩ führt zum Tab Use case), Filter, Knopf „Edit process“ (öffnet `process.yml` in VS Code) | Wie im Prototyp, Prozess aus `process.yml`. Areas sind Freitext mit Vorschlägen (`process.yml`-Areas ∪ von Use Cases benutzte Areas), der Core prüft sie nicht gegen die Liste. Board nach Area zeigt nur Areas mit Use Cases (Reihenfolge aus `process.yml`) |
-| Agents | CLI `wly`, Agent-Dateien, Schalter, Live-Status, Ansicht mit Aktivität und Test-Anleitung, „Copy prompt“ in der Task-Karte; „Start agent“ (Codex, Copilot) nur nach Entscheidung im Probebetrieb | Ein Agent setzt einen Task über `wly` auf Review; Schalter aus zeigt keine Agent-Oberfläche |
+| Agents | CLI `wly`, Agent-Dateien, Schalter, Live-Status, Ansicht mit Aktivität und Test-Anleitung, „Start agent“ (Copilot per `code chat` in VS Code, Codex im Terminal; ein Agent pro Repo) und „Copy prompt“ in der Task-Karte | Ein Agent setzt einen Task über `wly` auf Review; Schalter aus zeigt keine Agent-Oberfläche |
 | Log | Jede Änderung in `.workly/log/` | |
 
 **Nicht in v1:** Queue-Runner, Wochenreview, Jira/SharePoint, Markdown-Editor, Geräte-Sync, Mobile.
@@ -309,7 +315,7 @@ Letzte Aktivität = jüngster Run-Log-Eintrag des laufenden Laufs, sonst `agent.
 | M4 | Use-Case-Cockpit | Wie im Prototyp |
 | M5 | Schalter Agent-Funktionen, CLI `wly` + Agent-Dateien | Ein Agent setzt einen Fixture-Task über `wly` auf Review; Schalter aus blendet alle Agent-Oberfläche aus |
 | M6 | Kürzel, leere Zustände, Fehler, Build, Installation | Ein Tag echter Einsatz |
-| – | Probebetrieb, 1–2 Wochen echter Einsatz | Entscheidung über M7 ist hier nachgetragen |
-| M7 (optional) | „Start agent“ mit Codex- und Copilot-Adapter, Live-Status | Ein Klick führt vom Task zum laufenden Agent, Status kommt zurück |
+| – | Probebetrieb, 1–2 Wochen echter Einsatz | Entschieden 2026-10: M7 wird gebaut, neu zugeschnitten als B9 (`docs/BACKLOG-2026-10.md`) |
+| M7 = B9 | „Start agent“: Copilot per `code chat` in VS Code, Codex im Terminal, Live-Status | Ein Klick führt vom Task zum laufenden Agent, Status kommt zurück |
 
-**Reihenfolge:** Der Agent-Start (M7) ist der teuerste und unsicherste Teil. Er kommt erst nach dem Probebetrieb und nur, wenn dort der Wunsch entsteht, einen Agent aus der App zu starten. Sonst endet v1 nach M6.
+**Reihenfolge:** Der Agent-Start (M7) kam erst nach dem Probebetrieb. Dort war der Wunsch da, er wurde im Oktober 2026 als B9 gebaut: Übergabe an VS Code und Terminal statt eigener Prozessüberwachung.
