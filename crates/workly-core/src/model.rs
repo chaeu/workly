@@ -307,11 +307,13 @@ pub struct AgentDefaults {
     pub runner: String,
     pub model: String,
     pub effort: String,
+    /// No run-log entry for this long while `agent.active` is set: "Agent inactive?".
+    pub stale_after_minutes: u32,
 }
 
 impl Default for AgentDefaults {
     fn default() -> Self {
-        AgentDefaults { runner: "auto".into(), model: "auto".into(), effort: "auto".into() }
+        AgentDefaults { runner: "auto".into(), model: "auto".into(), effort: "auto".into(), stale_after_minutes: 30 }
     }
 }
 

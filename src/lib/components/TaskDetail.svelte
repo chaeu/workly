@@ -18,8 +18,11 @@
     openRepo,
     copyText,
     inDailyWork,
+    runLog,
+    clearAgent,
+    type RunEntry,
   } from "$lib/stores/workspace.svelte";
-  import { agentName, agentPrompt, confirmDeleteTask, projectOf, rawDescription, shortDate, splitBody, today } from "$lib/tasks.svelte";
+  import { agentName, agentPrompt, agentStale, confirmDeleteTask, projectOf, rawDescription, shortDate, splitBody, today } from "$lib/tasks.svelte";
 
   let { id, mode, focusIds, onclose }: { id: string; mode: "popup" | "panel"; focusIds: string[]; onclose: () => void } = $props();
 
@@ -45,6 +48,17 @@
     if (path) readMarkdown(path).then((b) => (body = b), (e) => (workspace.error = String(e)));
   });
   const parts = $derived(splitBody(body));
+
+  // Agent activity: the run log, newest first; re-read with the index (the watcher reports .workly/runs/).
+  let runs = $state<RunEntry[]>([]);
+  let runsOpen = $state(false);
+  let runOpen = $state(-1);
+  $effect(() => {
+    void workspace.index;
+    if (t && agentsEnabled()) runLog(id).then((r) => (runs = r.reverse()), () => (runs = []));
+  });
+  const shownRuns = $derived(runsOpen ? runs : runs.slice(0, 1));
+  const stale = $derived(!!t && agentStale(t));
   const html = $derived(renderMarkdown(parts.description));
 
   /** Write one field; a refused write puts the file's value back into the input. */
@@ -324,6 +338,29 @@
                 >
               {/if}
             </div>
+          </div>
+        {/if}
+
+        {#if agentsEnabled() && (runs.length || stale)}
+          <div class="t-group">
+            <span class="w-caps">Agent activity · {runs.length}</span>
+            {#if stale && t.agent?.active}
+              <div class="t-stale" role="status">
+                <span>{agentName(t.agent.active)} has not reported since {stamp(workspace.index?.agent_activity?.[t.id] ?? t.agent.since)}. Agent inactive?</span>
+                <button type="button" class="w-btn w-btn--quiet" use:tip={"Clears agent.active and agent.since; the status stays"} onclick={() => clearAgent(id)}
+                  >Clear agent</button
+                >
+              </div>
+            {/if}
+            {#each shownRuns as e, i (i)}
+              <button type="button" class="t-run" class:open={runOpen === i} aria-expanded={runOpen === i} onclick={() => (runOpen = runOpen === i ? -1 : i)}>
+                <span class="w-mono">{stamp(e.ts)}</span>
+                <span class="t-run-text">{e.agent}: {e.text}</span>
+              </button>
+            {/each}
+            {#if runs.length > 1}
+              <button type="button" class="t-more" onclick={() => ((runsOpen = !runsOpen), (runOpen = -1))}>{runsOpen ? "Show less" : `${runs.length - 1} more`}</button>
+            {/if}
           </div>
         {/if}
 
@@ -636,6 +673,56 @@
     display: block;
     color: var(--w-muted);
     margin-bottom: 2px;
+  }
+  .t-stale {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--w-s-2);
+    color: var(--w-warn);
+    font-size: var(--w-fs-small);
+  }
+  .t-run {
+    display: flex;
+    gap: var(--w-s-2);
+    min-width: 0;
+    border: 0;
+    border-radius: var(--w-r-sm);
+    padding: 2px 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: var(--w-fs-small);
+    text-align: left;
+    cursor: pointer;
+  }
+  .t-run .w-mono {
+    flex: none;
+    color: var(--w-muted);
+  }
+  .t-run-text {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .t-run.open .t-run-text {
+    white-space: normal;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .t-more {
+    justify-self: start;
+    border: 0;
+    padding: 0;
+    background: none;
+    color: var(--w-muted);
+    font: inherit;
+    font-size: var(--w-fs-small);
+    cursor: pointer;
+  }
+  .t-more:hover {
+    color: var(--w-ink);
   }
   .t-compose {
     width: 100%;

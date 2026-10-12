@@ -1,6 +1,6 @@
 <script lang="ts">
   import { agentsEnabled, projColor, type TaskEntry } from "$lib/stores/workspace.svelte";
-  import { agentBadge, agentName, dueTip, isOverdue, projectOf, shortDate } from "$lib/tasks.svelte";
+  import { agentBadge, agentName, agentStale, dueTip, isOverdue, projectOf, shortDate } from "$lib/tasks.svelte";
   import { clipped, tip } from "$lib/tip";
 
   let { task: t, showProject = true, dim = false, dragging = false }: { task: TaskEntry; showProject?: boolean; dim?: boolean; dragging?: boolean } =
@@ -9,6 +9,7 @@
   const done = $derived(t.status === "done");
   const agents = $derived(agentsEnabled());
   const badge = $derived(agents ? agentBadge(t) : null);
+  const stale = $derived(agents && agentStale(t));
   const project = $derived(projectOf(t));
   const commit = $derived(agents && t.agent?.commit ? `commit ${t.agent.commit.slice(0, 7)}` : null);
   const commitBy = $derived(t.agent?.runner && t.agent.runner !== "auto" ? ` · ${agentName(t.agent.runner)}` : "");
@@ -17,7 +18,7 @@
 <div
   class="w-card"
   class:w-card--done={done}
-  class:w-card--active={!!badge}
+  class:w-card--active={!!badge && !stale}
   class:is-dim={dim}
   class:is-dragging={dragging}
   role="button"
@@ -31,7 +32,7 @@
   </div>
   <div class="w-card-title">{t.title}</div>
   {#if t.tags.length}<div class="w-tag">{t.tags.map((x) => `#${x}`).join("  ")}</div>{/if}
-  {#if badge}<div class="w-card-agent">{badge}</div>{/if}
+  {#if badge}<div class="w-card-agent" class:w-card-agent--stale={stale}>{badge}</div>{/if}
   {#if commit}<div class="w-card-code">{commit}{commitBy}</div>{/if}
   {#if showProject || (t.due && !done)}
     <div class="w-card-foot">

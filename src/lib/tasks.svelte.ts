@@ -66,10 +66,22 @@ export function nextUp(tasks: TaskEntry[]) {
 const AGENT_NAMES: Record<string, string> = { codex: "Codex", copilot: "Copilot", "claude-code": "Claude Code" };
 export const agentName = (id: string) => AGENT_NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
 
-/** "Codex working · 14 min" while `agent.active` is set. */
+/**
+ * True while an agent is active but has not reported for `stale_after_minutes`
+ * (last activity = newest run-log entry of the run, else `agent.since`).
+ */
+export function agentStale(t: TaskEntry) {
+  if (!t.agent?.active) return false;
+  const last = Date.parse(workspace.index?.agent_activity?.[t.id] ?? t.agent.since ?? "");
+  const limit = workspace.index?.config.agent_defaults?.stale_after_minutes ?? 30;
+  return !isNaN(last) && clock.now - last > limit * 60_000;
+}
+
+/** "Codex working · 14 min" while `agent.active` is set, "Agent inactive?" when stale. */
 export function agentBadge(t: TaskEntry) {
   const a = t.agent;
   if (!a?.active) return null;
+  if (agentStale(t)) return "Agent inactive?";
   const since = a.since ? Date.parse(a.since) : NaN;
   if (isNaN(since)) return `${agentName(a.active)} working`;
   const min = Math.max(0, Math.floor((clock.now - since) / 60_000));

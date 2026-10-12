@@ -104,8 +104,10 @@ export type Snapshot = {
   root: string;
   config: {
     task_statuses: { id: string; label: string; wip_limit: number | null }[];
-    agent_defaults?: { runner: string; model: string; effort: string };
+    agent_defaults?: { runner: string; model: string; effort: string; stale_after_minutes: number };
   };
+  /** Last activity per task with an active agent: newest run-log entry of the run, else agent.since. */
+  agent_activity: Record<string, string>;
   process: Process | null;
   /** Repos of live projects that are not folders on this Mac. */
   missing_repos: { key: string; repo: string }[];
@@ -137,6 +139,8 @@ export type Settings = {
 };
 // Mirrors agent::AgentContext; paths relative to the workspace.
 export type AgentFile = { path: string; content: string };
+/** One line of `.workly/runs/<ID>/log.jsonl`. */
+export type RunEntry = { ts: string; agent: string; run: string | null; text: string };
 export type Skill = { name: string; description: string; path: string };
 export type AgentContext = { global: AgentFile | null; project: AgentFile | null; skills: Skill[] };
 // Mirrors trash::TrashItem; `path` is relative to the trash and to the workspace.
@@ -297,6 +301,8 @@ export const agentsEnabled = () => workspace.settings?.agents_enabled === true;
 
 export const agentContext = (key: string | null) => invoke<AgentContext>("agent_context", { key });
 export const createAgentsMd = (key: string) => run<string>("create_agents_md", { key });
+export const runLog = (id: string) => invoke<RunEntry[]>("run_log", { id });
+export const clearAgent = (id: string) => run("clear_agent", { id });
 export async function refreshCli() {
   workspace.cli = await invoke<CliLink>("cli_link").catch(() => null);
 }

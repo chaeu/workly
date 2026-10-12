@@ -1090,7 +1090,11 @@ fn run_notes_leave_the_task_file_alone() {
 fn last_activity_of_the_current_run() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
-    // WR-3: codex active since 2026-10-06T07:48:00Z, no run log yet.
+    // WR-3: codex active since 2026-10-06T07:48:00Z, two notes in the fixture run log.
+    assert_eq!(ws.last_activity("WR-3").unwrap().as_deref(), Some("2026-10-06T08:20:00Z"));
+    assert_eq!(ws.last_activity("WR-7").unwrap(), None);
+    // Without a run log: agent.since.
+    fs::remove_file(root.join(".workly/runs/WR-3/log.jsonl")).unwrap();
     assert_eq!(ws.last_activity("WR-3").unwrap().as_deref(), Some("2026-10-06T07:48:00Z"));
     // Entries of another run and broken lines do not count.
     let dir = root.join(".workly/runs/WR-3");
@@ -1108,8 +1112,33 @@ fn last_activity_of_the_current_run() {
     assert_eq!(ws.run_log("WR-3").unwrap().len(), 2);
     // No agent active: no activity.
     assert_eq!(ws.last_activity("WR-5").unwrap(), None);
+    assert_eq!(ws.agent_activity().into_iter().collect::<Vec<_>>(), [("WR-3".to_string(), "2026-10-06T08:10:00Z".to_string())]);
     ws.review_task("WR-3", None, None, "agent:codex").unwrap();
     assert_eq!(ws.last_activity("WR-3").unwrap(), None);
+    assert!(ws.agent_activity().is_empty());
+}
+
+#[test]
+fn clear_agent_keeps_the_status() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    assert_eq!(ws.config.agent_defaults.stale_after_minutes, 30);
+    ws.start_task("WR-8", Some("codex"), "agent:codex").unwrap();
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    let n = log_lines(&root).len();
+    ws.clear_agent("WR-8", "app").unwrap();
+    let after = fs::read_to_string(root.join(WR8)).unwrap();
+    let since = before.split("  since: ").nth(1).unwrap().lines().next().unwrap();
+    assert_eq!(after, before.replace("  active: codex\n", "  active: null\n").replace(&format!("  since: {since}\n"), "  since: null\n"));
+    let t = ws.index.task("WR-8").unwrap().task.clone();
+    assert_eq!((t.status.as_str(), t.agent.unwrap().active), ("doing", None));
+    let lines = log_lines(&root);
+    assert_eq!(lines.len(), n + 2);
+    assert!(lines[n..].iter().all(|l| l["actor"] == "app" && l["kind"] == "task.update"));
+    // Nothing active: nothing written.
+    ws.clear_agent("WR-8", "app").unwrap();
+    assert_eq!(log_lines(&root).len(), n + 2);
+    assert!(matches!(ws.clear_agent("XX-1", "app"), Err(Error::NotFound(_))));
 }
 
 #[test]

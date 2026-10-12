@@ -86,6 +86,8 @@
 .w-card-proj { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .w-card-agent { display: flex; align-items: center; gap: 7px; font-size: var(--w-fs-caption); font-weight: 500; color: var(--w-accent); }
 .w-card-agent::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--w-accent); box-shadow: 0 0 0 3px var(--w-accent-soft); }
+.w-card-agent--stale { color: var(--w-warn); }
+.w-card-agent--stale::before { background: var(--w-warn); box-shadow: none; }
 .w-card-code { font-family: var(--w-font-mono); font-size: var(--w-fs-micro); color: var(--w-muted); background: var(--w-sunk); border-radius: var(--w-r-sm); padding: 3px 7px; }
 .w-card--active, .w-card--active:hover { box-shadow: var(--w-ring-active); }
 .w-card--done { background: color-mix(in srgb, var(--w-surface) 50%, transparent); box-shadow: none; }

@@ -9,6 +9,7 @@ use crate::write::{LogEntry, atomic_write, log};
 use crate::{Error, Result, Workspace};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -189,6 +190,20 @@ impl Workspace {
         let Some(run) = self.current_run(id) else { return Ok(None) };
         let last = self.run_log(id)?.into_iter().rev().find(|e| e.run.as_ref() == Some(&run));
         Ok(Some(last.map_or(run, |e| e.ts)))
+    }
+
+    /// Last activity of every task with an active agent, by id.
+    pub fn agent_activity(&self) -> BTreeMap<String, String> {
+        (self.index.tasks.iter())
+            .filter_map(|t| Some((t.task.id.clone(), self.last_activity(&t.task.id).ok()??)))
+            .collect()
+    }
+
+    /// Clear `agent.active` and `agent.since`, e.g. after an agent stopped
+    /// without `review`. The status stays. One write, logged.
+    pub fn clear_agent(&mut self, id: &str, actor: &str) -> Result<()> {
+        self.status_of(id)?;
+        self.set_task_fields(id, &[("agent.active", Value::Null), ("agent.since", Value::Null)], actor)
     }
 
     /// `agent.since` while `agent.active` is set.

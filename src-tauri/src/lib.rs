@@ -1,5 +1,6 @@
 use serde::Serialize;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 use std::sync::{Mutex, OnceLock, mpsc};
@@ -7,7 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, LogicalSize, Manager, RunEvent, State, WebviewWindow};
 use tauri_plugin_window_state::StateFlags;
-use workly_core::agent::AgentContext;
+use workly_core::agent::{AgentContext, RunEntry};
 use workly_core::backup::{self, BackupInfo};
 use workly_core::history::PhaseSpan;
 use workly_core::model::{Config, Process};
@@ -72,6 +73,8 @@ struct Snapshot {
     config: Config,
     process: Option<Process>,
     missing_repos: Vec<MissingRepo>,
+    /// Last activity per task with an active agent (run log, else agent.since).
+    agent_activity: BTreeMap<String, String>,
     #[serde(flatten)]
     index: Index,
 }
@@ -81,7 +84,8 @@ fn get_index(state: State<AppState>) -> Result<Snapshot, String> {
     with_ws(&state, |ws| {
         let root = ws.root().display().to_string();
         let missing_repos = ws.missing_repos();
-        Ok(Snapshot { root, config: ws.config.clone(), process: ws.process.clone(), missing_repos, index: ws.index.clone() })
+        let agent_activity = ws.agent_activity();
+        Ok(Snapshot { root, config: ws.config.clone(), process: ws.process.clone(), missing_repos, agent_activity, index: ws.index.clone() })
     })
 }
 
@@ -230,6 +234,16 @@ fn usecase_history(state: State<AppState>, key: String) -> Result<Vec<PhaseSpan>
 #[tauri::command]
 fn agent_context(state: State<AppState>, key: Option<String>) -> Result<AgentContext, String> {
     with_ws(&state, |ws| ws.agent_context(key.as_deref()))
+}
+
+#[tauri::command]
+fn run_log(state: State<AppState>, id: String) -> Result<Vec<RunEntry>, String> {
+    with_ws(&state, |ws| ws.run_log(&id))
+}
+
+#[tauri::command]
+fn clear_agent(app: AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.clear_agent(&id, ACTOR)))
 }
 
 #[tauri::command]
@@ -548,6 +562,8 @@ pub fn run() {
             read_markdown,
             usecase_history,
             agent_context,
+            run_log,
+            clear_agent,
             create_agents_md,
             cli_link,
             install_cli,
