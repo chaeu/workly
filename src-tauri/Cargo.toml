@@ -17,3 +17,4 @@ wly = { path = "../crates/wly" }
 serde_json = "1"
 tauri-plugin-dialog = "2"
 serde = { version = "1.0.229", features = ["derive"] }
+tauri-plugin-window-state = "2"

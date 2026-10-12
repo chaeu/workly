@@ -4,7 +4,8 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, State, WebviewWindow};
+use tauri_plugin_window_state::StateFlags;
 use workly_core::agent::AgentContext;
 use workly_core::history::PhaseSpan;
 use workly_core::model::{Config, Process};
@@ -379,13 +380,30 @@ fn startup_workspace() -> Option<String> {
     std::env::var("WORKLY_WORKSPACE").ok().or_else(|| Settings::load(&settings::default_path()).ok()?.active)
 }
 
+/// No saved window state yet: ~80 % of the monitor's work area in logical points, at least 1100x700, centred.
+fn first_launch_size(win: &WebviewWindow) {
+    let Some(m) = win.current_monitor().ok().flatten().or_else(|| win.primary_monitor().ok().flatten()) else { return };
+    let area = m.work_area().size.to_logical::<f64>(m.scale_factor());
+    let fit = |v: f64, min: f64, max: f64| (v * 0.8).max(min).min(max);
+    let _ = win.set_size(LogicalSize::new(fit(area.width, 1100.0, area.width), fit(area.height, 700.0, area.height)));
+    let _ = win.center();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     STARTED.get_or_init(Instant::now);
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Size, position and maximised state; never visibility, setup shows the window.
+        .plugin(tauri_plugin_window_state::Builder::new().with_state_flags(StateFlags::all() - StateFlags::VISIBLE).build())
         .manage(AppState::default())
         .setup(|app| {
+            let win = app.get_webview_window("main").expect("main window");
+            let saved = app.path().app_config_dir().is_ok_and(|d| d.join(tauri_plugin_window_state::DEFAULT_FILENAME).exists());
+            if !saved {
+                first_launch_size(&win);
+            }
+            win.show()?;
             if let Some(path) = startup_workspace()
                 && let Err(e) = load_workspace(app.handle(), Path::new(&path))
             {
