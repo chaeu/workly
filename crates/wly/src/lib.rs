@@ -54,11 +54,14 @@ enum TaskCmd {
     Show { id: String },
     /// Set doing (from backlog, todo or review); with --agent also agent.active and agent.since
     Start { id: String },
-    /// Append a line under ## Updates
+    /// Append a note to the run log (.workly/runs/<ID>/log.jsonl); the task file stays untouched
     Note {
         id: String,
         #[arg(required = true, num_args = 1..)]
         text: Vec<String>,
+        /// Append under ## Updates in the task file instead
+        #[arg(long)]
+        to_body: bool,
     },
     /// Set review (from doing) and clear agent.active
     Review {
@@ -296,8 +299,12 @@ fn exec(cli: &Cli) -> workly_core::Result<()> {
             ws.start_task(id, agent, &actor)?;
             done_msg(&ws, id, cli.json);
         }
-        Cmd::Task(TaskCmd::Note { id, text }) => {
+        Cmd::Task(TaskCmd::Note { id, text, to_body: true }) => {
             ws.add_task_update(id, &text.join(" "), &actor)?;
+            done_msg(&ws, id, cli.json);
+        }
+        Cmd::Task(TaskCmd::Note { id, text, to_body: false }) => {
+            ws.add_run_note(id, &text.join(" "), &actor)?;
             done_msg(&ws, id, cli.json);
         }
         Cmd::Task(TaskCmd::Review { id, commit }) => {

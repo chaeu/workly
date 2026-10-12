@@ -1,6 +1,7 @@
 //! The agent side of tasks: the start and review transitions, and the context
 //! an agent works with (global rules, project instructions, skills).
 
+use crate::ids::split_id;
 use crate::model::parse_file;
 use crate::project::AGENTS_TEMPLATE;
 use crate::scan::rel;
@@ -9,6 +10,8 @@ use crate::{Error, Result, Workspace};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
 
 /// Workspace-wide agent rules.
 pub const GLOBAL_AGENTS_MD: &str = ".workly/agent/AGENTS.md";
@@ -36,6 +39,16 @@ pub struct AgentContext {
     pub global: Option<AgentFile>,
     pub project: Option<AgentFile>,
     pub skills: Vec<Skill>,
+}
+
+/// One line of `.workly/runs/<ID>/log.jsonl`. `run` is `agent.since` of the
+/// run the note belongs to, `null` when no agent was active.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RunEntry {
+    pub ts: String,
+    pub agent: String,
+    pub run: Option<String>,
+    pub text: String,
 }
 
 #[derive(Deserialize)]
@@ -135,6 +148,49 @@ impl Workspace {
             changes.push(("agent.last_run", now()));
         }
         self.set_task_fields(id, &changes, actor)
+    }
+
+    /// Append a note to the task's run log; the task file stays untouched.
+    pub fn add_run_note(&self, id: &str, text: &str, actor: &str) -> Result<RunEntry> {
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        if text.is_empty() {
+            return Err(Error::Invalid("a note needs text".into()));
+        }
+        let file = self.run_log_path(id)?;
+        let entry = RunEntry { ts: now().as_str().unwrap().into(), agent: crate::who(actor).into(), run: self.current_run(id), text };
+        fs::create_dir_all(file.parent().unwrap())?;
+        let line = serde_json::to_string(&entry).map_err(std::io::Error::other)? + "\n";
+        fs::OpenOptions::new().create(true).append(true).open(&file)?.write_all(line.as_bytes())?;
+        Ok(entry)
+    }
+
+    /// The task's run log, oldest first. Missing file = empty; broken lines are skipped.
+    pub fn run_log(&self, id: &str) -> Result<Vec<RunEntry>> {
+        let src = fs::read_to_string(self.run_log_path(id)?).unwrap_or_default();
+        Ok(src.lines().filter_map(|l| serde_json::from_str(l).ok()).collect())
+    }
+
+    /// While an agent is active: the newest run-log entry of the current run,
+    /// else `agent.since`. `None` when no agent is active.
+    pub fn last_activity(&self, id: &str) -> Result<Option<String>> {
+        let Some(run) = self.current_run(id) else { return Ok(None) };
+        let last = self.run_log(id)?.into_iter().rev().find(|e| e.run.as_ref() == Some(&run));
+        Ok(Some(last.map_or(run, |e| e.ts)))
+    }
+
+    /// `agent.since` while `agent.active` is set.
+    fn current_run(&self, id: &str) -> Option<String> {
+        let agent = self.index.task(id)?.task.agent.as_ref()?;
+        agent.active.as_ref().and(agent.since.clone())
+    }
+
+    fn run_log_path(&self, id: &str) -> Result<PathBuf> {
+        self.status_of(id)?;
+        // The id comes from frontmatter: only a plain `KEY-N` may become a path segment.
+        if split_id(id).is_none_or(|(key, n)| format!("{key}-{n}") != id) {
+            return Err(Error::Invalid(format!("task id '{id}' cannot have a run log")));
+        }
+        Ok(self.root.join(".workly/runs").join(id).join("log.jsonl"))
     }
 
     fn status_of(&self, id: &str) -> Result<String> {

@@ -65,6 +65,14 @@ pub fn today() -> String {
     chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
+/// Name in `## Updates` lines and the run log: the agent name, `me` for the app, else the actor (`cli`).
+pub(crate) fn who(actor: &str) -> &str {
+    match actor {
+        "app" => "me",
+        a => a.strip_prefix("agent:").unwrap_or(a),
+    }
+}
+
 /// Most tasks on the focus strip.
 pub const FOCUS_MAX: usize = 3;
 
@@ -276,11 +284,7 @@ impl Workspace {
         if text.is_empty() {
             return Err(Error::Invalid("an update needs text".into()));
         }
-        let who = match actor {
-            "app" => "me",
-            a => a.strip_prefix("agent:").unwrap_or(a),
-        };
-        let line = format!("{} · {who}: {text}", chrono::Local::now().format("%Y-%m-%d %H:%M"));
+        let line = format!("{} · {}: {text}", chrono::Local::now().format("%Y-%m-%d %H:%M"), who(actor));
         let file = self.task_path(id)?;
         let src = fs::read_to_string(&file)?;
         let p = crate::frontmatter::split(&src);

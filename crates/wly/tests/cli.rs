@@ -100,11 +100,24 @@ fn agent_flow_start_note_review() {
     // Untouched lines stay.
     assert!(started.contains("  effort: high\n  active: codex\n") && started.ends_with(before.split("---\n").last().unwrap()));
 
+    // A note goes to the run log of the current run; the task file stays byte-identical.
     assert_eq!(code(&wly(ws, &["task", "note", "WR-5", "--agent", "codex", "Burger", "menu", "done"])), 0);
+    assert_eq!(fs::read_to_string(root.join(WR5)).unwrap(), started);
+    let run_log = fs::read_to_string(root.join(".workly/runs/WR-5/log.jsonl")).unwrap();
+    let entry: Value = serde_json::from_str(run_log.trim_end()).unwrap();
+    let since = started.split("  since: ").nth(1).unwrap().lines().next().unwrap();
+    assert_eq!((&entry["agent"], &entry["run"], &entry["text"]), (&"codex".into(), &since.into(), &"Burger menu done".into()));
+    // --to-body: the old behaviour, a line under ## Updates.
+    assert_eq!(code(&wly(ws, &["task", "note", "WR-5", "--to-body", "--agent", "codex", "Into", "the", "body"])), 0);
+    assert!(fs::read_to_string(root.join(WR5)).unwrap().trim_end().ends_with(" · codex: Into the body"));
+
     let t = stdout_json(&wly(ws, &["task", "review", "WR-5", "--agent", "codex", "--commit", "b4d2e9f", "--json"]));
     assert_eq!((&t["status"], &t["agent"]["active"], &t["agent"]["commit"]), (&"review".into(), &Value::Null, &"b4d2e9f".into()));
-    let file = fs::read_to_string(root.join(WR5)).unwrap();
-    assert!(file.trim_end().ends_with(" · codex: Burger menu done"), "{file}");
+    // No agent active any more: notes belong to no run.
+    assert_eq!(code(&wly(ws, &["task", "note", "WR-5", "late"])), 0);
+    let last = fs::read_to_string(root.join(".workly/runs/WR-5/log.jsonl")).unwrap().lines().last().unwrap().to_string();
+    let entry: Value = serde_json::from_str(&last).unwrap();
+    assert_eq!((&entry["agent"], &entry["run"]), (&"cli".into(), &Value::Null));
 
     // Review twice, start a done task, agents setting done: invalid transitions.
     assert_eq!(code(&wly(ws, &["task", "review", "WR-5", "--agent", "codex"])), 3);

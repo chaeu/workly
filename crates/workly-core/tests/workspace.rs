@@ -1039,6 +1039,67 @@ fn start_and_review_are_lossless_and_logged() {
 }
 
 #[test]
+fn run_notes_leave_the_task_file_alone() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    ws.start_task("WR-8", Some("codex"), "agent:codex").unwrap();
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    let n = log_lines(&root).len();
+    let since = ws.index.task("WR-8").unwrap().task.agent.clone().unwrap().since.unwrap();
+
+    let e = ws.add_run_note("WR-8", "Migrated\n 12 pages", "agent:codex").unwrap();
+    assert_eq!((e.agent.as_str(), e.run.as_deref(), e.text.as_str()), ("codex", Some(since.as_str()), "Migrated 12 pages"));
+    assert_eq!(fs::read_to_string(root.join(WR8)).unwrap(), before);
+    assert_eq!(log_lines(&root).len(), n, "the run log is its own record");
+    let src = fs::read_to_string(root.join(".workly/runs/WR-8/log.jsonl")).unwrap();
+    assert_eq!(src.lines().count(), 1);
+    assert_eq!(ws.run_log("WR-8").unwrap(), [e]);
+
+    assert!(matches!(ws.add_run_note("WR-8", " \n ", "cli"), Err(Error::Invalid(_))));
+    assert!(matches!(ws.add_run_note("XX-1", "x", "cli"), Err(Error::NotFound(_))));
+    assert!(ws.run_log("WR-5").unwrap().is_empty());
+}
+
+#[test]
+fn last_activity_of_the_current_run() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    // WR-3: codex active since 2026-10-06T07:48:00Z, no run log yet.
+    assert_eq!(ws.last_activity("WR-3").unwrap().as_deref(), Some("2026-10-06T07:48:00Z"));
+    // Entries of another run and broken lines do not count.
+    let dir = root.join(".workly/runs/WR-3");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("log.jsonl"),
+        concat!(
+            r#"{"ts":"2026-10-06T08:10:00Z","agent":"codex","run":"2026-10-06T07:48:00Z","text":"a"}"#, "\n",
+            r#"{"ts":"2026-10-07T09:00:00Z","agent":"codex","run":"2026-10-07T08:00:00Z","text":"old run"}"#, "\n",
+            "not json\n",
+        ),
+    )
+    .unwrap();
+    assert_eq!(ws.last_activity("WR-3").unwrap().as_deref(), Some("2026-10-06T08:10:00Z"));
+    assert_eq!(ws.run_log("WR-3").unwrap().len(), 2);
+    // No agent active: no activity.
+    assert_eq!(ws.last_activity("WR-5").unwrap(), None);
+    ws.review_task("WR-3", None, "agent:codex").unwrap();
+    assert_eq!(ws.last_activity("WR-3").unwrap(), None);
+}
+
+#[test]
+fn run_log_needs_a_plain_id() {
+    let (_tmp, root) = fixture();
+    let file = root.join("inbox/IN-1-sketch.md");
+    let src = fs::read_dir(root.join("inbox")).unwrap().flatten().find(|e| e.file_name().to_string_lossy().starts_with("IN-1-")).unwrap().path();
+    let text = fs::read_to_string(&src).unwrap().replacen("id: IN-1", "id: IN-1/../../x", 1);
+    fs::remove_file(&src).unwrap();
+    fs::write(&file, text).unwrap();
+    let ws = Workspace::open(&root).unwrap();
+    assert!(matches!(ws.add_run_note("IN-1/../../x", "x", "cli"), Err(Error::Invalid(_))));
+    assert!(!root.join(".workly/x").exists());
+}
+
+#[test]
 fn transition_rules() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
