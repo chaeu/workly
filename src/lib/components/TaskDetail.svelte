@@ -628,6 +628,7 @@
     padding: 8px 10px;
     font-size: var(--w-fs-small);
     line-height: 1.45;
+    white-space: pre-line;
     user-select: text;
     -webkit-user-select: text;
   }

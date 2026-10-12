@@ -111,8 +111,10 @@ fn agent_flow_start_note_review() {
     assert_eq!(code(&wly(ws, &["task", "note", "WR-5", "--to-body", "--agent", "codex", "Into", "the", "body"])), 0);
     assert!(fs::read_to_string(root.join(WR5)).unwrap().trim_end().ends_with(" · codex: Into the body"));
 
-    let t = stdout_json(&wly(ws, &["task", "review", "WR-5", "--agent", "codex", "--commit", "b4d2e9f", "--json"]));
+    let t = stdout_json(&wly(ws, &["task", "review", "WR-5", "--agent", "codex", "--commit", "b4d2e9f", "--summary", "Burger menu\nVerify: resize", "--json"]));
     assert_eq!((&t["status"], &t["agent"]["active"], &t["agent"]["commit"]), (&"review".into(), &Value::Null, &"b4d2e9f".into()));
+    let file = fs::read_to_string(root.join(WR5)).unwrap();
+    assert!(file.ends_with(" · codex: Burger menu\n  Verify: resize\n"), "{file}");
     // No agent active any more: notes belong to no run.
     assert_eq!(code(&wly(ws, &["task", "note", "WR-5", "late"])), 0);
     let last = fs::read_to_string(root.join(".workly/runs/WR-5/log.jsonl")).unwrap().lines().last().unwrap().to_string();

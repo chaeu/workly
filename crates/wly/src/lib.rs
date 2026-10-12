@@ -68,6 +68,9 @@ enum TaskCmd {
         id: String,
         #[arg(long, value_name = "SHA")]
         commit: Option<String>,
+        /// What changed, how to verify, open points; one item under ## Updates
+        #[arg(long, value_name = "TEXT")]
+        summary: Option<String>,
     },
     /// Create a task; prints its id
     Add {
@@ -307,8 +310,8 @@ fn exec(cli: &Cli) -> workly_core::Result<()> {
             ws.add_run_note(id, &text.join(" "), &actor)?;
             done_msg(&ws, id, cli.json);
         }
-        Cmd::Task(TaskCmd::Review { id, commit }) => {
-            ws.review_task(id, commit.as_deref(), &actor)?;
+        Cmd::Task(TaskCmd::Review { id, commit, summary }) => {
+            ws.review_task(id, commit.as_deref(), summary.as_deref(), &actor)?;
             done_msg(&ws, id, cli.json);
         }
         Cmd::Task(TaskCmd::Done { id }) => {

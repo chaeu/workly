@@ -1029,13 +1029,39 @@ fn start_and_review_are_lossless_and_logged() {
     assert_eq!(lines.len(), n + 3);
     assert!(lines[n..].iter().all(|l| l["actor"] == "agent:codex" && l["id"] == "WR-8"));
 
-    ws.review_task("WR-8", Some("A3F9C1E"), "agent:codex").unwrap();
+    ws.review_task("WR-8", Some("A3F9C1E"), None, "agent:codex").unwrap();
     let t = ws.index.task("WR-8").unwrap().task.clone();
     let a = t.agent.unwrap();
     assert_eq!((t.status.as_str(), a.active, a.since, a.commit.as_deref()), ("review", None, None, Some("a3f9c1e")));
     assert!(a.last_run.is_some());
     let reviewed = fs::read_to_string(root.join(WR8)).unwrap();
     assert!(reviewed.ends_with("- [x] list b") && reviewed.contains("# Kept by hand, do not reorder\n"));
+}
+
+#[test]
+fn review_summary_is_one_updates_item() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    // Without an agent name start changes only the status, so review does too.
+    ws.start_task("WR-8", None, "agent:codex").unwrap();
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    let n = log_lines(&root).len();
+    let summary = "Migrated 12 pages\n\n   Verify: open /blog  \nOpen: legacy URLs";
+    ws.review_task("WR-8", None, Some(summary), "agent:codex").unwrap();
+    let after = fs::read_to_string(root.join(WR8)).unwrap();
+    let stamp = after.split("## Updates\n- ").nth(1).unwrap().split(" · ").next().unwrap();
+    assert_eq!(stamp.len(), 16, "{stamp}");
+    let expected = before.replace("status: doing\n", "status: review\n")
+        + &format!("\n\n## Updates\n- {stamp} · codex: Migrated 12 pages\n  Verify: open /blog\n  Open: legacy URLs\n");
+    assert_eq!(after, expected);
+    let lines = log_lines(&root);
+    assert_eq!(lines.len(), n + 2);
+    assert_eq!((&lines[n + 1]["kind"], &lines[n + 1]["field"]), (&json!("task.summary"), &json!("updates")));
+    // An empty summary writes nothing.
+    ws.start_task("WR-8", None, "cli").unwrap();
+    let doing = fs::read_to_string(root.join(WR8)).unwrap();
+    assert!(matches!(ws.review_task("WR-8", None, Some(" \n "), "cli"), Err(Error::Invalid(_))));
+    assert_eq!(fs::read_to_string(root.join(WR8)).unwrap(), doing);
 }
 
 #[test]
@@ -1082,7 +1108,7 @@ fn last_activity_of_the_current_run() {
     assert_eq!(ws.run_log("WR-3").unwrap().len(), 2);
     // No agent active: no activity.
     assert_eq!(ws.last_activity("WR-5").unwrap(), None);
-    ws.review_task("WR-3", None, "agent:codex").unwrap();
+    ws.review_task("WR-3", None, None, "agent:codex").unwrap();
     assert_eq!(ws.last_activity("WR-3").unwrap(), None);
 }
 
@@ -1106,15 +1132,15 @@ fn transition_rules() {
     // WR-3 is doing, WR-1 done: no start. WR-5 is todo: no review.
     assert!(matches!(ws.start_task("WR-3", Some("codex"), "cli"), Err(Error::InvalidTransition(_))));
     assert!(matches!(ws.start_task("WR-1", None, "cli"), Err(Error::InvalidTransition(_))));
-    assert!(matches!(ws.review_task("WR-5", None, "cli"), Err(Error::InvalidTransition(_))));
+    assert!(matches!(ws.review_task("WR-5", None, None, "cli"), Err(Error::InvalidTransition(_))));
     assert!(matches!(ws.start_task("XX-1", None, "cli"), Err(Error::NotFound(_))));
     assert!(matches!(ws.start_task("WR-5", Some("a b"), "cli"), Err(Error::Invalid(_))));
-    assert!(matches!(ws.review_task("WR-3", Some("not-a-sha"), "cli"), Err(Error::Invalid(_))));
+    assert!(matches!(ws.review_task("WR-3", Some("not-a-sha"), None, "cli"), Err(Error::Invalid(_))));
     // Without an agent name only the status changes; review from review restarts.
     ws.start_task("WR-7", None, "cli").unwrap();
     let t = &ws.index.task("WR-7").unwrap().task;
     assert_eq!((t.status.as_str(), t.agent.as_ref().unwrap().active.as_deref()), ("doing", None));
-    ws.review_task("WR-3", None, "agent:codex").unwrap();
+    ws.review_task("WR-3", None, None, "agent:codex").unwrap();
     assert_eq!(ws.index.task("WR-3").unwrap().task.agent.as_ref().unwrap().active, None);
 }
 

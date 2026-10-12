@@ -196,6 +196,11 @@ impl Workspace {
     /// Set several fields of a task in one write; one log line per changed field.
     /// Callers check the rules; unchanged fields are skipped.
     fn set_task_fields(&mut self, id: &str, changes: &[(&str, Value)], actor: &str) -> Result<()> {
+        self.set_task_fields_with_update(id, changes, None, actor)
+    }
+
+    /// `set_task_fields` plus, in the same write, `update` appended as one item under `## Updates`.
+    fn set_task_fields_with_update(&mut self, id: &str, changes: &[(&str, Value)], update: Option<&str>, actor: &str) -> Result<()> {
         let file = self.task_path(id)?;
         let src = fs::read_to_string(&file)?;
         let mut out = src.clone();
@@ -208,12 +213,19 @@ impl Workspace {
                 changed.push((*field, from, value));
             }
         }
-        if changed.is_empty() {
+        if let Some(text) = update {
+            let p = crate::frontmatter::split(&out);
+            out = [p.head, p.frontmatter, p.fence, &crate::frontmatter::append_update(p.body, text)].concat();
+        }
+        if changed.is_empty() && update.is_none() {
             return Ok(());
         }
         atomic_write(&file, &out, &self.own)?;
         for (field, from, to) in changed {
             log(&self.root, &LogEntry::new(actor, "task.update", id, Some(field), from, to.clone()))?;
+        }
+        if let Some(text) = update {
+            log(&self.root, &LogEntry::new(actor, "task.summary", id, Some("updates"), Value::Null, text.into()))?;
         }
         self.rescan();
         Ok(())

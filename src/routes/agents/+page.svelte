@@ -96,7 +96,7 @@
 wly task show {example}
 wly task start {example} --agent test
 wly task note {example} "trying wly" --agent test
-wly task review {example} --agent test
+wly task review {example} --summary "Tried wly" --agent test
 wly task done {example} --agent test     # refused, exit 3: only you set done</pre>
     <p>Afterwards set the task back to its old status in the app.</p>
 

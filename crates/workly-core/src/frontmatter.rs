@@ -54,11 +54,12 @@ pub fn eol_of(src: &str) -> &'static str {
 }
 
 /// Append `- <text>` as the last item under `## Updates`, creating the section
-/// at the end if missing. Everything else stays byte-identical, including a
-/// missing final newline.
+/// at the end if missing. Further lines of `text` become continuation lines
+/// indented by two spaces (still one list item). Everything else stays
+/// byte-identical, including a missing final newline.
 pub fn append_update(body: &str, text: &str) -> String {
     let eol = eol_of(body);
-    let item = format!("- {text}");
+    let item = format!("- {}", text.lines().collect::<Vec<_>>().join(&format!("{eol}  ")));
     let lines: Vec<&str> = body.split_inclusive('\n').collect();
     let content = |l: &str| l.trim_end_matches(['\n', '\r']).to_string();
     let Some(head) = updates_head(&lines) else {
@@ -188,6 +189,12 @@ mod tests {
         let crlf = "Old\r\n\r\n## Updates\r\n- a\r\n";
         assert_eq!(replace_description(crlf, "A\nB", "\r\n"), "A\r\nB\r\n\r\n## Updates\r\n- a\r\n");
         assert_eq!(description_end(crlf), 7);
+    }
+
+    #[test]
+    fn append_update_continuation_lines() {
+        assert_eq!(append_update("## Updates\n- one\n", "two\nthree"), "## Updates\n- one\n- two\n  three\n");
+        assert_eq!(append_update("T\r\n", "a\nb"), "T\r\n\r\n## Updates\r\n- a\r\n  b\r\n");
     }
 
     #[test]

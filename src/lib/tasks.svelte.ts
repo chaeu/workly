@@ -122,14 +122,17 @@ export function splitBody(body: string) {
   if (head < 0) return { description: body, updates: [] as { meta: string; text: string }[] };
   let end = lines.findIndex((l, i) => i > head && /^#{1,2} /.test(l));
   if (end < 0) end = lines.length;
-  const updates = lines
-    .slice(head + 1, end)
-    .filter((l) => /^[-*] /.test(l))
-    .map((l) => {
+  const updates: { meta: string; text: string }[] = [];
+  for (const l of lines.slice(head + 1, end)) {
+    if (/^[-*] /.test(l)) {
       const item = l.slice(2);
       const colon = item.indexOf(": ");
-      return colon > 0 ? { meta: item.slice(0, colon), text: item.slice(colon + 2) } : { meta: "", text: item };
-    });
+      updates.push(colon > 0 ? { meta: item.slice(0, colon), text: item.slice(colon + 2) } : { meta: "", text: item });
+    } else if (/^ {2}\S/.test(l) && updates.length) {
+      // Continuation line of the item above, e.g. a multi-line review summary.
+      updates[updates.length - 1].text += "\n" + l.trim();
+    }
+  }
   return { description: [...lines.slice(0, head), ...lines.slice(end)].join("\n"), updates };
 }
 

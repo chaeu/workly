@@ -130,7 +130,9 @@ impl Workspace {
 
     /// Status `review` from doing. Clears `agent.active`/`agent.since` and stamps
     /// `agent.last_run` when an agent was working; `commit` goes to `agent.commit`.
-    pub fn review_task(&mut self, id: &str, commit: Option<&str>, actor: &str) -> Result<()> {
+    /// `summary` becomes one item under `## Updates` (first line after the
+    /// stamp, further lines as continuation lines), in the same write.
+    pub fn review_task(&mut self, id: &str, commit: Option<&str>, summary: Option<&str>, actor: &str) -> Result<()> {
         let status = self.status_of(id)?;
         if status != "doing" {
             return Err(Error::InvalidTransition(format!("{id} is {status}; review works from doing")));
@@ -142,12 +144,23 @@ impl Workspace {
             }
             changes.push(("agent.commit", Value::from(sha.to_ascii_lowercase())));
         }
+        let update = match summary {
+            Some(text) => {
+                let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+                if lines.is_empty() {
+                    return Err(Error::Invalid("a summary needs text".into()));
+                }
+                let stamp = chrono::Local::now().format("%Y-%m-%d %H:%M");
+                Some(format!("{stamp} · {}: {}", crate::who(actor), lines.join("\n")))
+            }
+            None => None,
+        };
         if self.index.task(id).and_then(|t| t.task.agent.as_ref()).is_some_and(|a| a.active.is_some()) {
             changes.push(("agent.active", Value::Null));
             changes.push(("agent.since", Value::Null));
             changes.push(("agent.last_run", now()));
         }
-        self.set_task_fields(id, &changes, actor)
+        self.set_task_fields_with_update(id, &changes, update.as_deref(), actor)
     }
 
     /// Append a note to the task's run log; the task file stays untouched.
