@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
@@ -27,6 +28,36 @@ pub struct Settings {
 pub struct WorkspaceRef {
     pub name: String,
     pub path: String,
+    #[serde(default)]
+    pub backup: BackupSettings,
+}
+
+/// Per workspace and Mac: how often Workly commits the workspace repo.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct BackupSettings {
+    /// off | 15m | hourly | daily; anything else counts as hourly.
+    pub interval: String,
+    /// Push to the current branch's upstream after a commit.
+    pub push: bool,
+}
+
+impl Default for BackupSettings {
+    fn default() -> Self {
+        BackupSettings { interval: "hourly".into(), push: true }
+    }
+}
+
+impl BackupSettings {
+    /// None = off.
+    pub fn every(&self) -> Option<Duration> {
+        match self.interval.as_str() {
+            "off" => None,
+            "15m" => Some(Duration::from_secs(15 * 60)),
+            "daily" => Some(Duration::from_secs(24 * 3600)),
+            _ => Some(Duration::from_secs(3600)),
+        }
+    }
 }
 
 pub fn default_path() -> PathBuf {
@@ -76,9 +107,15 @@ impl Settings {
         let p = path.display().to_string();
         if !self.workspaces.iter().any(|w| w.path == p) {
             let name = path.file_name().map_or(p.clone(), |n| n.to_string_lossy().into_owned());
-            self.workspaces.push(WorkspaceRef { name, path: p.clone() });
+            self.workspaces.push(WorkspaceRef { name, path: p.clone(), backup: BackupSettings::default() });
         }
         self.active = Some(p);
+    }
+
+    /// Backup settings of the workspace at `root`; defaults for one not in the list (WORKLY_WORKSPACE).
+    pub fn backup_for(&self, root: &Path) -> BackupSettings {
+        let same = |p: &str| Path::new(p).canonicalize().is_ok_and(|p| p == root) || Path::new(p) == root;
+        self.workspaces.iter().find(|w| same(&w.path)).map(|w| w.backup.clone()).unwrap_or_default()
     }
 }
 
@@ -117,12 +154,27 @@ mod tests {
         s.activate(Path::new("/tmp/My Work"));
         s.save(&file).unwrap();
         let back = Settings::load(&file).unwrap();
-        assert_eq!(back.workspaces, [WorkspaceRef { name: "My Work".into(), path: "/tmp/My Work".into() }]);
+        assert_eq!(back.workspaces, [WorkspaceRef { name: "My Work".into(), path: "/tmp/My Work".into(), backup: BackupSettings::default() }]);
         assert_eq!(back.active.as_deref(), Some("/tmp/My Work"));
         assert_eq!(back.theme.as_deref(), Some("dark"));
         assert_eq!(back.extra["focus_hidden"], Value::Bool(true));
         fs::write(&file, "{broken").unwrap();
         assert!(Settings::load(&file).is_err());
+    }
+
+    #[test]
+    fn backup_settings_default_and_per_workspace() {
+        let s: Settings = serde_json::from_str(
+            r#"{"workspaces":[{"name":"a","path":"/a"},{"name":"b","path":"/b","backup":{"interval":"off"}},{"name":"c","path":"/c","backup":{"interval":"15m","push":false}}]}"#,
+        )
+        .unwrap();
+        let a = s.backup_for(Path::new("/a"));
+        assert_eq!((a.every(), a.push), (Some(Duration::from_secs(3600)), true));
+        assert_eq!(s.backup_for(Path::new("/b")).every(), None);
+        assert!(s.backup_for(Path::new("/b")).push);
+        let c = s.backup_for(Path::new("/c"));
+        assert_eq!((c.every(), c.push), (Some(Duration::from_secs(900)), false));
+        assert_eq!(s.backup_for(Path::new("/elsewhere")), BackupSettings::default());
     }
 
     #[test]
