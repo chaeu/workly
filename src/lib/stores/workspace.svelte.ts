@@ -304,6 +304,9 @@ export const agentContext = (key: string | null) => invoke<AgentContext>("agent_
 export const createAgentsMd = (key: string) => run<string>("create_agents_md", { key });
 export const runLog = (id: string) => invoke<RunEntry[]>("run_log", { id });
 export const clearAgent = (id: string) => run("clear_agent", { id });
+/** Throw, so Start agent can stop on a refused start and fall back to the clipboard on a failed launch. */
+export const startAgentTask = (id: string, agent: string) => invoke("start_agent_task", { id, agent });
+export const launchAgent = (id: string, runner: string, prompt: string) => invoke("launch_agent", { id, runner, prompt });
 export async function refreshCli() {
   workspace.cli = await invoke<CliLink>("cli_link").catch(() => null);
 }

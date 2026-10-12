@@ -99,13 +99,14 @@ export function runnerOf(t: TaskEntry) {
  * What you paste into Copilot Chat or Codex: the context comes from `wly task show`, so the agent goes through the CLI.
  * Carries the global rules too: existing workspaces keep their own .workly/agent/AGENTS.md.
  */
-export function agentPrompt(t: TaskEntry) {
+export function agentPrompt(t: TaskEntry, body = "", started = false) {
   const name = runnerOf(t);
   const id = t.id;
+  const { description, acceptance } = taskBrief(body);
   return [
     `Work on Workly task ${id} ("${t.title}") in this repo. Report through wly as agent "${name}".`,
     `1. Run \`wly task show ${id}\` first. Follow the workspace rules, project instructions and skills it prints.`,
-    t.status === "doing"
+    t.status === "doing" || started
       ? `2. The task is already in progress, so skip \`wly task start\`. Change task state only through wly.`
       : `2. Start with \`wly task start ${id} --agent ${name}\`. Change task state only through wly.`,
     `3. Never run git init, never create repositories, never change remotes.`,
@@ -114,7 +115,24 @@ export function agentPrompt(t: TaskEntry) {
     `6. Use \`wly task note ${id} "<text>" --agent ${name}\` sparingly: only for milestones a human cares about.`,
     `7. Finish with exactly one \`wly task review ${id} --summary "<3-6 lines: what changed, how to verify, open points>" --agent ${name}\`. Never set the task to done.`,
     `8. Work only inside this repo. Delete nothing outside it.`,
+    ...(description ? ["", "Task description:", description] : []),
+    ...(acceptance.length ? ["", "Acceptance:", ...acceptance.map((a) => `- ${a}`)] : []),
   ].join("\n");
+}
+
+/** Description (body without `## Acceptance` and `## Updates`) and the acceptance items, checkboxes stripped. */
+export function taskBrief(body: string) {
+  const lines = splitBody(body).description.split(/\r?\n/);
+  const head = lines.findIndex((l) => /^## Acceptance( criteria)?\s*$/.test(l));
+  if (head < 0) return { description: lines.join("\n").trim(), acceptance: [] as string[] };
+  let end = lines.findIndex((l, i) => i > head && /^#{1,2} /.test(l));
+  if (end < 0) end = lines.length;
+  const acceptance = lines
+    .slice(head + 1, end)
+    .filter((l) => /^\s*[-*] /.test(l))
+    .map((l) => l.replace(/^\s*[-*] (\[[ xX]\] )?/, "").trim())
+    .filter(Boolean);
+  return { description: [...lines.slice(0, head), ...lines.slice(end)].join("\n").trim(), acceptance };
 }
 
 /** Column order: `order`, then priority, then id (`WR-9` before `WR-10`). Missing values go last. */

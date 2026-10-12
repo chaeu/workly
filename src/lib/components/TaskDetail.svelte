@@ -20,9 +20,12 @@
     inDailyWork,
     runLog,
     clearAgent,
+    startAgentTask,
+    launchAgent,
+    openProjectInVscode,
     type RunEntry,
   } from "$lib/stores/workspace.svelte";
-  import { agentName, agentPrompt, agentStale, confirmDeleteTask, projectOf, rawDescription, shortDate, splitBody, today } from "$lib/tasks.svelte";
+  import { agentName, agentPrompt, agentStale, confirmDeleteTask, projectOf, rawDescription, runnerOf, shortDate, splitBody, today } from "$lib/tasks.svelte";
 
   let { id, mode, focusIds, onclose }: { id: string; mode: "popup" | "panel"; focusIds: string[]; onclose: () => void } = $props();
 
@@ -76,14 +79,59 @@
 
   let note = $state("");
 
-  // Agent hand-off: paste the prompt into Copilot Chat or Codex in VS Code (M7 trial, see /agents).
+  // Agent hand-off: Start agent launches Copilot (code chat) or Codex (Terminal); Copy prompt is the manual way.
   const repo = $derived(project?.repos[0] ?? null);
   const repoMissing = $derived(!!repo && !!workspace.index?.missing_repos.some((m) => m.repo === repo));
+  const runner = $derived(t ? runnerOf(t) : "agent");
+  // The core refuses too (one agent per repo); this only explains the disabled button.
+  const busyIn = $derived(
+    workspace.index?.tasks.find((x) => x.id !== id && x.agent?.active && repo && projectOf(x)?.repos[0] === repo),
+  );
+  const startBlock = $derived(
+    !t
+      ? "No task"
+      : !repo
+        ? "The project has no repo"
+        : repoMissing
+          ? `Not on this Mac: ${repo}`
+          : t.status === "done"
+            ? "The task is done"
+            : busyIn
+              ? `${busyIn.id} already has an agent working in this repo`
+              : t.agent?.active
+                ? `${agentName(t.agent.active)} is already working on this task`
+                : runner !== "copilot" && runner !== "codex"
+                  ? "Pick Copilot or Codex as runner"
+                  : null,
+  );
   let copied = $state(false);
   async function copyPrompt() {
-    if (!t || !(await copyText(agentPrompt(t)))) return;
+    if (!t || !(await copyText(agentPrompt(t, body)))) return;
     copied = true;
     setTimeout(() => (copied = false), 1600);
+  }
+  let starting = $state(false);
+  async function startAgent() {
+    if (!t || startBlock || starting) return;
+    starting = true;
+    const prompt = agentPrompt(t, body, true);
+    const key = project?.key;
+    try {
+      await startAgentTask(id, runner);
+    } catch (e) {
+      workspace.error = String(e);
+      starting = false;
+      return;
+    }
+    try {
+      await launchAgent(id, runner, prompt);
+    } catch (e) {
+      // Fallback: the prompt to paste and the workspace in VS Code; the task stays started.
+      const ok = await copyText(prompt);
+      if (key) await openProjectInVscode(key);
+      workspace.error = `${e}. ${ok ? "Prompt copied – paste into the chat." : "Use Copy prompt."}`;
+    }
+    starting = false;
   }
   async function saveNote() {
     if (!note.trim()) return;
@@ -327,6 +375,13 @@
               <dd class="w-mono">{t.agent?.commit ?? "–"}</dd>
             </dl>
             <div class="t-agent-acts">
+              <button
+                type="button"
+                class="w-btn w-btn--primary"
+                disabled={!!startBlock || starting}
+                use:tip={startBlock ?? (runner === "codex" ? "Codex in a new Terminal window, in the repo" : "Copilot agent chat in the project's VS Code workspace")}
+                onclick={startAgent}>{starting ? "Starting…" : "Start agent"}</button
+              >
               <button type="button" class="w-btn" onclick={copyPrompt}>{copied ? "Copied" : "Copy prompt"}</button>
               {#if repo}
                 <button type="button" class="w-btn w-btn--quiet" disabled={repoMissing} use:tip={repoMissing ? `Not on this Mac: ${repo}` : repo} onclick={() => openRepo(repo)}
@@ -622,7 +677,11 @@
   }
   .t-agent-acts {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--w-s-2);
+  }
+  .t-agent-acts .w-btn {
+    white-space: nowrap;
   }
   .t-kv dt {
     color: var(--w-muted);
