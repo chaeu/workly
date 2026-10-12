@@ -58,7 +58,7 @@ Ein Workspace ist ein Ordner, zugleich Obsidian-Vault und Git-Repo. Menschenlesb
 
 | Ebene | Ort | Inhalt |
 | --- | --- | --- |
-| Gerät | `~/Library/Application Support/Workly/settings.json` | Workspaces (Name + Pfad, mehrere, umschaltbar), Repos-Ordner, Theme, Fenster, UI-Präferenzen, Agent-Funktionen an/aus, Stunden pro FTE und Jahr |
+| Gerät | `~/Library/Application Support/Workly/settings.json` | Workspaces (Name + Pfad, mehrere, umschaltbar), Repos-Ordner, Theme, UI-Präferenzen, Agent-Funktionen an/aus, Stunden pro FTE und Jahr. Fenster (Größe, Position, maximiert) speichert das Plugin `window-state` daneben in `~/Library/Application Support/dev.chaeu.workly/.window-state.json` |
 | Workspace | `<workspace>/.workly/config.yml` | Ordner für neue Projekte und Inbox, Scan-Ausschlüsse, Task-Status, WIP-Limits, Agent-Standards |
 | Workspace | `<workspace>/.workly/process.yml` | Use-Case-Prozess (Phasen, Schritte, Gates, Kanten) und Bewertungskriterien (`assessment:` mit Kriterien je Achse samt Ankern, optional `fte`-Schwellen; K.-o.-Fragen optional) |
 
@@ -269,7 +269,7 @@ Bis zur Entscheidung über M7 startet Workly keinen Agent selbst. Die Task-Detai
 
 **Nicht in v1:** Queue-Runner, Wochenreview, Jira/SharePoint, Markdown-Editor, Geräte-Sync, Mobile.
 
-**Nicht-funktional:** Start < 1 s bei einigen hundert Dateien, keine CPU-Last im Leerlauf, externe Änderungen < 1 s sichtbar, hell und dunkel, Kürzel ⌘N (Schnelleingabe), ⌘K (Suche), ⌘1–4 (Ansichten).
+**Nicht-funktional:** Start < 1 s bei einigen hundert Dateien, keine CPU-Last im Leerlauf, externe Änderungen < 1 s sichtbar, hell und dunkel, Fenster beim ersten Start ca. 80 % der Arbeitsfläche des Monitors in logischen Punkten (mindestens 1100×700, höchstens die Arbeitsfläche, zentriert), danach gemerkt (Größe, Position, maximiert); Mindestgröße 960×600; Scrollbalken nur bei echtem Überlauf; Tabellen, Boards und Prozesskarte scrollen nur waagrecht, senkrecht scrollt dort die Seite; Kürzel ⌘N (Schnelleingabe), ⌘K (Suche), ⌘1–4 (Ansichten).
 
 ## 7. Bauplan
 
