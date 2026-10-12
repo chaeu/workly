@@ -2,11 +2,13 @@ use serde::Serialize;
 use serde_json::Value;
 use std::path::Path;
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
-use std::time::Instant;
-use tauri::{AppHandle, Emitter, LogicalSize, Manager, State, WebviewWindow};
+use std::sync::{Mutex, OnceLock, mpsc};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, RunEvent, State, WebviewWindow};
 use tauri_plugin_window_state::StateFlags;
 use workly_core::agent::AgentContext;
+use workly_core::backup::{self, BackupInfo};
 use workly_core::history::PhaseSpan;
 use workly_core::model::{Config, Process};
 use workly_core::project::{MissingRepo, NewProject, NewUseCase, init_workspace, is_workspace};
@@ -27,6 +29,23 @@ struct AppState {
     watcher: Mutex<Option<Watcher>>,
     /// Why the workspace from the settings did not open at startup.
     open_error: Mutex<Option<String>>,
+    backup: Mutex<BackupStatus>,
+    /// Held while a backup runs, so runs never overlap.
+    backup_running: Mutex<()>,
+    /// Last finished run; the timer counts the interval from here.
+    backup_last: Mutex<Option<Instant>>,
+}
+
+/// What the sidebar shows. Runtime only: the commits are the record.
+#[derive(Clone, Default, Serialize)]
+struct BackupStatus {
+    /// off | running | ok | local | failed
+    state: &'static str,
+    /// End of the last run, ms since the epoch.
+    at: Option<u64>,
+    upstream: Option<String>,
+    /// Message and git's stderr tail.
+    error: Option<String>,
 }
 
 /// Run `f` on the open workspace; errors become strings for the frontend.
@@ -325,6 +344,80 @@ fn reveal(state: State<AppState>, path: String) -> Result<(), String> {
     open(&["-R", &abs.to_string_lossy()])
 }
 
+// ----------------------------------------------------------------- backup
+
+#[derive(Clone, Copy, PartialEq)]
+enum Trigger {
+    /// Timer: only when the interval has passed since the last run.
+    Tick,
+    /// Workspace opened, app quits: whenever backup is on.
+    Event,
+    /// "Back up now": also when the interval is off.
+    Manual,
+}
+
+fn set_backup(app: &AppHandle, status: BackupStatus) {
+    *app.state::<AppState>().backup.lock().unwrap() = status.clone();
+    let _ = app.emit("backup-status", status);
+}
+
+/// One backup of the open workspace. Blocks: call it off the UI thread.
+fn backup_once(app: &AppHandle, trigger: Trigger) {
+    let state = app.state::<AppState>();
+    let Ok(_running) = state.backup_running.try_lock() else { return };
+    let Some(root) = state.ws.lock().unwrap().as_ref().map(|ws| ws.root().to_path_buf()) else { return };
+    let cfg = Settings::load(&settings::default_path()).unwrap_or_default().backup_for(&root);
+    if !backup::is_repo(&root) || (cfg.every().is_none() && trigger != Trigger::Manual) {
+        return set_backup(app, BackupStatus { state: "off", ..Default::default() });
+    }
+    let last = *state.backup_last.lock().unwrap();
+    if trigger == Trigger::Tick && last.zip(cfg.every()).is_some_and(|(t, every)| t.elapsed() < every) {
+        return;
+    }
+    let prev = state.backup.lock().unwrap().clone();
+    set_backup(app, BackupStatus { state: "running", ..prev });
+    let b = backup::backup(&root, cfg.push);
+    *state.backup_last.lock().unwrap() = Some(Instant::now());
+    let at = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).ok();
+    let label = match (&b.error, b.pushed) {
+        (Some(_), _) => "failed",
+        (None, true) => "ok",
+        (None, false) => "local",
+    };
+    set_backup(app, BackupStatus { state: label, at, upstream: b.upstream, error: b.error });
+}
+
+fn spawn_backup(app: &AppHandle, trigger: Trigger) -> thread::JoinHandle<()> {
+    let app = app.clone();
+    thread::spawn(move || backup_once(&app, trigger))
+}
+
+#[tauri::command]
+fn backup_status(state: State<AppState>) -> BackupStatus {
+    state.backup.lock().unwrap().clone()
+}
+
+/// Starts a run and returns; the result arrives as `backup-status`.
+#[tauri::command]
+fn backup_now(app: AppHandle) {
+    spawn_backup(&app, Trigger::Manual);
+}
+
+#[tauri::command(async)]
+fn backup_info(state: State<AppState>) -> Result<BackupInfo, String> {
+    let root = with_ws(&state, |ws| Ok(ws.root().to_path_buf()))?;
+    Ok(backup::info(&root))
+}
+
+/// `git init` and `.gitignore` for an open workspace that is not a repo yet, then a first backup.
+#[tauri::command(async)]
+fn enable_backup(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    let root = with_ws(&state, |ws| Ok(ws.root().to_path_buf()))?;
+    backup::init_backup(&root).map_err(|e| e.to_string())?;
+    spawn_backup(&app, Trigger::Event);
+    Ok(())
+}
+
 // --------------------------------------------------------------- settings
 
 #[tauri::command]
@@ -338,11 +431,15 @@ fn save_settings(settings: Settings) -> Result<(), String> {
 }
 
 /// Open (and if needed initialise) a workspace, make it active and rebuild the index.
+/// A new workspace also becomes a Git repo for backups; when that is refused
+/// (OneDrive, iCloud) the workspace still opens and the reason comes back as a warning.
 #[tauri::command]
-fn open_workspace(app: AppHandle, path: String) -> Result<(), String> {
+fn open_workspace(app: AppHandle, path: String) -> Result<Option<String>, String> {
     let path = Path::new(&path);
+    let mut warning = None;
     if !is_workspace(path) {
         init_workspace(path).map_err(|e| e.to_string())?;
+        warning = backup::init_backup(path).err().map(|e| e.to_string());
     }
     load_workspace(&app, path)?;
     *app.state::<AppState>().open_error.lock().unwrap() = None;
@@ -351,7 +448,7 @@ fn open_workspace(app: AppHandle, path: String) -> Result<(), String> {
     s.activate(path);
     s.save(&file).map_err(|e| e.to_string())?;
     let _ = app.emit("workspace-changed", ());
-    Ok(())
+    Ok(warning)
 }
 
 /// Replace the open workspace and its watcher.
@@ -372,6 +469,9 @@ fn load_workspace(app: &AppHandle, path: &Path) -> Result<(), String> {
     *state.watcher.lock().unwrap() = None;
     *state.ws.lock().unwrap() = Some(ws);
     *state.watcher.lock().unwrap() = Some(watcher);
+    // App start or switch: catches edits made elsewhere (Obsidian) while it was not open.
+    set_backup(app, BackupStatus { state: "off", ..Default::default() });
+    spawn_backup(app, Trigger::Event);
     Ok(())
 }
 
@@ -410,6 +510,14 @@ pub fn run() {
                 eprintln!("workly: {e}");
                 *app.state::<AppState>().open_error.lock().unwrap() = Some(e);
             }
+            // ponytail: wakes once a minute and checks whether a backup is due; nothing else runs.
+            let handle = app.handle().clone();
+            thread::spawn(move || {
+                loop {
+                    thread::sleep(Duration::from_secs(60));
+                    backup_once(&handle, Trigger::Tick);
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -450,7 +558,23 @@ pub fn run() {
             get_settings,
             save_settings,
             open_workspace,
+            backup_status,
+            backup_now,
+            backup_info,
+            enable_backup,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Last backup on quit: a few seconds at most, quitting never waits longer.
+            if let RunEvent::Exit = event {
+                let (tx, rx) = mpsc::channel();
+                let app = app.clone();
+                thread::spawn(move || {
+                    backup_once(&app, Trigger::Event);
+                    let _ = tx.send(());
+                });
+                let _ = rx.recv_timeout(Duration::from_secs(3));
+            }
+        });
 }
