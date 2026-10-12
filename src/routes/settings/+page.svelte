@@ -11,6 +11,12 @@
     agentsEnabled,
     refreshCli,
     installCli,
+    backupNow,
+    backupInfo,
+    enableBackup,
+    BACKUP_DEFAULTS,
+    type BackupInfo,
+    type BackupSettings,
   } from "$lib/stores/workspace.svelte";
   import { getVersion } from "@tauri-apps/api/app";
 
@@ -40,6 +46,30 @@
 
   let version = $state("");
   getVersion().then((v) => (version = v));
+
+  // Backup of the open workspace; interval and push live in its entry of the workspace list.
+  const intervals = [["off", "Off"], ["15m", "15 min"], ["hourly", "Hourly"], ["daily", "Daily"]] as const;
+  const backup = $derived(workspace.backup);
+  const entry = $derived(settings?.workspaces.find((w) => w.path === openRoot));
+  const cfg = $derived(entry?.backup ?? BACKUP_DEFAULTS);
+  let info = $state<BackupInfo | null>(null);
+  let backupError = $state<string | null>(null);
+  // Re-read after every run too: the upstream can change in Git outside Workly.
+  $effect(() => {
+    void backup;
+    if (openRoot) backupInfo().then((i) => (info = i), (e) => (backupError = String(e)));
+  });
+  const saveBackup = (patch: Partial<BackupSettings>) =>
+    saveSettings({ workspaces: settings!.workspaces.map((w) => (w.path === entry?.path ? { ...w, backup: { ...cfg, ...patch } } : w)) });
+  async function enable() {
+    try {
+      await enableBackup();
+      info = await backupInfo();
+      backupError = null;
+    } catch (e) {
+      backupError = String(e);
+    }
+  }
 
   const remove = (path: string) => saveSettings({ workspaces: settings!.workspaces.filter((w) => w.path !== path) });
 </script>
@@ -84,6 +114,62 @@
       <p class="w-sub">Open now: <span class="w-mono">{tilde(openRoot)}</span> (from WORKLY_WORKSPACE, not saved)</p>
     {/if}
   </section>
+
+  {#if openRoot}
+    <section class="panel" id="backup">
+      <div class="panel-head">
+        <div class="grow">
+          <h2 class="w-h2">Backup</h2>
+          <p class="w-sub">Commits this workspace to its Git repo and pushes to the branch's upstream. Workly never sets up or changes remotes.</p>
+        </div>
+        {#if info?.repo}
+          <div class="w-toolbar">
+            <button class="w-btn" disabled={backup?.state === "running"} onclick={backupNow}>{backup?.state === "running" ? "Backing up…" : "Back up now"}</button>
+          </div>
+        {/if}
+      </div>
+      {#if info && !info.repo}
+        <div class="row">
+          {#if info.cloud}
+            <span class="w-sub grow">This folder is synced by OneDrive or iCloud, which breaks Git repos. Move the workspace to a local folder to back it up.</span>
+          {:else}
+            <span class="w-sub grow">Not a Git repo yet. Creates one in the workspace folder, with a .gitignore.</span>
+            <button class="w-btn" onclick={enable}>Enable backup</button>
+          {/if}
+        </div>
+      {:else if info}
+        {#if entry}
+          <div class="row">
+            <span class="name grow">Interval</span>
+            <div class="w-seg" role="group" aria-label="Backup interval">
+              {#each intervals as [id, label] (id)}
+                <button type="button" aria-pressed={cfg.interval === id} onclick={() => saveBackup({ interval: id })}>{label}</button>
+              {/each}
+            </div>
+          </div>
+          <div class="row">
+            <span class="name grow">Push</span>
+            <div class="w-seg" role="group" aria-label="Push">
+              <button type="button" aria-pressed={cfg.push} onclick={() => saveBackup({ push: true })}>On</button>
+              <button type="button" aria-pressed={!cfg.push} onclick={() => saveBackup({ push: false })}>Off</button>
+            </div>
+          </div>
+        {:else}
+          <p class="w-sub">Not in the workspace list (WORKLY_WORKSPACE): hourly, push on.</p>
+        {/if}
+        <div class="row">
+          <span class="name">Pushes to</span>
+          <span class="w-mono path" title={info.url ?? undefined}
+            >{info.upstream ? `${info.upstream}${info.url ? ` · ${info.url}` : ""}` : "No upstream. Commits stay on this Mac."}</span
+          >
+        </div>
+        {#if backup?.state === "failed" && backup.error}
+          <pre class="w-mono backup-error">{backup.error}</pre>
+        {/if}
+      {/if}
+      {#if backupError}<p class="w-sub cli-error">{backupError}</p>{/if}
+    </section>
+  {/if}
 
   <section class="panel">
     <div class="panel-head">
@@ -231,6 +317,22 @@
   }
   .version {
     margin: 0;
+  }
+  .grow {
+    flex: 1;
+    min-width: 0;
+  }
+  .backup-error {
+    margin: 0;
+    padding: var(--w-s-2) var(--w-s-3);
+    background: var(--w-tray);
+    border-radius: var(--w-r-md);
+    color: var(--w-warn);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 240px;
+    overflow: auto;
+    user-select: text;
   }
   .current {
     color: var(--w-accent);

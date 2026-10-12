@@ -114,8 +114,15 @@ export type Snapshot = {
   trash: string[];
   errors: ParseError[];
 };
+/** Per workspace and Mac (settings.json). Missing = hourly, push on. */
+export type BackupSettings = { interval: "off" | "15m" | "hourly" | "daily"; push: boolean };
+export const BACKUP_DEFAULTS: BackupSettings = { interval: "hourly", push: true };
+/** Mirrors BackupStatus in src-tauri: runtime only, `at` in ms since the epoch. */
+export type BackupStatus = { state: "off" | "running" | "ok" | "local" | "failed"; at: number | null; upstream: string | null; error: string | null };
+/** Mirrors backup::BackupInfo; `url` without credentials. */
+export type BackupInfo = { repo: boolean; branch: string | null; upstream: string | null; url: string | null; cloud: boolean };
 export type Settings = {
-  workspaces: { name: string; path: string }[];
+  workspaces: { name: string; path: string; backup?: BackupSettings }[];
   active: string | null;
   repos_dir: string | null;
   theme: "system" | "light" | "dark" | null;
@@ -151,6 +158,7 @@ export const workspace = $state({
   cli: undefined as CliLink | undefined,
   reloads: 0,
   loadedAt: "",
+  backup: null as BackupStatus | null,
 });
 
 async function load() {
@@ -180,6 +188,8 @@ export async function startWorkspace() {
   window.addEventListener("unhandledrejection", (e) => (workspace.error = String(e.reason)));
   await load();
   listen("workspace-changed", load);
+  listen<BackupStatus>("backup-status", (e) => (workspace.backup = e.payload));
+  workspace.backup = await invoke<BackupStatus>("backup_status");
   refreshCli();
 }
 
@@ -341,9 +351,10 @@ export async function saveSettings(patch: Partial<Settings>) {
 
 export async function openWorkspace(path: string) {
   try {
-    await invoke("open_workspace", { path });
+    // A warning: the workspace opened, but backup could not be set up (OneDrive, iCloud).
+    const warning = await invoke<string | null>("open_workspace", { path });
     workspace.settings = await invoke<Settings>("get_settings");
-    workspace.error = null;
+    workspace.error = warning;
     workspace.openError = null;
   } catch (e) {
     workspace.error = String(e);
@@ -367,4 +378,21 @@ export async function pickRepo() {
   const start = workspace.settings?.repos_dir;
   const path = await openDialog({ directory: true, title: "Choose a repo", defaultPath: start ? expandHome(start) : undefined });
   return typeof path === "string" ? tilde(path) : null;
+}
+
+// ----------------------------------------------------------------- backup
+
+/** Starts a run; the result arrives as `workspace.backup`. */
+export const backupNow = () => run("backup_now");
+export const backupInfo = () => invoke<BackupInfo>("backup_info");
+/** Throws, so Settings can show the reason next to the button. */
+export const enableBackup = () => invoke("enable_backup");
+
+/** "12 min ago" for the backup status; `now` from a ticking clock. */
+export function ago(at: number, now: number) {
+  const min = Math.floor((now - at) / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  if (min < 24 * 60) return `${Math.floor(min / 60)} h ago`;
+  return `${Math.floor(min / (24 * 60))} d ago`;
 }

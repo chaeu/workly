@@ -27,6 +27,7 @@
     agentsEnabled,
     problemCount,
     inDailyWork,
+    ago,
   } from "$lib/stores/workspace.svelte";
 
   startWorkspace();
@@ -63,6 +64,20 @@
   });
 
   const problems = $derived(problemCount());
+
+  // Ticks once a minute for "Backed up 12 min ago".
+  let now = $state(Date.now());
+  $effect(() => {
+    const t = setInterval(() => (now = Date.now()), 60_000);
+    return () => clearInterval(t);
+  });
+  const backupLabel = $derived.by(() => {
+    const b = workspace.backup;
+    if (!b || b.state === "off") return "Backup off";
+    if (b.state === "running") return "Backing up…";
+    const when = b.at ? ago(b.at, now) : "";
+    return b.state === "local" ? `Backed up locally ${when}` : `Backed up ${when}`;
+  });
   let showKeys = $state(false);
 
   // Start time on stderr once the first screen with data is painted.
@@ -168,6 +183,13 @@
         {/if}
         <a class="w-nav-item" href="/settings" aria-current={page.url.pathname === "/settings" ? "page" : undefined}>Settings</a>
       </div>
+      {#if workspace.index}
+        {#if workspace.backup?.state === "failed"}
+          <a class="backup failed" href="/settings#backup">Backup failed – details</a>
+        {:else}
+          <div class="backup" title={workspace.backup?.upstream ? `Pushes to ${workspace.backup.upstream}` : undefined}>{backupLabel}</div>
+        {/if}
+      {/if}
       <div class="w-mono foot-path" title={workspace.index?.root}>{workspace.index ? tilde(workspace.index.root) : "No workspace"}</div>
     </div>
   </nav>
@@ -265,6 +287,18 @@
     flex-direction: column;
     gap: var(--w-s-3);
     padding: 0;
+  }
+  .backup {
+    padding: 0 10px;
+    font-size: var(--w-fs-small);
+    color: var(--w-muted);
+    text-decoration: none;
+  }
+  .backup.failed {
+    color: var(--w-warn);
+  }
+  .backup.failed:hover {
+    text-decoration: underline;
   }
   .foot-path {
     padding: 0 10px;
