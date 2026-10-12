@@ -456,9 +456,11 @@ fn load_workspace(app: &AppHandle, path: &Path) -> Result<(), String> {
     let ws = Workspace::open(path).map_err(|e| e.to_string())?;
     let handle = app.clone();
     let watcher = ws
-        .watch(move |_changes| {
+        .watch(move |changes| {
             let state = handle.state::<AppState>();
-            if let Some(ws) = state.ws.lock().unwrap().as_mut() {
+            if let Some(ws) = state.ws.lock().unwrap().as_mut()
+                && !changes.iter().all(|c| c.is_run_log())
+            {
                 ws.rescan();
             }
             let _ = handle.emit("workspace-changed", ());

@@ -194,4 +194,13 @@ fn app_watcher_sees_cli_writes() {
     app.rescan();
     let t = &app.index.task("WR-5").unwrap().task;
     assert_eq!((t.status.as_str(), t.agent.as_ref().unwrap().active.as_deref()), ("doing", Some("codex")));
+
+    // A note only touches the run log; the event says so, the app skips the rescan.
+    assert_eq!(code(&wly(Some(&root), &["task", "note", "WR-5", "--agent", "codex", "hi"])), 0);
+    let mut seen = Vec::new();
+    while let Ok(batch) = rx.recv_timeout(Duration::from_millis(600)) {
+        seen.extend(batch);
+    }
+    assert!(seen.iter().any(|c| *c == workly_core::watch::Change::Changed(".workly/runs/WR-5/log.jsonl".into())), "{seen:?}");
+    assert!(seen.iter().all(|c| c.is_run_log()), "{seen:?}");
 }

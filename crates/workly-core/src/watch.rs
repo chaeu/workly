@@ -14,6 +14,16 @@ pub enum Change {
     Removed(String),
 }
 
+impl Change {
+    /// Run logs (`.workly/runs/`) change no task file: no rescan needed.
+    pub fn is_run_log(&self) -> bool {
+        let (Change::Changed(p) | Change::Removed(p)) = self;
+        p.starts_with(RUNS_DIR)
+    }
+}
+
+const RUNS_DIR: &str = ".workly/runs/";
+
 /// Keeps watching until dropped.
 pub struct Watcher(#[allow(dead_code)] Debouncer<RecommendedWatcher>);
 
@@ -45,13 +55,14 @@ pub fn watch(
     Ok(Watcher(debouncer))
 }
 
-/// Markdown files, folders (moved or deleted as a whole) and the two config
-/// files. Skips dotfiles (temp files, .DS_Store), excluded folders and `.git`
-/// (a backup commit must never trigger a rescan, whatever `scan_exclude` says).
+/// Markdown files, folders (moved or deleted as a whole), the two config
+/// files and run logs. Skips dotfiles (temp files, .DS_Store), excluded folders
+/// and `.git` (a backup commit must never trigger a rescan, whatever
+/// `scan_exclude` says).
 fn relevant(root: &Path, path: &Path, exclude: &[String]) -> Option<String> {
     let rel = path.strip_prefix(root).ok()?;
     let s = rel.to_string_lossy();
-    if s == ".workly/config.yml" || s == ".workly/process.yml" {
+    if s == ".workly/config.yml" || s == ".workly/process.yml" || s.starts_with(RUNS_DIR) {
         return Some(s.into_owned());
     }
     if rel.components().any(|c| c.as_os_str() == ".git" || exclude.iter().any(|x| c.as_os_str() == x.as_str())) {
@@ -78,6 +89,9 @@ mod tests {
         assert_eq!(r("/ws/projects/x").as_deref(), Some("projects/x"));
         assert_eq!(r("/ws/.workly/config.yml").as_deref(), Some(".workly/config.yml"));
         assert_eq!(r("/ws/.workly/log/2026-10.jsonl"), None);
+        assert_eq!(r("/ws/.workly/runs/WR-5/log.jsonl").as_deref(), Some(".workly/runs/WR-5/log.jsonl"));
+        assert!(Change::Changed(".workly/runs/WR-5/log.jsonl".into()).is_run_log());
+        assert!(!Change::Changed(".workly/config.yml".into()).is_run_log());
         assert_eq!(r("/ws/.workly/trash/a/WR-1-x.md"), None);
         assert_eq!(r("/ws/inbox/.IN-1-a.md.workly-tmp"), None);
         assert_eq!(r("/ws/.DS_Store"), None);
