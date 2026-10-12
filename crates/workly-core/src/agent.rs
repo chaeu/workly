@@ -68,6 +68,11 @@ pub fn check_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// One shell word in single quotes (`'` becomes `'\''`): every path written into a script goes through here.
+pub fn shell_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
 fn now() -> Value {
     Value::from(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string())
 }
@@ -236,12 +241,80 @@ impl Workspace {
     }
 
     fn run_log_path(&self, id: &str) -> Result<PathBuf> {
+        Ok(self.run_dir(id)?.join("log.jsonl"))
+    }
+
+    /// `.workly/runs/<ID>/`: run log, prompt and start script of a task.
+    fn run_dir(&self, id: &str) -> Result<PathBuf> {
         self.status_of(id)?;
         // The id comes from frontmatter: only a plain `KEY-N` may become a path segment.
         if split_id(id).is_none_or(|(key, n)| format!("{key}-{n}") != id) {
             return Err(Error::Invalid(format!("task id '{id}' cannot have a run log")));
         }
-        Ok(self.root.join(".workly/runs").join(id).join("log.jsonl"))
+        Ok(self.root.join(".workly/runs").join(id))
+    }
+
+    /// The first repo of the task's project as a folder on this Mac.
+    pub fn repo_dir(&self, id: &str) -> Result<PathBuf> {
+        let repo = self.task_repo(id).ok_or_else(|| Error::Invalid(format!("{id}: the project has no repo")))?;
+        let dir = expand_home(&repo);
+        if !dir.is_dir() {
+            return Err(Error::Invalid(format!("Repo folder not found: {repo}")));
+        }
+        Ok(dir)
+    }
+
+    /// The agent prompt as `.workly/runs/<ID>/prompt.md`; agents get the path, never the text in argv.
+    pub fn write_run_prompt(&self, id: &str, prompt: &str) -> Result<PathBuf> {
+        let file = self.run_dir(id)?.join("prompt.md");
+        fs::create_dir_all(file.parent().unwrap())?;
+        atomic_write(&file, prompt, &self.own)?;
+        Ok(file)
+    }
+
+    /// `prompt.md` plus `.workly/runs/<ID>/start.command` (mode 700): Terminal runs it in the
+    /// user's login shell, so `codex` resolves through their own PATH, else the VS Code
+    /// extension's binary. Model and effort from the task, else `agent_defaults`; "auto" = no flag.
+    pub fn write_codex_start(&self, id: &str, prompt: &str) -> Result<PathBuf> {
+        use std::os::unix::fs::PermissionsExt;
+        let repo = self.repo_dir(id)?;
+        let prompt = self.write_run_prompt(id, prompt)?;
+        let agent = self.index.task(id).and_then(|t| t.task.agent.as_ref());
+        let defaults = &self.config.agent_defaults;
+        let pick = |task: Option<String>, default: &str| {
+            let v = task.filter(|v| v != "auto").unwrap_or_else(|| default.to_string());
+            (v != "auto" && !v.is_empty()).then_some(v)
+        };
+        let mut flags = String::new();
+        if let Some(model) = pick(agent.and_then(|a| a.model.clone()), &defaults.model) {
+            flags += &format!(" -m {}", shell_quote(&model));
+        }
+        if let Some(effort) = pick(agent.and_then(|a| a.effort.clone()), &defaults.effort) {
+            flags += &format!(" -c {}", shell_quote(&format!("model_reasoning_effort={effort}")));
+        }
+        let q = |p: &std::path::Path| shell_quote(&p.to_string_lossy());
+        let script = format!(
+            r#"#!/bin/sh
+# Written by Workly: Codex on {id} in the project's first repo, with prompt.md next to this file.
+cd {repo} || exit 1
+export WORKLY_WORKSPACE={root}
+export WORKLY_AGENT=codex
+# ponytail: newest extension by install time, Apple Silicon only.
+codex=$(command -v codex) || codex=$(ls -td "$HOME"/.vscode/extensions/openai.chatgpt-*/bin/macos-aarch64/codex 2>/dev/null | head -1)
+if [ -z "$codex" ]; then
+  echo "Codex not found. Install the Codex CLI or the Codex extension for VS Code, then start the agent again."
+  exit 1
+fi
+exec "$codex"{flags} "$(cat {prompt})"
+"#,
+            repo = q(&repo),
+            root = q(&self.root),
+            prompt = q(&prompt),
+        );
+        let file = self.run_dir(id)?.join("start.command");
+        atomic_write(&file, &script, &self.own)?;
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o700))?;
+        Ok(file)
     }
 
     fn status_of(&self, id: &str) -> Result<String> {
@@ -252,6 +325,13 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quoting() {
+        assert_eq!(shell_quote("a b"), "'a b'");
+        assert_eq!(shell_quote("it's"), r"'it'\''s'");
+        assert_eq!(shell_quote(""), "''");
+    }
 
     #[test]
     fn names() {

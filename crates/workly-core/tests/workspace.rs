@@ -1213,6 +1213,68 @@ fn start_from_doing_sets_only_the_agent() {
 }
 
 #[test]
+fn codex_start_script_runs_with_quoted_paths() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("it's a ws");
+    copy_dir(Path::new(FIXTURE), &root);
+    let repo = dir.path().join("my 'repo' $HOME");
+    fs::create_dir_all(&repo).unwrap();
+    let edit = |rel: &str, from: &str, to: &str| {
+        let f = root.join(rel);
+        let src = fs::read_to_string(&f).unwrap();
+        assert!(src.contains(from), "{rel}");
+        fs::write(&f, src.replacen(from, to, 1)).unwrap();
+    };
+    edit("projects/website-relaunch/_project.md", "repos: [~/repos/website]", &format!("repos: [\"{}\"]", repo.display()));
+    edit("projects/website-relaunch/tasks/WR-5-navigation.md", "  model: auto\n", "  model: gpt-5\n");
+    let ws = Workspace::open(&root).unwrap();
+    let prompt = "Work on WR-5.\nIt's \"quoted\", $(not run) and `nor this`.";
+    let script = ws.write_codex_start("WR-5", prompt).unwrap();
+    assert_eq!(script, ws.root().join(".workly/runs/WR-5/start.command"));
+    assert_eq!(fs::read_to_string(ws.root().join(".workly/runs/WR-5/prompt.md")).unwrap(), prompt);
+    assert!(!fs::read_to_string(&script).unwrap().contains("quoted"), "the prompt never goes into the script");
+    assert_eq!(fs::metadata(&script).unwrap().permissions().mode() & 0o777, 0o700);
+
+    // A fake codex prints its arguments, the folder and the env.
+    let fake = "#!/bin/sh\nfor a in \"$@\"; do printf '[%s]\\n' \"$a\"; done\npwd\necho \"$WORKLY_WORKSPACE|$WORKLY_AGENT\"\n";
+    let install = |dir: &Path| {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(dir.join("codex"), fake).unwrap();
+        fs::set_permissions(dir.join("codex"), fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    let run = |path: &str, home: &Path| Command::new("/bin/sh").arg(&script).env("PATH", path).env("HOME", home).output().unwrap();
+    let expected = format!("[-m]\n[gpt-5]\n[-c]\n[model_reasoning_effort=high]\n[{prompt}]\n{}\n{}|codex\n", repo.display(), ws.root().display());
+
+    // From PATH.
+    let bin = dir.path().join("bin");
+    install(&bin);
+    let empty = dir.path().join("empty home");
+    fs::create_dir_all(&empty).unwrap();
+    let out = run(&format!("{}:/usr/bin:/bin", bin.display()), &empty);
+    assert_eq!(String::from_utf8_lossy(&out.stdout), expected);
+    // Not on PATH: the VS Code extension's binary.
+    let home = dir.path().join("home");
+    install(&home.join(".vscode/extensions/openai.chatgpt-26.1007.1-darwin-arm64/bin/macos-aarch64"));
+    let out = run("/usr/bin:/bin", &home);
+    assert_eq!(String::from_utf8_lossy(&out.stdout), expected);
+    // Neither: a readable message and exit 1.
+    let out = run("/usr/bin:/bin", &empty);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("Codex not found."));
+
+    // Defaults: auto everywhere = no flags. No repo = refused.
+    edit("projects/website-relaunch/tasks/WR-5-navigation.md", "  model: gpt-5\n  effort: high\n", "  model: auto\n  effort: auto\n");
+    edit(".workly/config.yml", "  effort: medium\n", "  effort: auto\n");
+    let ws = Workspace::open(&root).unwrap();
+    ws.write_codex_start("WR-5", prompt).unwrap();
+    let out = run(&format!("{}:/usr/bin:/bin", bin.display()), &empty);
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with(&format!("[{prompt}]\n")));
+    assert!(matches!(ws.write_codex_start("NA-1", prompt), Err(Error::Invalid(_))));
+}
+
+#[test]
 fn agent_context_and_agents_md() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
