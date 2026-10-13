@@ -73,7 +73,7 @@ pub fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
 }
 
-fn now() -> Value {
+pub(crate) fn now() -> Value {
     Value::from(chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string())
 }
 
@@ -139,7 +139,12 @@ impl Workspace {
             changes.push(("agent.since", now()));
         }
         self.set_task_fields(id, &changes, actor)?;
-        self.left_waiting(id, &Value::from(status), actor)
+        self.left_waiting(id, &Value::from(status.as_str()), actor)?;
+        // B8: the repo before the agent works. A rework (from doing or review) keeps the
+        // first run's baseline, so uncommitted changes of that run stay in agent.changes.
+        // ponytail: best effort; the start stands even if the baseline cannot be written.
+        let _ = if from_doing || status == "review" { self.ensure_baseline(id) } else { self.write_baseline(id) };
+        Ok(())
     }
 
     /// First repo of the task's project, if the project has one.
@@ -162,6 +167,8 @@ impl Workspace {
     /// `agent.last_run` when an agent was working; `commit` goes to `agent.commit`.
     /// `summary` becomes one item under `## Updates` (first line after the
     /// stamp, further lines as continuation lines), in the same write.
+    /// With a baseline: `agent.changes`, `agent.repo` and `agent.commit: null` (unless
+    /// `commit` is given) too, and `.workly/runs/<ID>/review.json`.
     pub fn review_task(&mut self, id: &str, commit: Option<&str>, summary: Option<&str>, actor: &str) -> Result<()> {
         let status = self.status_of(id)?;
         if status != "doing" {
@@ -174,23 +181,36 @@ impl Workspace {
             }
             changes.push(("agent.commit", Value::from(sha.to_ascii_lowercase())));
         }
-        let update = match summary {
+        let lines: Option<String> = match summary {
             Some(text) => {
                 let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
                 if lines.is_empty() {
                     return Err(Error::Invalid("a summary needs text".into()));
                 }
-                let stamp = chrono::Local::now().format("%Y-%m-%d %H:%M");
-                Some(format!("{stamp} · {}: {}", crate::who(actor), lines.join("\n")))
+                Some(lines.join("\n"))
             }
             None => None,
         };
+        let stamp = chrono::Local::now().format("%Y-%m-%d %H:%M");
+        let update = lines.as_ref().map(|l| format!("{stamp} · {}: {l}", crate::who(actor)));
+        let review = self.review_changes(id, lines.as_deref())?;
+        if let Some((paths, state)) = &review {
+            changes.push(("agent.changes", Value::from(paths.clone())));
+            changes.push(("agent.repo", Value::from(crate::settings::tilde(std::path::Path::new(&state.repo)))));
+            if commit.is_none() {
+                changes.push(("agent.commit", Value::Null));
+            }
+        }
         if self.index.task(id).and_then(|t| t.task.agent.as_ref()).is_some_and(|a| a.active.is_some()) {
             changes.push(("agent.active", Value::Null));
             changes.push(("agent.since", Value::Null));
             changes.push(("agent.last_run", now()));
         }
-        self.set_task_fields_with_update(id, &changes, update.as_deref(), actor)
+        self.set_task_fields_with_update(id, &changes, update.as_deref(), actor)?;
+        match review {
+            Some((_, state)) => self.write_review(id, &state),
+            None => Ok(()),
+        }
     }
 
     /// Append a note to the task's run log; the task file stays untouched.
@@ -246,7 +266,7 @@ impl Workspace {
     }
 
     /// `.workly/runs/<ID>/`: run log, prompt and start script of a task.
-    fn run_dir(&self, id: &str) -> Result<PathBuf> {
+    pub(crate) fn run_dir(&self, id: &str) -> Result<PathBuf> {
         self.status_of(id)?;
         // The id comes from frontmatter: only a plain `KEY-N` may become a path segment.
         if split_id(id).is_none_or(|(key, n)| format!("{key}-{n}") != id) {

@@ -2,6 +2,7 @@
 
 pub mod agent;
 pub mod backup;
+pub mod changes;
 pub mod frontmatter;
 pub mod history;
 pub mod ids;
@@ -104,6 +105,9 @@ impl NewTask {
 
 /// Task fields that are absent rather than `null` when unset.
 const OPTIONAL_FIELDS: [&str; 2] = ["parent", "waiting_for"];
+
+/// Task fields written as block lists (one path per line, readable diffs).
+const BLOCK_LISTS: [&str; 1] = ["agent.changes"];
 
 /// Most tasks on the focus strip.
 pub const FOCUS_MAX: usize = 3;
@@ -261,7 +265,8 @@ impl Workspace {
             let path: Vec<&str> = field.split('.').collect();
             let from = patch::get_field(&out, &path).map_err(Error::Invalid)?;
             if &from != value {
-                out = patch::set_field(&out, &path, value).map_err(Error::Invalid)?;
+                let set = if BLOCK_LISTS.contains(field) { patch::set_block_list } else { patch::set_field };
+                out = set(&out, &path, value).map_err(Error::Invalid)?;
                 changed.push((*field, from, value));
             }
         }

@@ -45,6 +45,10 @@ pub struct AgentState {
     pub since: Option<String>,
     pub commit: Option<String>,
     pub last_run: Option<String>,
+    /// Repo paths the agent changed, set at review (B8); what "Commit" commits.
+    pub changes: Option<Vec<String>>,
+    /// The repo of `changes`, as `~/...`.
+    pub repo: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }
