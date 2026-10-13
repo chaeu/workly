@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, LogicalSize, Manager, RunEvent, State, WebviewWi
 use tauri_plugin_window_state::StateFlags;
 use workly_core::agent::{AgentContext, RunEntry};
 use workly_core::backup::{self, BackupInfo};
+use workly_core::frontmatter::AcceptanceItem;
 use workly_core::history::PhaseSpan;
 use workly_core::model::{Config, Process};
 use workly_core::project::{MissingRepo, NewProject, NewUseCase, init_workspace, is_workspace};
@@ -142,6 +143,21 @@ fn set_description(app: AppHandle, state: State<AppState>, id: String, text: Str
             r => r.map(|()| true),
         }),
     )
+}
+
+#[tauri::command]
+fn toggle_acceptance(app: AppHandle, state: State<AppState>, id: String, n: usize, shown: AcceptanceItem) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.toggle_acceptance(&id, n, &shown, ACTOR)))
+}
+
+#[tauri::command]
+fn add_acceptance(app: AppHandle, state: State<AppState>, id: String, text: String) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.add_acceptance(&id, &text, ACTOR)))
+}
+
+#[tauri::command]
+fn add_sections(app: AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.add_sections(&id, ACTOR)))
 }
 
 #[tauri::command]
@@ -622,6 +638,9 @@ pub fn run() {
             set_focus,
             add_task_update,
             set_description,
+            toggle_acceptance,
+            add_acceptance,
+            add_sections,
             move_task,
             delete_task,
             restore,

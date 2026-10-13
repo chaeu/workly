@@ -1,5 +1,6 @@
 //! Walk a workspace and build the in-memory index.
 
+use crate::frontmatter::{AcceptanceItem, acceptance, split};
 use crate::model::{Config, ParseError, Process, Project, Task, assessment_problems, parse_file, saving_problems};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -30,6 +31,8 @@ pub struct TaskEntry {
     pub path: String,
     /// Folder of the owning project; `None` for inbox tasks.
     pub project: Option<String>,
+    /// Criteria of the body's Acceptance section.
+    pub acceptance: Vec<AcceptanceItem>,
     #[serde(flatten)]
     pub task: Task,
 }
@@ -128,8 +131,8 @@ fn read(root: &Path, path: &Path) -> Result<String, ParseError> {
 
 fn load_task(root: &Path, file: &Path, project: Option<String>, idx: &mut Index) {
     let path = rel(root, file);
-    match read(root, file).and_then(|src| parse_file::<Task>(&path, &src)) {
-        Ok(task) => idx.tasks.push(TaskEntry { path, project, task }),
+    match read(root, file).and_then(|src| parse_file::<Task>(&path, &src).map(|t| (t, acceptance(split(&src).body)))) {
+        Ok((task, acceptance)) => idx.tasks.push(TaskEntry { path, project, acceptance, task }),
         Err(e) => idx.errors.push(e),
     }
 }

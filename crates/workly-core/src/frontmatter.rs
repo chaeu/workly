@@ -1,5 +1,13 @@
 //! Split a Markdown file into frontmatter and body without changing a byte,
 //! plus body helpers.
+//!
+//! Task body layout: `## Description`, `## Acceptance` (old name `## Acceptance
+//! criteria`), `## Updates`. A body without `## Description` is the old layout:
+//! the description is the text before the first Acceptance or Updates heading.
+//! A section ends at the next heading of level 1 or 2.
+
+use serde::Serialize;
+use std::ops::Range;
 
 /// `head + frontmatter + fence + body` is always exactly the source.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -61,7 +69,6 @@ pub fn append_update(body: &str, text: &str) -> String {
     let eol = eol_of(body);
     let item = format!("- {}", text.lines().collect::<Vec<_>>().join(&format!("{eol}  ")));
     let lines: Vec<&str> = body.split_inclusive('\n').collect();
-    let content = |l: &str| l.trim_end_matches(['\n', '\r']).to_string();
     let Some(head) = updates_head(&lines) else {
         let mut out = body.to_string();
         if !out.is_empty() {
@@ -73,34 +80,178 @@ pub fn append_update(body: &str, text: &str) -> String {
         out.push_str(&format!("## Updates{eol}{item}{eol}"));
         return out;
     };
-    // Section ends at the next heading of level 1 or 2, or at EOF.
-    let end = lines[head + 1..]
-        .iter()
-        .position(|l| l.starts_with("# ") || l.starts_with("## "))
-        .map_or(lines.len(), |n| head + 1 + n);
+    append_in_section(&lines, head, &item, eol)
+}
+
+/// `item` as the last line of the section under `head`, after its last non-blank line.
+fn append_in_section(lines: &[&str], head: usize, item: &str, eol: &str) -> String {
+    let end = section_end(lines, head);
     let last = (head..end).rev().find(|&i| !content(lines[i]).trim().is_empty()).unwrap_or(head);
     let mut out: String = lines[..=last].concat();
     if out.ends_with('\n') {
-        out.push_str(&item);
+        out.push_str(item);
         out.push_str(eol);
     } else {
         // Last line had no newline: keep "no final newline".
         out.push_str(eol);
-        out.push_str(&item);
+        out.push_str(item);
     }
     out.push_str(&lines[last + 1..].concat());
     out
 }
 
-/// Line index of the `## Updates` heading.
-fn updates_head(lines: &[&str]) -> Option<usize> {
-    lines.iter().position(|l| l.trim_end() == "## Updates")
+fn content(l: &str) -> &str {
+    l.trim_end_matches(['\n', '\r'])
 }
 
-/// Byte offset where the description ends: the `## Updates` line, or the end of the body.
-pub fn description_end(body: &str) -> usize {
+/// A heading of level 1 or 2: ends a section.
+pub fn is_section_end(l: &str) -> bool {
+    l.starts_with("# ") || l.starts_with("## ")
+}
+
+fn is_description(l: &str) -> bool {
+    l.trim_end() == "## Description"
+}
+
+fn is_acceptance(l: &str) -> bool {
+    matches!(l.trim_end(), "## Acceptance" | "## Acceptance criteria")
+}
+
+fn is_updates(l: &str) -> bool {
+    l.trim_end() == "## Updates"
+}
+
+/// Line index of the `## Updates` heading.
+fn updates_head(lines: &[&str]) -> Option<usize> {
+    lines.iter().position(|l| is_updates(l))
+}
+
+/// End (exclusive line index) of the section under `head`.
+fn section_end(lines: &[&str], head: usize) -> usize {
+    lines[head + 1..].iter().position(|l| is_section_end(l)).map_or(lines.len(), |n| head + 1 + n)
+}
+
+fn offset(lines: &[&str], i: usize) -> usize {
+    lines[..i].iter().map(|l| l.len()).sum()
+}
+
+/// Byte range of the description in `body`, and whether the body has a
+/// `## Description` section (else it is the old layout).
+pub fn description_range(body: &str) -> (Range<usize>, bool) {
     let lines: Vec<&str> = body.split_inclusive('\n').collect();
-    updates_head(&lines).map_or(body.len(), |h| lines[..h].concat().len())
+    match lines.iter().position(|l| is_description(l)) {
+        Some(d) => (offset(&lines, d + 1)..offset(&lines, section_end(&lines, d)), true),
+        None => {
+            let end = lines.iter().position(|l| is_acceptance(l) || is_updates(l)).unwrap_or(lines.len());
+            (0..offset(&lines, end), false)
+        }
+    }
+}
+
+/// A line the description cannot contain, because it would end the description.
+pub fn ends_description(line: &str, sectioned: bool) -> bool {
+    if sectioned { is_section_end(line) } else { is_acceptance(line) || is_updates(line) }
+}
+
+/// One acceptance criterion as the app shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+pub struct AcceptanceItem {
+    pub text: String,
+    pub done: bool,
+}
+
+/// `- [ ] a`, `- [x] a` or a plain `- a` (open). Empty items are no criteria.
+fn acceptance_item(line: &str) -> Option<AcceptanceItem> {
+    let c = content(line);
+    let rest = c.strip_prefix("- ").or_else(|| c.strip_prefix("* "))?;
+    let (done, text) = match rest.get(..3) {
+        Some("[ ]") => (false, &rest[3..]),
+        Some("[x]" | "[X]") => (true, &rest[3..]),
+        _ => (false, rest),
+    };
+    let text = text.trim();
+    (!text.is_empty()).then(|| AcceptanceItem { text: text.into(), done })
+}
+
+/// Criteria of the first Acceptance section with their line index.
+fn acceptance_lines(lines: &[&str]) -> Vec<(usize, AcceptanceItem)> {
+    let Some(head) = lines.iter().position(|l| is_acceptance(l)) else { return Vec::new() };
+    (head + 1..section_end(lines, head)).filter_map(|i| Some((i, acceptance_item(lines[i])?))).collect()
+}
+
+/// Criteria of the Acceptance section; empty without one.
+pub fn acceptance(body: &str) -> Vec<AcceptanceItem> {
+    let lines: Vec<&str> = body.split_inclusive('\n').collect();
+    acceptance_lines(&lines).into_iter().map(|(_, a)| a).collect()
+}
+
+/// Flip criterion `n`: exactly one line changes (`- [ ]` <-> `- [x]`, a plain
+/// `- a` becomes `- [x] a`). `None` when item `n` is not `shown` any more.
+pub fn toggle_acceptance(body: &str, n: usize, shown: &AcceptanceItem) -> Option<String> {
+    let lines: Vec<&str> = body.split_inclusive('\n').collect();
+    let (i, item) = acceptance_lines(&lines).into_iter().nth(n)?;
+    if &item != shown {
+        return None;
+    }
+    let c = content(lines[i]);
+    let (marker, rest) = c.split_at(2);
+    let line = match rest.get(..3) {
+        Some("[ ]") => format!("{marker}[x]{}", &rest[3..]),
+        Some("[x]" | "[X]") => format!("{marker}[ ]{}", &rest[3..]),
+        _ => format!("{marker}[x] {rest}"),
+    };
+    Some([&lines[..i].concat(), line.as_str(), &lines[i][c.len()..], &lines[i + 1..].concat()].concat())
+}
+
+/// Append `- [ ] <text>` to the Acceptance section; the section is created above
+/// `## Updates` (else at the end) when missing.
+pub fn append_acceptance(body: &str, text: &str) -> String {
+    let eol = eol_of(body);
+    let item = format!("- [ ] {text}");
+    let lines: Vec<&str> = body.split_inclusive('\n').collect();
+    match lines.iter().position(|l| is_acceptance(l)) {
+        Some(head) => append_in_section(&lines, head, &item, eol),
+        None => insert_above_updates(body, &format!("## Acceptance{eol}{item}{eol}")),
+    }
+}
+
+/// "Add sections" for an old-layout body: `## Description` on top (the old text
+/// becomes the description) and an empty `## Acceptance` above `## Updates`,
+/// each only when missing. Nothing else changes.
+pub fn add_sections(body: &str) -> String {
+    let eol = eol_of(body);
+    let lines: Vec<&str> = body.split_inclusive('\n').collect();
+    let mut out = body.to_string();
+    if !lines.iter().any(|l| is_description(l)) {
+        out = format!("## Description{eol}{out}");
+    }
+    if !lines.iter().any(|l| is_acceptance(l)) {
+        out = insert_above_updates(&out, &format!("## Acceptance{eol}"));
+    }
+    out
+}
+
+/// `block` (whole lines) above the `## Updates` heading with a blank line on
+/// both sides, else at the end after a blank line.
+fn insert_above_updates(body: &str, block: &str) -> String {
+    let eol = eol_of(body);
+    let lines: Vec<&str> = body.split_inclusive('\n').collect();
+    let (mut out, rest) = match updates_head(&lines) {
+        Some(u) => (lines[..u].concat(), Some(lines[u..].concat())),
+        None => (body.to_string(), None),
+    };
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push_str(eol);
+    }
+    if !out.trim().is_empty() && !out.ends_with(&eol.repeat(2)) {
+        out.push_str(eol);
+    }
+    out.push_str(block);
+    if let Some(rest) = rest {
+        out.push_str(eol);
+        out.push_str(&rest);
+    }
+    out
 }
 
 /// The description as the user sees it: LF line ends, no trailing whitespace.
@@ -108,14 +259,21 @@ pub fn normalize_description(text: &str) -> String {
     text.replace("\r\n", "\n").trim_end().to_string()
 }
 
-/// Replace the description with `text`; everything from `## Updates` on stays
-/// byte-identical. The whitespace after the old description (blank line before
-/// the section, final newline or none) is kept.
+/// Replace the description (see `description_range`) with `text`; everything
+/// else stays byte-identical. The whitespace after the old description (blank
+/// line before the next section, final newline or none) is kept.
 pub fn replace_description(body: &str, text: &str, eol: &str) -> String {
-    let (old, rest) = body.split_at(description_end(body));
+    let (range, sectioned) = description_range(body);
+    let (before, old, rest) = (&body[..range.start], &body[range.clone()], &body[range.end..]);
+    let mut before = before.to_string();
+    if !before.is_empty() && !before.ends_with('\n') {
+        before.push_str(eol);
+    }
     let text = normalize_description(text).replace('\n', eol);
     if text.is_empty() {
-        return rest.to_string();
+        // An empty section keeps one blank line before the next heading.
+        let blank = if sectioned && !rest.is_empty() { eol } else { "" };
+        return format!("{before}{blank}{rest}");
     }
     let kept = old.trim_end();
     let gap = if !kept.is_empty() {
@@ -125,7 +283,7 @@ pub fn replace_description(body: &str, text: &str, eol: &str) -> String {
     } else {
         eol.repeat(2)
     };
-    format!("{text}{gap}{rest}")
+    format!("{before}{text}{gap}{rest}")
 }
 
 #[cfg(test)]
@@ -188,7 +346,67 @@ mod tests {
         assert_eq!(r("Old\n", " "), "");
         let crlf = "Old\r\n\r\n## Updates\r\n- a\r\n";
         assert_eq!(replace_description(crlf, "A\nB", "\r\n"), "A\r\nB\r\n\r\n## Updates\r\n- a\r\n");
-        assert_eq!(description_end(crlf), 7);
+        assert_eq!(description_range(crlf), (0..7, false));
+    }
+
+    const SECTIONS: &str = "## Description\nOld text\n\n## Acceptance\n- [x] a\n- [ ] b\n- plain\n- \n  - nested\n\n## Updates\n- 2026 · me: x\n";
+
+    #[test]
+    fn description_in_sections() {
+        let r = |b, t| replace_description(b, t, "\n");
+        assert_eq!(r(SECTIONS, "New\nlines"), SECTIONS.replace("Old text\n", "New\nlines\n"));
+        assert_eq!(r(SECTIONS, ""), SECTIONS.replace("Old text\n\n", "\n"));
+        let empty = "## Description\n\n## Acceptance\n\n## Updates\n";
+        assert_eq!(r(empty, "X"), "## Description\nX\n\n## Acceptance\n\n## Updates\n");
+        let once = r(empty, "X");
+        assert_eq!(r(&once, ""), empty);
+        assert_eq!(r("## Description", "X"), "## Description\nX\n");
+        // Old layout with an Acceptance section: the description ends there.
+        let old = "Free text\n\n## Acceptance criteria\n- a\n";
+        assert_eq!(r(old, "New"), "New\n\n## Acceptance criteria\n- a\n");
+        assert!(ends_description("## Notes", true) && !ends_description("## Notes", false));
+        assert!(ends_description("## Acceptance criteria", false));
+    }
+
+    #[test]
+    fn acceptance_items() {
+        let item = |t: &str, done| AcceptanceItem { text: t.into(), done };
+        assert_eq!(acceptance(SECTIONS), [item("a", true), item("b", false), item("plain", false)]);
+        assert_eq!(acceptance("Text\n- [ ] not in a section\n"), []);
+        assert_eq!(acceptance("## Acceptance criteria\n- Header ok\n* [X] Star\n"), [item("Header ok", false), item("Star", true)]);
+    }
+
+    #[test]
+    fn toggle_changes_one_line() {
+        let item = |t: &str, done| AcceptanceItem { text: t.into(), done };
+        assert_eq!(toggle_acceptance(SECTIONS, 0, &item("a", true)).unwrap(), SECTIONS.replace("- [x] a", "- [ ] a"));
+        assert_eq!(toggle_acceptance(SECTIONS, 1, &item("b", false)).unwrap(), SECTIONS.replace("- [ ] b", "- [x] b"));
+        assert_eq!(toggle_acceptance(SECTIONS, 2, &item("plain", false)).unwrap(), SECTIONS.replace("- plain", "- [x] plain"));
+        // Not what the app showed: refused.
+        assert_eq!(toggle_acceptance(SECTIONS, 1, &item("b", true)), None);
+        assert_eq!(toggle_acceptance(SECTIONS, 1, &item("c", false)), None);
+        assert_eq!(toggle_acceptance(SECTIONS, 3, &item("x", false)), None);
+        let crlf = "## Acceptance\r\n- [ ] a\r\n";
+        assert_eq!(toggle_acceptance(crlf, 0, &item("a", false)).unwrap(), "## Acceptance\r\n- [x] a\r\n");
+    }
+
+    #[test]
+    fn append_acceptance_cases() {
+        assert_eq!(append_acceptance(SECTIONS, "c"), SECTIONS.replace("  - nested\n", "  - nested\n- [ ] c\n"));
+        assert_eq!(append_acceptance("Text\n\n## Updates\n- u\n", "c"), "Text\n\n## Acceptance\n- [ ] c\n\n## Updates\n- u\n");
+        assert_eq!(append_acceptance("Text\n## Updates\n", "c"), "Text\n\n## Acceptance\n- [ ] c\n\n## Updates\n");
+        assert_eq!(append_acceptance("Text", "c"), "Text\n\n## Acceptance\n- [ ] c\n");
+        assert_eq!(append_acceptance("", "c"), "## Acceptance\n- [ ] c\n");
+    }
+
+    #[test]
+    fn add_sections_cases() {
+        assert_eq!(add_sections("Text\n\n## Updates\n- u\n"), "## Description\nText\n\n## Acceptance\n\n## Updates\n- u\n");
+        assert_eq!(add_sections("Text\n"), "## Description\nText\n\n## Acceptance\n");
+        assert_eq!(add_sections(""), "## Description\n\n## Acceptance\n");
+        let old = "Text\n\n## Acceptance criteria\n- a\n";
+        assert_eq!(add_sections(old), format!("## Description\n{old}"));
+        assert_eq!(add_sections(SECTIONS), SECTIONS);
     }
 
     #[test]

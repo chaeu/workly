@@ -1464,3 +1464,73 @@ fn add_waiting_column_is_a_one_line_diff() {
     assert!(matches!(ws.add_waiting_status("app"), Err(Error::Invalid(_))));
     assert_eq!(fs::read_to_string(&path).unwrap(), flow);
 }
+
+const OPS2: &str = "projects/ops-dashboard/tasks/OPS-2-dashboard-v1.md";
+
+fn item(text: &str, done: bool) -> workly_core::frontmatter::AcceptanceItem {
+    workly_core::frontmatter::AcceptanceItem { text: text.into(), done }
+}
+
+#[test]
+fn acceptance_toggle_is_a_one_line_diff() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let a = &ws.index.task("OPS-2").unwrap().acceptance;
+    assert_eq!((a.len(), a.iter().filter(|x| x.done).count()), (4, 1));
+    let before = fs::read_to_string(root.join(OPS2)).unwrap();
+    ws.toggle_acceptance("OPS-2", 1, &item("Failed jobs of the last 24 h listed", false), "app").unwrap();
+    let after = fs::read_to_string(root.join(OPS2)).unwrap();
+    assert_eq!(after, before.replace("- [ ] Failed jobs", "- [x] Failed jobs"));
+    assert!(ws.index.task("OPS-2").unwrap().acceptance[1].done);
+    let last = log_lines(&root).pop().unwrap();
+    assert_eq!((&last["field"], &last["to"]), (&json!("acceptance"), &json!({ "text": "Failed jobs of the last 24 h listed", "done": true })));
+    // The app showed an older state: refused, nothing written.
+    let Err(Error::Conflict(_)) = ws.toggle_acceptance("OPS-2", 1, &item("Failed jobs of the last 24 h listed", false), "app") else { panic!() };
+    assert_eq!(fs::read_to_string(root.join(OPS2)).unwrap(), after);
+}
+
+#[test]
+fn wr8_is_never_touched_by_a_toggle() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    assert!(ws.index.task("WR-8").unwrap().acceptance.is_empty());
+    for (n, shown) in [(0, item("list a", false)), (1, item("list b", true))] {
+        assert!(matches!(ws.toggle_acceptance("WR-8", n, &shown, "app"), Err(Error::Conflict(_))));
+    }
+    assert_eq!(fs::read_to_string(root.join(WR8)).unwrap(), before);
+}
+
+#[test]
+fn description_write_in_sections() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let before = fs::read_to_string(root.join(OPS2)).unwrap();
+    let old = "First version of the job dashboard for the ops team: failed and slow jobs\nof the last 24 hours on one page.";
+    ws.set_description("OPS-2", "One page with failed jobs.", old, "app").unwrap();
+    let after = fs::read_to_string(root.join(OPS2)).unwrap();
+    assert_eq!(after, before.replace(old, "One page with failed jobs."));
+    // Headings that would end the section are refused.
+    let r = ws.set_description("OPS-2", "a\n## Notes\nb", "One page with failed jobs.", "app");
+    assert!(matches!(r, Err(Error::Invalid(_))), "{r:?}");
+    // Old layout keeps its rule: WR-8's description is the whole body.
+    let wr8 = fs::read_to_string(root.join(WR8)).unwrap();
+    let body = wr8.split("---\n").nth(2).unwrap();
+    ws.set_description("WR-8", "New", body, "app").unwrap();
+    assert!(fs::read_to_string(root.join(WR8)).unwrap().ends_with("---\nNew"));
+}
+
+#[test]
+fn add_criterion_and_sections() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let wr5 = "projects/website-relaunch/tasks/WR-5-navigation.md";
+    let before = fs::read_to_string(root.join(wr5)).unwrap();
+    ws.add_sections("WR-5", "app").unwrap();
+    let body = "## Description\nBurger menu below 720 px, keyboard accessible.\n\n## Acceptance\n";
+    assert_eq!(fs::read_to_string(root.join(wr5)).unwrap(), before.replace("Burger menu below 720 px, keyboard accessible.\n", body));
+    ws.add_acceptance("WR-5", "  Works   with keyboard ", "app").unwrap();
+    assert!(fs::read_to_string(root.join(wr5)).unwrap().ends_with("## Acceptance\n- [ ] Works with keyboard\n"));
+    assert_eq!(ws.index.task("WR-5").unwrap().acceptance, [item("Works with keyboard", false)]);
+    assert!(matches!(ws.add_acceptance("WR-5", " ", "app"), Err(Error::Invalid(_))));
+}

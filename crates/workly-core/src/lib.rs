@@ -14,6 +14,7 @@ pub mod trash;
 pub mod watch;
 pub mod write;
 
+use frontmatter::AcceptanceItem;
 use model::{Config, ParseError, Process, Task, parse_file};
 use scan::{Index, rel};
 use serde_json::Value;
@@ -68,6 +69,12 @@ pub(crate) fn who(actor: &str) -> &str {
         "app" => "me",
         a => a.strip_prefix("agent:").unwrap_or(a),
     }
+}
+
+/// `text` as one line (whitespace runs collapsed); `empty` is the error when nothing is left.
+fn one_line(text: &str, empty: &str) -> Result<String> {
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() { Err(Error::Invalid(empty.into())) } else { Ok(text) }
 }
 
 /// Most tasks on the focus strip.
@@ -302,10 +309,7 @@ impl Workspace {
     /// Append `- YYYY-MM-DD HH:MM · <who>: <text>` under `## Updates` in the body.
     pub fn add_task_update(&mut self, id: &str, text: &str, actor: &str) -> Result<()> {
         // One list item: line breaks would end it.
-        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
-        if text.is_empty() {
-            return Err(Error::Invalid("an update needs text".into()));
-        }
+        let text = one_line(text, "an update needs text")?;
         let line = format!("{} · {}: {text}", chrono::Local::now().format("%Y-%m-%d %H:%M"), who(actor));
         let file = self.task_path(id)?;
         let src = fs::read_to_string(&file)?;
@@ -317,28 +321,60 @@ impl Workspace {
         Ok(())
     }
 
-    /// Replace the description (body before `## Updates`). `expected` is the
-    /// description the caller started from; if the file has another one now,
-    /// nothing is written. The old text goes to the log.
+    /// Replace the description (the `## Description` section, or in the old
+    /// layout the text before Acceptance/Updates). `expected` is the description
+    /// the caller started from; if the file has another one now, nothing is
+    /// written. The old text goes to the log.
     pub fn set_description(&mut self, id: &str, text: &str, expected: &str, actor: &str) -> Result<()> {
-        use crate::frontmatter::{description_end, eol_of, normalize_description, replace_description, split};
+        use crate::frontmatter::{description_range, ends_description, normalize_description, replace_description};
         let (text, expected) = (normalize_description(text), normalize_description(expected));
-        if text.lines().any(|l| l.trim_end() == "## Updates") {
-            return Err(Error::Invalid("the description cannot contain a '## Updates' line".into()));
-        }
+        self.patch_body(id, "description", actor, |body| {
+            let (range, sectioned) = description_range(body);
+            if let Some(line) = text.lines().find(|l| ends_description(l, sectioned)) {
+                return Err(Error::Invalid(format!("the description cannot contain the heading '{}'; use ### for sub-headings", line.trim_end())));
+            }
+            let from = normalize_description(&body[range]);
+            if from != expected {
+                return Err(Error::Conflict(format!("the description of {id} changed outside")));
+            }
+            Ok((replace_description(body, &text, crate::frontmatter::eol_of(body)), from.into(), text.clone().into()))
+        })
+    }
+
+    /// Check or uncheck acceptance criterion `n` (0-based): one line changes.
+    /// `shown` is the item as the app showed it; anything else is a conflict.
+    pub fn toggle_acceptance(&mut self, id: &str, n: usize, shown: &AcceptanceItem, actor: &str) -> Result<()> {
+        self.patch_body(id, "acceptance", actor, |body| {
+            let out = crate::frontmatter::toggle_acceptance(body, n, shown)
+                .ok_or_else(|| Error::Conflict(format!("the acceptance criteria of {id} changed outside")))?;
+            let to = AcceptanceItem { text: shown.text.clone(), done: !shown.done };
+            Ok((out, serde_json::to_value(shown).unwrap_or_default(), serde_json::to_value(to).unwrap_or_default()))
+        })
+    }
+
+    /// Append one open criterion `- [ ] <text>` to the Acceptance section (created when missing).
+    pub fn add_acceptance(&mut self, id: &str, text: &str, actor: &str) -> Result<()> {
+        let text = one_line(text, "a criterion needs text")?;
+        self.patch_body(id, "acceptance", actor, |body| Ok((crate::frontmatter::append_acceptance(body, &text), Value::Null, text.clone().into())))
+    }
+
+    /// Old layout -> `## Description` on top, empty `## Acceptance` above `## Updates`.
+    pub fn add_sections(&mut self, id: &str, actor: &str) -> Result<()> {
+        self.patch_body(id, "sections", actor, |body| Ok((crate::frontmatter::add_sections(body), Value::Null, "## Description, ## Acceptance".into())))
+    }
+
+    /// Rewrite a task's body with `f` -> (body, log from, log to); the
+    /// frontmatter stays byte-identical. Unchanged body = no write, no log.
+    fn patch_body(&mut self, id: &str, field: &str, actor: &str, f: impl FnOnce(&str) -> Result<(String, Value, Value)>) -> Result<()> {
         let file = self.task_path(id)?;
         let src = fs::read_to_string(&file)?;
-        let p = split(&src);
-        let from = normalize_description(&p.body[..description_end(p.body)]);
-        if from != expected {
-            return Err(Error::Conflict(format!("the description of {id} changed outside")));
-        }
-        if from == text {
+        let p = crate::frontmatter::split(&src);
+        let (body, from, to) = f(p.body)?;
+        if body == p.body {
             return Ok(());
         }
-        let out = [p.head, p.frontmatter, p.fence, &replace_description(p.body, &text, eol_of(&src))].concat();
-        atomic_write(&file, &out, &self.own)?;
-        log(&self.root, &LogEntry::new(actor, "task.update", id, Some("description"), from.into(), text.into()))?;
+        atomic_write(&file, &[p.head, p.frontmatter, p.fence, &body].concat(), &self.own)?;
+        log(&self.root, &LogEntry::new(actor, "task.update", id, Some(field), from, to))?;
         self.rescan();
         Ok(())
     }
