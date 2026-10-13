@@ -17,8 +17,6 @@
   // svelte-ignore state_referenced_locally
   let project = $state(initial ?? "");
   let priority = $state(2);
-  // svelte-ignore state_referenced_locally
-  let more = $state(!!initialParent);
   let due = $state("");
   // svelte-ignore state_referenced_locally
   let parent = $state(initialParent ?? "");
@@ -41,27 +39,24 @@
       title: title.trim(),
       project: project || null,
       priority,
-      ...(more && {
-        due: due || null,
-        parent: parent.trim() || null,
-        tags: tags.split(/[,\s]+/).map((x) => x.replace(/^#/, "")).filter(Boolean),
-        description,
-        acceptance: criteria.map((c) => c.trim()).filter(Boolean),
-        runner: runner || null,
-        model: model.trim() || null,
-        effort: effort || null,
-      }),
+      due: due || null,
+      parent: parent.trim() || null,
+      tags: tags.split(/[,\s]+/).map((x) => x.replace(/^#/, "")).filter(Boolean),
+      description,
+      acceptance: criteria.map((c) => c.trim()).filter(Boolean),
+      runner: runner || null,
+      model: model.trim() || null,
+      effort: effort || null,
     });
     busy = false;
     if (id) onclose(id);
   }
 
-  // ⌘↵: first expands, then saves.
+  // ⌘↵ saves from any field (Enter in the title too; in the criteria it adds a line).
   function onFormKey(e: KeyboardEvent) {
     if (e.key === "Enter" && e.metaKey) {
       e.preventDefault();
-      if (more) save();
-      else more = true;
+      save();
     }
   }
 
@@ -89,7 +84,6 @@
 <!-- Esc closes only this dialog, not a card below it. -->
 <div
   class="w-modal"
-  class:more
   role="dialog"
   aria-modal="true"
   aria-labelledby="qa-title"
@@ -114,75 +108,67 @@
           <button type="button" aria-pressed={priority === p} onclick={() => (priority = p)}>P{p}</button>
         {/each}
       </div>
-      {#if !more}
-        <button type="button" class="w-btn w-btn--quiet" title="⌘↵" onclick={() => (more = true)}>More</button>
-      {/if}
-      <button type="submit" class="w-btn w-btn--primary" disabled={!title.trim() || busy}>Add task</button>
     </div>
 
-    {#if more}
-      <div class="kv">
-        <label for="qa-due">Due</label>
-        <input id="qa-due" type="date" bind:value={due} />
-        <label for="qa-parent">Parent</label>
-        <input id="qa-parent" class="w-mono" list="qa-parents" bind:value={parent} placeholder="WR-12" />
-        <datalist id="qa-parents">
-          {#each parents as t (t.id)}<option value={t.id}>{t.title}</option>{/each}
-        </datalist>
-      </div>
-      <textarea bind:value={description} aria-label="Description (Markdown)" placeholder="Description" use:grow></textarea>
-      <div class="crit">
-        <span class="w-caps">Acceptance</span>
-        {#each criteria as _, i (i)}
-          <label class="crit-row">
-            <span class="box" aria-hidden="true"></span>
-            <input
-              bind:this={rows[i]}
-              bind:value={criteria[i]}
-              placeholder={i === 0 ? "Criterion – Enter adds the next" : ""}
-              aria-label="Acceptance criterion {i + 1}"
-              onkeydown={(e) => onCriterionKey(e, i)}
-            />
-          </label>
-        {/each}
-      </div>
+    <div class="kv">
+      <label for="qa-due">Due</label>
+      <input id="qa-due" type="date" bind:value={due} />
+      <label for="qa-parent">Parent</label>
+      <input id="qa-parent" class="w-mono" list="qa-parents" bind:value={parent} placeholder="WR-12" />
+      <datalist id="qa-parents">
+        {#each parents as t (t.id)}<option value={t.id}>{t.title}</option>{/each}
+      </datalist>
+    </div>
+    <textarea bind:value={description} aria-label="Description (Markdown)" placeholder="Description" use:grow></textarea>
+    <div class="crit">
+      <span class="w-caps">Acceptance</span>
+      {#each criteria as _, i (i)}
+        <label class="crit-row">
+          <span class="box" aria-hidden="true"></span>
+          <input
+            bind:this={rows[i]}
+            bind:value={criteria[i]}
+            placeholder={i === 0 ? "Criterion – Enter adds the next" : ""}
+            aria-label="Acceptance criterion {i + 1}"
+            onkeydown={(e) => onCriterionKey(e, i)}
+          />
+        </label>
+      {/each}
+    </div>
+    <details>
+      <summary class="w-caps">Tags</summary>
+      <input class="w-mono" bind:value={tags} placeholder="frontend, ux" aria-label="Tags, comma separated" />
+    </details>
+    {#if agentsEnabled()}
       <details>
-        <summary class="w-caps">Tags</summary>
-        <input class="w-mono" bind:value={tags} placeholder="frontend, ux" aria-label="Tags, comma separated" />
+        <summary class="w-caps">Agent</summary>
+        <div class="kv">
+          <label for="qa-runner">Runner</label>
+          <select id="qa-runner" bind:value={runner}>
+            <option value="">Default</option>
+            {#each RUNNERS as r (r)}<option value={r}>{r === "auto" ? "auto" : agentName(r)}</option>{/each}
+          </select>
+          <label for="qa-model">Model</label>
+          <input id="qa-model" bind:value={model} placeholder="auto" />
+          <label for="qa-effort">Effort</label>
+          <select id="qa-effort" bind:value={effort}>
+            <option value="">Default</option>
+            {#each EFFORTS as x (x)}<option value={x}>{x}</option>{/each}
+          </select>
+        </div>
       </details>
-      {#if agentsEnabled()}
-        <details>
-          <summary class="w-caps">Agent</summary>
-          <div class="kv">
-            <label for="qa-runner">Runner</label>
-            <select id="qa-runner" bind:value={runner}>
-              <option value="">Default</option>
-              {#each RUNNERS as r (r)}<option value={r}>{r === "auto" ? "auto" : agentName(r)}</option>{/each}
-            </select>
-            <label for="qa-model">Model</label>
-            <input id="qa-model" bind:value={model} placeholder="auto" />
-            <label for="qa-effort">Effort</label>
-            <select id="qa-effort" bind:value={effort}>
-              <option value="">Default</option>
-              {#each EFFORTS as x (x)}<option value={x}>{x}</option>{/each}
-            </select>
-          </div>
-        </details>
-      {/if}
-      <p class="w-sub hint">⌘↵ adds the task</p>
     {/if}
+    <div class="foot">
+      <span class="w-sub">⌘↵</span>
+      <button type="submit" class="w-btn w-btn--primary" disabled={!title.trim() || busy}>Add task</button>
+    </div>
   </form>
 </div>
 
 <style>
+  /* Centred like the other modals (they translate by -50%); scrolls when taller than the window. */
   .w-modal {
-    width: min(520px, calc(100% - 32px));
-    top: 28%;
-  }
-  /* Expanded: centred like the other modals (they translate by -50%), scrolls when taller than the window. */
-  .w-modal.more {
     width: min(600px, calc(100% - 32px));
-    top: 50%;
     max-height: calc(100% - 48px);
     overflow-y: auto;
   }
@@ -270,9 +256,11 @@
   details > input {
     width: 100%;
   }
-  .hint {
-    margin: 0;
-    text-align: right;
+  .foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--w-s-3);
   }
   .w-btn--primary:disabled {
     opacity: 0.5;
