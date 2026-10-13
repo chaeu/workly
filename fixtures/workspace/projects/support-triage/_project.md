@@ -19,7 +19,7 @@ usecase:
   current_state: Need reported, no pilot yet
   assessment:
     date: 2026-10-06
-    scores: { volume: 3, quality: 2, access: 1, maturity: 2 }
+    scores: { volume: 3, quality: 2, access: 1, maturity: 2, reuse: 3 }
     note: Ticket export only as a sample so far
 ---
 Classify incoming tickets and suggest a team. No tasks folder yet: the app must handle that.

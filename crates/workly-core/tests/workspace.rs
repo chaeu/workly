@@ -884,7 +884,7 @@ fn hand_written_bad_savings_are_problems_not_breakage() {
 
 // ------------------------------------------------------------- assessment (A1)
 
-const ST_ASSESSMENT: &str = "  assessment:\n    date: 2026-10-06\n    scores: { volume: 3, quality: 2, access: 1, maturity: 2 }\n    note: Ticket export only as a sample so far\n";
+const ST_ASSESSMENT: &str = "  assessment:\n    date: 2026-10-06\n    scores: { volume: 3, quality: 2, access: 1, maturity: 2, reuse: 3 }\n    note: Ticket export only as a sample so far\n";
 
 /// The template has no K.O. questions (ASSESSMENT.md D8); the mechanism stays, so tests add some back.
 fn with_ko(root: &Path) {
@@ -898,12 +898,12 @@ fn with_ko(root: &Path) {
 fn fixture_assessments_load() {
     let ws = Workspace::open(FIXTURE).unwrap();
     let a = ws.index.project("ST").unwrap().project.usecase.as_ref().unwrap().assessment.clone().unwrap();
-    assert_eq!((a.date.as_deref(), a.ko.len(), a.scores.len(), a.scores.get("integration")), (Some("2026-10-06"), 0, 4, None));
+    assert_eq!((a.date.as_deref(), a.ko.len(), a.scores.len(), a.scores.get("integration")), (Some("2026-10-06"), 0, 5, None));
     // IE's volume comes from Manual effort (fte on the criterion), so it is not stored.
     let ie = ws.index.project("IE").unwrap().project.usecase.as_ref().unwrap().assessment.clone().unwrap();
     assert_eq!((ie.scores.len(), ie.scores.get("volume")), (5, None));
     let method = ws.process.as_ref().unwrap().assessment.as_ref().unwrap();
-    assert_eq!((method.ko.len(), method.criteria.len()), (0, 6));
+    assert_eq!((method.ko.len(), method.criteria.len(), method.criteria.iter().filter(|c| c.bonus).count()), (0, 9, 3));
     assert_eq!(method.criteria[0].fte.as_deref(), Some(&[0.5, 2.0][..]));
     assert!(ws.process.as_ref().unwrap().validate().is_empty());
     assert!(ws.index.project("NA").unwrap().project.usecase.as_ref().unwrap().assessment.is_none());
@@ -922,11 +922,11 @@ fn assessment_write_is_lossless_and_logged() {
     let mut ws = Workspace::open(&root).unwrap();
     let n = log_lines(&root).len();
     let old = json!({ "date": "2026-10-06", "ko": { "owner": "pass", "risk": "open" }, "scores": { "volume": 3, "quality": 2, "access": 1, "maturity": 2 }, "source": "workshop", "note": "Ticket export only as a sample so far" });
-    let new = json!({ "date": "2026-10-08", "ko": { "owner": "pass", "risk": "pass", "data_use": "pass" }, "scores": { "volume": 3, "quality": 2, "access": 2, "integration": 3, "maturity": 2 }, "note": "Output stays internal" });
+    let new = json!({ "date": "2026-10-08", "ko": { "owner": "pass", "risk": "pass", "data_use": "pass" }, "scores": { "volume": 3, "quality": 2, "access": 2, "integration": 3, "maturity": 2, "reuse": 3 }, "note": "Output stays internal" });
     ws.update_project_field("ST", "usecase.assessment", &new, "app").unwrap();
     let want = before.replace(
         "    date: 2026-10-06\n    ko:\n      owner: pass   # Mia\n      risk: open\n    scores: { volume: 3, quality: 2, access: 1, maturity: 2 }\n",
-        "    date: 2026-10-08\n    ko: { owner: pass, risk: pass, data_use: pass }\n    scores: { volume: 3, quality: 2, access: 2, integration: 3, maturity: 2 }\n",
+        "    date: 2026-10-08\n    ko: { owner: pass, risk: pass, data_use: pass }\n    scores: { volume: 3, quality: 2, access: 2, integration: 3, maturity: 2, reuse: 3 }\n",
     ).replace("    note: Ticket export only as a sample so far\n", "    note: Output stays internal\n");
     assert_eq!(fs::read_to_string(&file).unwrap(), want);
     let lines = log_lines(&root);
@@ -991,6 +991,7 @@ fn assessment_is_validated_on_write() {
         (json!({ "date": "2026-10-08", "scores": { "access": 2.5 } }), "usecase.assessment: scores.access must be 1, 2 or 3, got 2.5"),
         (json!({ "date": "2026-10-08", "scores": { "access": "2" } }), "usecase.assessment: scores.access must be 1, 2 or 3, got \"2\""),
         (json!({ "date": "2026-10-08", "scores": { "cost": 2 } }), "usecase.assessment: unknown criterion 'cost' (not in process.yml)"),
+        (json!({ "date": "2026-10-08", "scores": { "reuse": 2 } }), "usecase.assessment: scores.reuse is a bonus: 3 (yes) or left out (no), got 2"),
         (json!({ "date": "2026-10-08", "ko": { "budget": "pass" } }), "usecase.assessment: unknown K.O. question 'budget' (not in process.yml)"),
         (json!({ "date": "2026-10-08", "ko": ["owner"] }), "usecase.assessment: ko must be a map"),
         (json!({ "date": "2026-10-08", "note": 3 }), "usecase.assessment: note must be a text"),
@@ -1021,7 +1022,7 @@ fn hand_written_bad_assessment_is_problems_not_breakage() {
         .replace("    scores: { volume: 3, quality: 2,", "    ko: { budget: pass }\n    scores: { volume: 5, quality: 2, cost: 1,");
     fs::write(&st, src).unwrap();
     let ie = root.join("projects/invoice-extraction/_project.md");
-    let src = fs::read_to_string(&ie).unwrap().replace("    date: 2026-09-08\n", "    date: 2026-09-08\n    note: [a, b]\n").replace("    note: Header fields only, line items later\n", "");
+    let src = fs::read_to_string(&ie).unwrap().replace("    date: 2026-09-08\n", "    date: 2026-09-08\n    note: [a, b]\n").replace("scores: { quality: 3,", "scores: { reuse: 1, quality: 3,").replace("    note: Header fields only, line items later\n", "");
     fs::write(&ie, src).unwrap();
     let na = root.join("projects/newsletter-automation/_project.md");
     let src = fs::read_to_string(&na).unwrap().replace("  current_state:", "  assessment: quick win\n  current_state:");
@@ -1039,6 +1040,7 @@ fn hand_written_bad_assessment_is_problems_not_breakage() {
         msgs,
         [
             ("projects/invoice-extraction/_project.md", "usecase.assessment: note must be a text"),
+            ("projects/invoice-extraction/_project.md", "usecase.assessment: scores.reuse is a bonus: 3 (yes) or left out (no), got 1"),
             ("projects/newsletter-automation/_project.md", "usecase.assessment must be a map"),
             ("projects/support-triage/_project.md", "usecase.assessment: unknown K.O. question 'budget' (not in process.yml)"),
             ("projects/support-triage/_project.md", "usecase.assessment: scores.volume must be 1, 2 or 3, got 5"),

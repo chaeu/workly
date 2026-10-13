@@ -213,6 +213,7 @@ pub fn assessment_problems(v: &Value, method: Option<&Assessment>) -> Vec<String
     }
     let ko_ids: Option<Vec<&str>> = method.map(|m| m.ko.iter().map(|k| k.id.as_str()).collect());
     let criteria_ids: Option<Vec<&str>> = method.map(|m| m.criteria.iter().map(|c| c.id.as_str()).collect());
+    let bonus_ids: Vec<&str> = method.into_iter().flat_map(|m| &m.criteria).filter(|c| c.bonus).map(|c| c.id.as_str()).collect();
     let ko_ok: fn(&Value) -> bool = |x| x.as_str().is_some_and(|x| KO_VALUES.contains(&x));
     let checks = [
         ("ko", "K.O. question", ko_ids, ko_ok, "pass, fail or open"),
@@ -225,6 +226,8 @@ pub fn assessment_problems(v: &Value, method: Option<&Assessment>) -> Vec<String
                 for (id, x) in entries {
                     if ids.as_ref().is_some_and(|ids| !ids.contains(&id.as_str())) {
                         out.push(format!("usecase.assessment: unknown {what} '{id}' (not in process.yml)"));
+                    } else if key == "scores" && bonus_ids.contains(&id.as_str()) && x.as_u64() != Some(3) {
+                        out.push(format!("usecase.assessment: scores.{id} is a bonus: 3 (yes) or left out (no), got {x}"));
                     } else if !ok(x) {
                         out.push(format!("usecase.assessment: {key}.{id} must be {allowed}, got {x}"));
                     }
@@ -366,9 +369,12 @@ pub struct Criterion {
     /// value | feasibility
     pub axis: String,
     pub label: String,
-    /// What 1, 2 and 3 points mean.
+    /// What 1, 2 and 3 points mean; a bonus has one anchor (what "yes" means).
     #[serde(default)]
     pub anchors: Vec<String>,
+    /// Yes/no on the value axis: yes is stored as 3, no is left out and never open.
+    #[serde(default)]
+    pub bonus: bool,
     /// `[low, high]`: the app derives the points from Manual effort (FTE) when there is any.
     pub fte: Option<Vec<f64>>,
 }
@@ -476,18 +482,28 @@ impl Process {
                 if !AXES.contains(&c.axis.as_str()) {
                     errors.push(format!("assessment: criterion '{}' has unknown axis '{}' (value | feasibility)", c.id, c.axis));
                 }
-                if c.anchors.len() != 3 {
+                if c.bonus {
+                    if c.axis != "value" {
+                        errors.push(format!("assessment: bonus criterion '{}' must be on the value axis", c.id));
+                    }
+                    if c.anchors.len() != 1 {
+                        errors.push(format!("assessment: bonus criterion '{}' needs exactly 1 anchor, has {}", c.id, c.anchors.len()));
+                    }
+                    if c.fte.is_some() {
+                        errors.push(format!("assessment: bonus criterion '{}' cannot have fte", c.id));
+                    }
+                } else if c.anchors.len() != 3 {
                     errors.push(format!("assessment: criterion '{}' needs exactly 3 anchors, has {}", c.id, c.anchors.len()));
                 }
-                if let Some(f) = c.fte.as_deref()
+                if let Some(f) = c.fte.as_deref().filter(|_| !c.bonus)
                     && !matches!(f, [a, b] if *a > 0.0 && a < b)
                 {
                     errors.push(format!("assessment: criterion '{}' fte needs two ascending numbers > 0, e.g. [0.5, 2], got {f:?}", c.id));
                 }
             }
             for axis in AXES {
-                if !a.criteria.iter().any(|c| c.axis == axis) {
-                    errors.push(format!("assessment: no criterion on the {axis} axis"));
+                if !a.criteria.iter().any(|c| c.axis == axis && !c.bonus) {
+                    errors.push(format!("assessment: no criterion on the {axis} axis (bonus criteria do not count)"));
                 }
             }
         }
@@ -543,7 +559,8 @@ mod tests {
         let p: Process = serde_yaml::from_str(
             "assessment:\n  ko: [{id: a, label: A}]\n  criteria:\n    - {id: a, axis: value, label: X, anchors: [1, 2, 3]}\n    - {id: b, axis: cost, label: Y, anchors: [1, 2]}\n\
              \x20   - {id: c, axis: value, label: Z, anchors: [1, 2, 3], fte: [2, 0.5]}\n    - {id: d, axis: value, label: W, anchors: [1, 2, 3], fte: [0, 1, 2]}\n\
-             \x20   - {id: e, axis: value, label: V, anchors: [1, 2, 3], fte: [0.5, 2]}\n",
+             \x20   - {id: e, axis: value, label: V, anchors: [1, 2, 3], fte: [0.5, 2]}\n\
+             \x20   - {id: f, axis: feasibility, label: U, bonus: true, anchors: [1, 2, 3], fte: [0.5, 2]}\n    - {id: g, axis: value, label: T, bonus: true, anchors: [yes]}\n",
         )
         .unwrap();
         assert_eq!(
@@ -554,7 +571,10 @@ mod tests {
                 "assessment: criterion 'b' needs exactly 3 anchors, has 2",
                 "assessment: criterion 'c' fte needs two ascending numbers > 0, e.g. [0.5, 2], got [2.0, 0.5]",
                 "assessment: criterion 'd' fte needs two ascending numbers > 0, e.g. [0.5, 2], got [0.0, 1.0, 2.0]",
-                "assessment: no criterion on the feasibility axis",
+                "assessment: bonus criterion 'f' must be on the value axis",
+                "assessment: bonus criterion 'f' needs exactly 1 anchor, has 3",
+                "assessment: bonus criterion 'f' cannot have fte",
+                "assessment: no criterion on the feasibility axis (bonus criteria do not count)",
             ]
         );
     }
