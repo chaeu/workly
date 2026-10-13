@@ -174,8 +174,14 @@ pub fn info(root: &Path) -> BackupInfo {
     i
 }
 
-/// Trimmed stdout, or a readable error with the last stderr lines.
-fn git(root: &Path, args: &[&str]) -> std::result::Result<String, String> {
+/// Trimmed stdout, or a readable error with the last stderr lines. Shared with
+/// the code-repo commit (changes.rs).
+pub(crate) fn git(root: &Path, args: &[&str]) -> std::result::Result<String, String> {
+    git_timeout(root, args, TIMEOUT)
+}
+
+/// `git` with its own timeout, e.g. for a commit whose pre-commit hook runs tests.
+pub(crate) fn git_timeout(root: &Path, args: &[&str], timeout: Duration) -> std::result::Result<String, String> {
     let mut child = Command::new("git")
         .args(args)
         .current_dir(root)
@@ -183,6 +189,8 @@ fn git(root: &Path, args: &[&str]) -> std::result::Result<String, String> {
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o ConnectTimeout=15")
         .env("GCM_INTERACTIVE", "never")
+        // Paths are paths: `*.rs` or `:(top)` never expand to more files.
+        .env("GIT_LITERAL_PATHSPECS", "1")
         // Only the workspace repo, whatever the app was started with.
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
@@ -201,7 +209,7 @@ fn git(root: &Path, args: &[&str]) -> std::result::Result<String, String> {
     };
     let out = read(Box::new(child.stdout.take().expect("piped")));
     let err = read(Box::new(child.stderr.take().expect("piped")));
-    let deadline = Instant::now() + TIMEOUT;
+    let deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait() {
             Ok(Some(s)) => break s,
@@ -210,7 +218,7 @@ fn git(root: &Path, args: &[&str]) -> std::result::Result<String, String> {
             _ => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(format!("git {} timed out after {} s.", args[0], TIMEOUT.as_secs()));
+                return Err(format!("git {} timed out after {} s.", args[0], timeout.as_secs()));
             }
         }
     };
