@@ -13,7 +13,8 @@ use workly_core::agent::{self, AgentFile};
 use workly_core::project::is_workspace;
 use workly_core::scan::{ProjectEntry, TaskEntry};
 use workly_core::settings::{self, Settings, expand_home};
-use workly_core::{Error, Workspace};
+use workly_core::frontmatter::AcceptanceItem;
+use workly_core::{Error, NewTask, Workspace};
 
 /// Workly CLI. Agents change task state only through it.
 #[derive(Parser)]
@@ -49,6 +50,9 @@ enum TaskCmd {
         project: Option<String>,
         #[arg(long)]
         status: Option<String>,
+        /// Only sub-tasks of this task, e.g. WR-12
+        #[arg(long, value_name = "ID")]
+        parent: Option<String>,
     },
     /// Task, project and agent context (global rules, project AGENTS.md, skills)
     Show { id: String },
@@ -82,6 +86,9 @@ enum TaskCmd {
         inbox: bool,
         #[arg(long, value_parser = clap::value_parser!(u8).range(1..=3))]
         priority: Option<u8>,
+        /// Parent task, e.g. WR-12 (one level: the parent has no parent)
+        #[arg(long, value_name = "ID")]
+        parent: Option<String>,
     },
     /// Set done. Humans only: refused with exit 3 when an agent is set
     Done { id: String },
@@ -108,6 +115,9 @@ struct TaskOut {
     path: PathBuf,
     created: Option<String>,
     done_at: Option<String>,
+    waiting_for: Option<String>,
+    parent: Option<String>,
+    acceptance: Vec<AcceptanceItem>,
     agent: Option<AgentOut>,
     #[serde(skip_serializing_if = "Option::is_none")]
     body: Option<String>,
@@ -167,6 +177,9 @@ fn task_out(ws: &Workspace, t: &TaskEntry) -> TaskOut {
         path: ws.root().join(&t.path),
         created: t2.created.clone(),
         done_at: t2.done_at.clone(),
+        waiting_for: t2.waiting_for.clone(),
+        parent: t2.parent.clone(),
+        acceptance: t.acceptance.clone(),
         agent: t2.agent.as_ref().map(|a| AgentOut {
             ready: a.ready,
             runner: a.runner.clone(),
@@ -272,7 +285,10 @@ fn exec(cli: &Cli) -> workly_core::Result<()> {
                 }
             }
         }
-        Cmd::Task(TaskCmd::List { project, status }) => {
+        Cmd::Task(TaskCmd::List { project, status, parent }) => {
+            if let Some(p) = parent {
+                ws.index.task(p).ok_or_else(|| Error::NotFound(format!("task {p} not found")))?;
+            }
             let folder = match project {
                 Some(key) => Some(ws.index.project(key).ok_or_else(|| Error::NotFound(format!("project {key} not found")))?.path.clone()),
                 None => None,
@@ -285,6 +301,7 @@ fn exec(cli: &Cli) -> workly_core::Result<()> {
             let list: Vec<TaskOut> = (ws.index.tasks.iter())
                 .filter(|t| folder.is_none() || t.project == folder)
                 .filter(|t| status.as_ref().is_none_or(|s| &t.task.status == s))
+                .filter(|t| parent.is_none() || t.task.parent == *parent)
                 .map(|t| task_out(&ws, t))
                 .collect();
             if cli.json {
@@ -318,8 +335,9 @@ fn exec(cli: &Cli) -> workly_core::Result<()> {
             ws.update_task_field(id, "status", &Value::from("done"), &actor)?;
             done_msg(&ws, id, cli.json);
         }
-        Cmd::Task(TaskCmd::Add { title, project, inbox: _, priority }) => {
-            let id = ws.create_task(title, project.as_deref(), *priority, &actor)?;
+        Cmd::Task(TaskCmd::Add { title, project, inbox: _, priority, parent }) => {
+            let new = NewTask { priority: *priority, parent: parent.clone(), ..NewTask::new(title, project.as_deref()) };
+            let id = ws.create_task(&new, &actor)?;
             if cli.json {
                 print_json(&task_out(&ws, ws.index.task(&id).unwrap()));
             } else {
@@ -368,6 +386,8 @@ fn show_text(t: &TaskOut, p: Option<&ProjectOut>, ctx: &ContextOut) -> String {
     let mut meta = vec![format!("status: {}", t.status)];
     meta.extend(t.priority.map(|p| format!("priority: {p}")));
     meta.extend(t.due.as_ref().map(|d| format!("due: {d}")));
+    meta.extend(t.waiting_for.as_ref().map(|w| format!("waiting for: {w}")));
+    meta.extend(t.parent.as_ref().map(|p| format!("parent: {p}")));
     if !t.tags.is_empty() {
         meta.push(format!("tags: {}", t.tags.join(", ")));
     }

@@ -18,7 +18,7 @@ use workly_core::scan::Index;
 use workly_core::settings::{self, Settings, expand_home};
 use workly_core::trash::TrashItem;
 use workly_core::watch::Watcher;
-use workly_core::Workspace;
+use workly_core::{NewTask, Workspace};
 
 const ACTOR: &str = "app";
 
@@ -109,8 +109,8 @@ fn update_task_field(app: AppHandle, state: State<AppState>, id: String, field: 
 }
 
 #[tauri::command]
-fn create_task(app: AppHandle, state: State<AppState>, title: String, project: Option<String>, priority: Option<u8>) -> Result<String, String> {
-    changed(&app, with_ws(&state, |ws| ws.create_task(&title, project.as_deref(), priority, ACTOR)))
+fn create_task(app: AppHandle, state: State<AppState>, task: NewTask) -> Result<String, String> {
+    changed(&app, with_ws(&state, |ws| ws.create_task(&task, ACTOR)))
 }
 
 #[tauri::command]

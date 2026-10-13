@@ -23,13 +23,13 @@ Options can stand anywhere on the line: `wly task show WR-5 --json`.
 ## Commands
 
 ```
-wly task list [--project WR] [--status todo] [--json]
+wly task list [--project WR] [--status todo] [--parent WR-12] [--json]   # --parent: only its sub-tasks
 wly task show WR-12 [--json]                  # task + project + agent context
 wly task start WR-12 [--agent codex]          # -> doing; with an agent also agent.active, agent.since (from doing: only those)
 wly task note WR-12 "text"                    # appends to the run log .workly/runs/WR-12/log.jsonl; task file untouched
 wly task note WR-12 "text" --to-body          # appends "- YYYY-MM-DD HH:MM · <who>: text" under ## Updates instead
 wly task review WR-12 [--summary "text"] [--commit a3f9c1e]   # -> review; clears agent.active/since, stamps agent.last_run
-wly task add "title" [--project WR | --inbox] [--priority 1-3]   # prints the new id
+wly task add "title" [--project WR | --inbox] [--priority 1-3] [--parent WR-12]   # prints the new id
 wly task done WR-12                           # humans only, see below
 wly project list [--json]
 ```
@@ -69,13 +69,15 @@ The first line follows the stamp, further lines are continuation lines indented 
 
 | Command | Allowed from | Else |
 | --- | --- | --- |
-| `start` | backlog, todo, review; with an agent also doing (sets only the agent fields) | exit 3 |
+| `start` | backlog, todo, waiting, review; with an agent also doing (sets only the agent fields). Leaving waiting removes `waiting_for` | exit 3 |
 | `review` | doing | exit 3 |
 | `done` | any status, actor `cli` only | exit 3 when `--agent` / `WORKLY_AGENT` is set |
 
 One agent per repo: `start` with an agent is exit 3 (`WR-3 already has an agent working in ~/repos/website`) while another task whose project has the same first repo has `agent.active`. Without an agent there is no check. Clear the other run first (`review`, or Clear agent in the app).
 
 Agents never set `done`. `wly task done` is not in the spec's command list; it exists so a human can close a task from the terminal and so the refusal for agents is testable. It is a rule for well-behaved agents, not a security boundary: anything that can run `wly` can also edit the files.
+
+`add` uses the workspace's `_templates/task.md` (built-in: `status: backlog`, body `## Description` / `## Acceptance` / `## Updates`). `--parent` follows the one-level rule: the parent exists and has no parent itself, else exit 1 (`WR-13 is a sub-task of WR-12; sub-tasks cannot have sub-tasks (one level)`); an unknown parent is exit 2.
 
 `start` and `review` each write the task file once (atomically) and log one line per changed field (`review --summary` plus one `task.summary` line).
 
@@ -112,6 +114,12 @@ Field names are stable. All `path` fields are absolute. Missing values are `null
   "path": "/Users/me/Workspace/projects/website-relaunch/tasks/WR-7-lighthouse-audit.md",
   "created": "2026-09-28",
   "done_at": null,
+  "waiting_for": null,
+  "parent": "WR-6",
+  "acceptance": [
+    { "text": "Score above 90 on mobile", "done": true },
+    { "text": "No layout shift", "done": false }
+  ],
   "agent": {
     "ready": false,
     "runner": "codex",
@@ -125,7 +133,7 @@ Field names are stable. All `path` fields are absolute. Missing values are `null
 }
 ```
 
-`project` is the project key, `null` for inbox tasks. `agent` is `null` when the task has no `agent:` block. `agent.ready` is deprecated: still read from old files, never written by Workly.
+`project` is the project key, `null` for inbox tasks. `waiting_for` is only set while the status is `waiting`. `parent` is the parent task's id (it may be in the trash). `acceptance` lists the items of the body's `## Acceptance` section (also the old heading `## Acceptance criteria`; a plain `- item` counts as open), `[]` without one. `agent` is `null` when the task has no `agent:` block. `agent.ready` is deprecated: still read from old files, never written by Workly.
 
 ### Project (`project list` items)
 

@@ -77,6 +77,31 @@ fn one_line(text: &str, empty: &str) -> Result<String> {
     if text.is_empty() { Err(Error::Invalid(empty.into())) } else { Ok(text) }
 }
 
+/// A new task; only `title` is required. `project` is a key, `None` = inbox.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct NewTask {
+    pub title: String,
+    pub project: Option<String>,
+    pub priority: Option<u8>,
+    pub due: Option<String>,
+    pub tags: Vec<String>,
+    pub parent: Option<String>,
+    pub description: String,
+    /// One criterion per entry, written as `- [ ] <text>`.
+    pub acceptance: Vec<String>,
+    /// `agent.runner`, `agent.model`, `agent.effort`; missing = not written.
+    pub runner: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+}
+
+impl NewTask {
+    pub fn new(title: &str, project: Option<&str>) -> Self {
+        NewTask { title: title.into(), project: project.map(String::from), ..Default::default() }
+    }
+}
+
 /// Task fields that are absent rather than `null` when unset.
 const OPTIONAL_FIELDS: [&str; 2] = ["parent", "waiting_for"];
 
@@ -432,21 +457,52 @@ impl Workspace {
         }
     }
 
-    /// New task from `_templates/task.md`. `project` is a key; `None` = inbox.
-    pub fn create_task(&mut self, title: &str, project: Option<&str>, priority: Option<u8>, actor: &str) -> Result<String> {
-        if title.trim().is_empty() {
+    /// New task from `_templates/task.md`, written once. Fields from `new` are
+    /// patched into the template; description and acceptance fill its body sections.
+    pub fn create_task(&mut self, new: &NewTask, actor: &str) -> Result<String> {
+        use crate::frontmatter::{append_acceptance, description_range, ends_description, eol_of, replace_description, split};
+        let title = new.title.trim();
+        if title.is_empty() {
             return Err(Error::Invalid("a task needs a title".into()));
         }
-        let title = title.trim();
+        self.check_parent(None, new.parent.as_deref())?;
+        let project = new.project.as_deref();
         let dir = self.tasks_dir(project)?;
         let id = self.next_id(project.unwrap_or(ids::INBOX_KEY));
         let file = dir.join(format!("{id}-{}.md", ids::slug(title)));
         let template = fs::read_to_string(self.root.join("_templates/task.md")).unwrap_or_else(|_| project::WORKSPACE_FILES[1].1.into());
         let title_yaml = patch::emit(&Value::from(title)).map_err(Error::Invalid)?;
         let mut content = template.replace("{{id}}", &id).replace("{{title}}", &title_yaml).replace("{{date}}", &today());
-        if let Some(p) = priority {
-            self.check_update("priority", &Value::from(p), actor)?;
-            content = patch::set_field(&content, &["priority"], &Value::from(p)).map_err(Error::Invalid)?;
+        let mut fields: Vec<(&str, Value)> = Vec::new();
+        fields.extend(new.priority.map(|p| ("priority", Value::from(p))));
+        fields.extend(new.due.as_ref().map(|d| ("due", Value::from(d.as_str()))));
+        if !new.tags.is_empty() {
+            fields.push(("tags", Value::from(new.tags.clone())));
+        }
+        fields.extend(new.parent.as_ref().map(|p| ("parent", Value::from(p.as_str()))));
+        for (field, v) in [("agent.runner", &new.runner), ("agent.model", &new.model), ("agent.effort", &new.effort)] {
+            fields.extend(v.as_ref().map(|v| (field, Value::from(v.as_str()))));
+        }
+        for (field, value) in fields {
+            self.check_update(field, &value, actor)?;
+            let path: Vec<&str> = field.split('.').collect();
+            content = patch::set_field(&content, &path, &value).map_err(Error::Invalid)?;
+        }
+        let description = new.description.trim_end();
+        if !description.is_empty() || !new.acceptance.is_empty() {
+            let p = split(&content);
+            let mut body = p.body.to_string();
+            if !description.is_empty() {
+                let sectioned = description_range(&body).1;
+                if let Some(line) = description.lines().find(|l| ends_description(l, sectioned)) {
+                    return Err(Error::Invalid(format!("the description cannot contain the heading '{}'; use ### for sub-headings", line.trim_end())));
+                }
+                body = replace_description(&body, description, eol_of(&content));
+            }
+            for item in &new.acceptance {
+                body = append_acceptance(&body, &one_line(item, "a criterion needs text")?);
+            }
+            content = [p.head, p.frontmatter, p.fence, &body].concat();
         }
         let rel_path = rel(&self.root, &file);
         match parse_file::<Task>(&rel_path, &content) {

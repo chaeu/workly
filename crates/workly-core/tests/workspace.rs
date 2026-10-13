@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use workly_core::{Error, Workspace};
+use workly_core::{Error, NewTask, Workspace};
 
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/workspace");
 const WR8: &str = "projects/website-relaunch/tasks/WR-8-content-migration.md";
@@ -165,14 +165,14 @@ fn create_tasks() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
     // Project without a tasks/ folder.
-    let id = ws.create_task("Collect volume: numbers", Some("ST"), None, "app").unwrap();
+    let id = ws.create_task(&NewTask::new("Collect volume: numbers", Some("ST")), "app").unwrap();
     assert_eq!(id, "ST-1");
     let src = fs::read_to_string(root.join("projects/support-triage/tasks/ST-1-collect-volume-numbers.md")).unwrap();
     assert!(src.starts_with("---\nid: ST-1\ntitle: \"Collect volume: numbers\"\nstatus: backlog\n"), "{src}");
     assert!(src.ends_with("---\n## Description\n\n## Acceptance\n\n## Updates\n"), "{src}");
-    assert_eq!(ws.create_task("Inbox thing", None, None, "app").unwrap(), "IN-4");
-    assert_eq!(ws.create_task("Next", Some("WR"), None, "app").unwrap(), "WR-10");
-    assert!(matches!(ws.create_task("x", Some("NOPE"), None, "app"), Err(Error::NotFound(_))));
+    assert_eq!(ws.create_task(&NewTask::new("Inbox thing", None), "app").unwrap(), "IN-4");
+    assert_eq!(ws.create_task(&NewTask::new("Next", Some("WR")), "app").unwrap(), "WR-10");
+    assert!(matches!(ws.create_task(&NewTask::new("x", Some("NOPE")), "app"), Err(Error::NotFound(_))));
     assert_eq!(log_lines(&root).iter().filter(|l| l["kind"] == "task.create").count(), 3);
 }
 
@@ -255,7 +255,7 @@ fn empty_folder_becomes_workspace() {
     assert_eq!(ws.suggest_key("Test Alpha"), "TA");
     let new = NewProject { title: "Test Alpha".into(), key: "TA".into(), color: "proj-1".into(), repos: vec![], usecase: None, adopt: false, tracked: true };
     assert_eq!(ws.create_project(&new, "app").unwrap(), "projects/test-alpha");
-    assert_eq!(ws.create_task("First", Some("TA"), None, "app").unwrap(), "TA-1");
+    assert_eq!(ws.create_task(&NewTask::new("First", Some("TA")), "app").unwrap(), "TA-1");
 }
 
 #[test]
@@ -566,12 +566,12 @@ fn set_description_keeps_crlf() {
 fn create_task_with_priority() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
-    let id = ws.create_task("  Urgent thing ", Some("WR"), Some(1), "app").unwrap();
+    let id = ws.create_task(&NewTask { priority: Some(1), ..NewTask::new("  Urgent thing ", Some("WR")) }, "app").unwrap();
     let t = ws.index.task(&id).unwrap();
     assert_eq!((t.task.title.as_str(), t.task.priority), ("Urgent thing", Some(1)));
     assert!(t.path.ends_with("WR-10-urgent-thing.md"));
-    assert!(matches!(ws.create_task(" ", None, None, "app"), Err(Error::Invalid(_))));
-    assert!(matches!(ws.create_task("x", None, Some(5), "app"), Err(Error::Invalid(_))));
+    assert!(matches!(ws.create_task(&NewTask::new(" ", None), "app"), Err(Error::Invalid(_))));
+    assert!(matches!(ws.create_task(&NewTask { priority: Some(5), ..NewTask::new("x", None) }, "app"), Err(Error::Invalid(_))));
 }
 
 // --------------------------------------------------------------- use cases (M4)
@@ -1376,7 +1376,7 @@ fn restore_project_folder_and_refuse_orphan_task() {
 fn ids_stay_taken_after_the_trash_is_gone() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
-    let id = ws.create_task("Short lived", Some("WR"), None, "app").unwrap();
+    let id = ws.create_task(&NewTask::new("Short lived", Some("WR")), "app").unwrap();
     assert_eq!(id, "WR-10");
     ws.delete_task(&id, "app").unwrap();
     // As after emptying the trash: the file is gone, the log remembers.
@@ -1556,4 +1556,36 @@ fn parent_has_one_level() {
     // Deleting a parent does not touch its children.
     ws.delete_task("OPS-2", "app").unwrap();
     assert_eq!(ws.index.task("OPS-3").unwrap().task.parent.as_deref(), Some("OPS-2"));
+}
+
+#[test]
+fn create_full_task_writes_once() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let new = NewTask {
+        priority: Some(1),
+        due: Some("2026-11-02".into()),
+        tags: vec!["backend".into()],
+        parent: Some("OPS-2".into()),
+        description: "Read-only.\nNo writes.\n".into(),
+        acceptance: vec!["Query works".into(), "Docs  updated".into()],
+        runner: Some("codex".into()),
+        ..NewTask::new("Job query", Some("OPS"))
+    };
+    let id = ws.create_task(&new, "app").unwrap();
+    assert_eq!(id, "OPS-4");
+    let src = fs::read_to_string(root.join("projects/ops-dashboard/tasks/OPS-4-job-query.md")).unwrap();
+    let today = workly_core::today();
+    assert_eq!(
+        src,
+        format!(
+            "---\nid: OPS-4\ntitle: Job query\nstatus: backlog\npriority: 1\ndue: 2026-11-02\ntags: [backend]\ncreated: {today}\ndone_at: null\nparent: OPS-2\nagent:\n  runner: codex\n---\n\
+             ## Description\nRead-only.\nNo writes.\n\n## Acceptance\n- [ ] Query works\n- [ ] Docs updated\n\n## Updates\n"
+        )
+    );
+    assert_eq!(log_lines(&root).iter().filter(|l| l["id"] == "OPS-4").count(), 1);
+    // Parent rules apply on create; nothing is written.
+    let child = NewTask { parent: Some("OPS-3".into()), ..NewTask::new("Nope", Some("OPS")) };
+    assert!(matches!(ws.create_task(&child, "app"), Err(Error::Invalid(_))));
+    assert_eq!(ws.next_id("OPS"), "OPS-5");
 }

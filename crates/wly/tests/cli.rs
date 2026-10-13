@@ -218,3 +218,25 @@ fn app_watcher_sees_cli_writes() {
     assert!(seen.iter().any(|c| *c == workly_core::watch::Change::Changed(".workly/runs/WR-5/log.jsonl".into())), "{seen:?}");
     assert!(seen.iter().all(|c| c.is_run_log()), "{seen:?}");
 }
+
+#[test]
+fn parent_waiting_and_acceptance() {
+    let (_tmp, root) = fixture();
+    let ws = Some(root.as_path());
+    let t = stdout_json(&wly(ws, &["task", "add", "Slow job alert", "--project", "OPS", "--parent", "OPS-2", "--json"]));
+    assert_eq!((&t["id"], &t["parent"], &t["status"]), (&"OPS-4".into(), &"OPS-2".into(), &"backlog".into()));
+    // One level: OPS-3 already has a parent.
+    let out = wly(ws, &["task", "add", "Deeper", "--project", "OPS", "--parent", "OPS-3"]);
+    assert_eq!(code(&out), 1);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("one level"));
+    let list = stdout_json(&wly(ws, &["task", "list", "--parent", "OPS-2", "--json"]));
+    let ids: Vec<&str> = list.as_array().unwrap().iter().map(|t| t["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["OPS-3", "OPS-4"]);
+    let ops3 = &list[0];
+    assert_eq!(ops3["waiting_for"], "IT: read access to the job database");
+    assert_eq!(ops3["acceptance"], serde_json::json!([{ "text": "Query returns the jobs of the last 24 h", "done": false }]));
+    assert_eq!(code(&wly(ws, &["task", "list", "--parent", "OPS-99"])), 2);
+    // start works from waiting and drops waiting_for.
+    let t = stdout_json(&wly(ws, &["task", "start", "OPS-3", "--agent", "codex", "--json"]));
+    assert_eq!((&t["status"], &t["waiting_for"]), (&"doing".into(), &Value::Null));
+}
