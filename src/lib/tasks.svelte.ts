@@ -102,7 +102,7 @@ export function agentChoice(t: TaskEntry): AgentPreset {
   const list = agentList();
   const own = unset(t.agent?.runner);
   const c: AgentPreset = own
-    ? { name: agentName(own), runner: own, model: unset(t.agent?.model), effort: unset(t.agent?.effort) }
+    ? { name: agentName(own), runner: own, model: unset(t.agent?.model), effort: unset(t.agent?.effort), permissions: t.agent?.permissions || null }
     : (list[0] ?? { name: "", runner: unset(workspace.index?.config.agent_defaults?.runner) ?? "" });
   if (list.length) return c;
   const d = workspace.index?.config.agent_defaults;
@@ -114,7 +114,11 @@ export function agentPick(t: TaskEntry): number | null {
   const own = unset(t.agent?.runner);
   if (!own) return -1;
   const i = agentList().findIndex(
-    (a) => a.runner === own && unset(a.model) === unset(t.agent?.model) && unset(a.effort) === unset(t.agent?.effort),
+    (a) =>
+      a.runner === own &&
+      unset(a.model) === unset(t.agent?.model) &&
+      unset(a.effort) === unset(t.agent?.effort) &&
+      (a.permissions || "ask") === (t.agent?.permissions || "ask"),
   );
   return i < 0 ? null : i;
 }
@@ -139,6 +143,8 @@ export function agentPrompt(t: TaskEntry, body = "", started = false) {
   const id = t.id;
   const description = bodyView(body).trim();
   const acceptance = t.acceptance.map((a) => `- [${a.done ? "x" : " "}] ${a.text}`);
+  const project = projectOf(t);
+  const folder = project && workspace.index ? `${workspace.index.root}/${project.path}/` : null;
   return [
     `Work on Workly task ${id} ("${t.title}") in this repo. Report through wly as agent "${name}".`,
     `1. Run \`wly task show ${id}\` first. Follow the workspace rules, project instructions and skills it prints.`,
@@ -150,7 +156,9 @@ export function agentPrompt(t: TaskEntry, body = "", started = false) {
     `5. No repo, or you cannot find the repo you are supposed to work in: \`wly task note ${id} "BLOCKED: <reason>" --agent ${name}\` and stop.`,
     `6. Use \`wly task note ${id} "<text>" --agent ${name}\` sparingly: only for milestones a human cares about.`,
     `7. Finish with exactly one \`wly task review ${id} --summary "<3-6 lines: what changed, how to verify, open points>" --agent ${name}\`. Never set the task to done.`,
-    `8. Work only inside this repo. Delete nothing outside it.`,
+    folder
+      ? `8. Work in this repo. Notes about the project – decisions, documentation of the project, meeting notes – go into the project folder ${folder} (docs/, notes/, decisions/) instead. Write nowhere else and delete nothing outside these two.`
+      : `8. Work only inside this repo. Delete nothing outside it.`,
     ...(description ? ["", "Task description:", description] : []),
     ...(acceptance.length ? ["", "Acceptance:", ...acceptance] : []),
   ].join("\n");
@@ -232,7 +240,9 @@ export const waitingFocus = $state({ id: null as string | null });
 /** Runners Workly can start (core AGENT_RUNNERS). */
 export const RUNNERS = ["codex", "copilot"];
 /** Codex reasoning effort; "" = Codex's own default. */
-export const EFFORTS = ["", "low", "medium", "high", "xhigh"];
+export const EFFORTS = ["", "low", "medium", "high", "xhigh", "max", "ultra"];
+/** Codex permissions (B11): ask = Codex asks, auto = never asks, sandboxed; full = no sandbox. */
+export const PERMISSIONS = ["ask", "auto", "full"];
 
 /** Quick add (⌘N) lives in the layout. `hint` is the project the board filter suggests; `parent` opens it as a sub-task. */
 export const quickAdd = $state({ open: false, project: null as string | null, parent: null as string | null, hint: null as string | null });

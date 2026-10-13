@@ -47,6 +47,7 @@
       runner: pick?.runner ?? null,
       model: pick?.model ?? null,
       effort: pick?.effort ?? null,
+      permissions: pick?.permissions ?? null,
     });
     busy = false;
     if (id) onclose(id);

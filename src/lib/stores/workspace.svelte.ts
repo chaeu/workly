@@ -40,6 +40,7 @@ export type NewTask = {
   runner?: string | null;
   model?: string | null;
   effort?: string | null;
+  permissions?: string | null;
 };
 export type AgentState = {
   /** Deprecated (B2): still loaded from old files, never written. */
@@ -47,6 +48,8 @@ export type AgentState = {
   runner: string | null;
   model: string | null;
   effort: string | null;
+  /** Codex only: ask | auto | full (B11); null = ask. */
+  permissions?: string | null;
   active: string | null;
   since: string | null;
   commit: string | null;
@@ -125,7 +128,7 @@ export type Process = {
   /** Assessment method; null = no assessment anywhere in the app. */
   assessment: { ko: Labelled[]; criteria: Criterion[] } | null;
 };
-export type AgentPreset = { name: string; runner: string; model?: string | null; effort?: string | null };
+export type AgentPreset = { name: string; runner: string; model?: string | null; effort?: string | null; permissions?: string | null };
 export type Criterion = { id: string; axis: "value" | "feasibility"; label: string; anchors: string[]; bonus: boolean; fte: [number, number] | null };
 export type Snapshot = {
   root: string;

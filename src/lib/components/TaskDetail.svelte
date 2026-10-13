@@ -222,14 +222,15 @@
   const pick = $derived(t ? agentPick(t) : -1);
   const pickValue = $derived(pick === null ? "custom" : pick < 0 ? "default" : String(pick));
   const choice = $derived(t ? agentChoice(t) : null);
-  const choiceText = $derived(choice ? [agentName(choice.runner), choice.model, choice.effort].filter(Boolean).join(" · ") : "");
+  const access = (p: string | null | undefined) => (p === "full" ? "full access" : p === "auto" ? "no prompts" : null);
+  const choiceText = $derived(choice ? [agentName(choice.runner), choice.model, choice.effort, access(choice.permissions)].filter(Boolean).join(" · ") : "");
   const choiceDetail = $derived(
     !choice
       ? ""
       : choice.runner === "copilot"
         ? "Model picked in VS Code"
         : choice.runner === "codex"
-          ? `${choice.model ?? "default model"} · ${choice.effort ?? "default effort"}`
+          ? [choice.model ?? "default model", choice.effort ?? "default effort", access(choice.permissions)].filter(Boolean).join(" · ")
           : choiceText,
   );
   function pickAgent(value: string) {

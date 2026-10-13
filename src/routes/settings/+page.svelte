@@ -23,7 +23,7 @@
     type BackupSettings,
   } from "$lib/stores/workspace.svelte";
   import { getVersion } from "@tauri-apps/api/app";
-  import { EFFORTS, RUNNERS, agentName } from "$lib/tasks.svelte";
+  import { EFFORTS, PERMISSIONS, RUNNERS, agentName } from "$lib/tasks.svelte";
 
   const themes = ["system", "light", "dark"] as const;
   const detailModes = [["popup", "Popup"], ["panel", "Side panel"]] as const;
@@ -105,7 +105,7 @@
   const agentCell = (r: number, field: keyof AgentPreset) => (e: Event) => {
     const value = (e.currentTarget as HTMLInputElement | HTMLSelectElement).value.trim();
     const row: AgentPreset = { ...(r < 0 ? draft! : agents[r]), [field]: value || (field === "name" ? "" : null) };
-    if (row.runner === "copilot") Object.assign(row, { model: null, effort: null });
+    if (row.runner === "copilot") Object.assign(row, { model: null, effort: null, permissions: null });
     if (r < 0) {
       draft = row;
       if (!row.name) return;
@@ -347,7 +347,7 @@
       {#if agents.length || draft}
         <table class="agents">
           <thead>
-            <tr><th>Name</th><th class="runner">Runner</th><th>Model</th><th class="effort">Effort</th><th></th></tr>
+            <tr><th>Name</th><th class="runner">Runner</th><th>Model</th><th class="effort">Effort</th><th class="perm">Permissions</th><th></th></tr>
           </thead>
           <tbody>
             {#each [...agents, ...(draft ? [draft] : [])] as a, i (i)}
@@ -388,6 +388,17 @@
                       {#if a.effort && !EFFORTS.includes(a.effort)}<option value={a.effort}>{a.effort}</option>{/if}
                     </select>
                   </td>
+                  <td class="perm">
+                    <select
+                      value={a.permissions ?? "ask"}
+                      class:full={a.permissions === "full"}
+                      disabled={copilot}
+                      aria-label="Permissions"
+                      onchange={agentCell(r, "permissions")}
+                    >
+                      {#each PERMISSIONS as x (x)}<option value={x}>{x.charAt(0).toUpperCase() + x.slice(1)}</option>{/each}
+                    </select>
+                  </td>
                   <td class="acts">
                     {#if i === 0}<span class="w-caps default">Default</span>{/if}
                     <button type="button" class="rm" aria-label="Move up" disabled={r <= 0} onclick={() => moveAgent(r, -1)}>↑</button>
@@ -404,6 +415,11 @@
             {/each}
           </tbody>
         </table>
+        <p class="w-sub">
+          Permissions (Codex): <b>Ask</b> – Codex asks before risky steps. <b>Auto</b> – never asks, stays in its sandbox, no network.
+          <b>Full</b> – no sandbox: the agent can do anything you can on this Mac. All three may write to the repo, the project folder and .workly/.
+          Copilot: model and approvals are set in VS Code.
+        </p>
       {:else}
         <p class="w-sub">No agents yet. Tasks start the runner from agent_defaults in config.yml.</p>
       {/if}
@@ -527,7 +543,13 @@
     width: 110px;
   }
   .agents .effort {
+    width: 90px;
+  }
+  .agents .perm {
     width: 100px;
+  }
+  .agents select.full {
+    color: var(--w-warn);
   }
   .agents .acts {
     padding-left: var(--w-s-3);
