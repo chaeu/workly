@@ -12,10 +12,21 @@ use serde_json::Value;
 /// Set `path` to `value`. The result is re-parsed and checked: if anything but
 /// the target changed, nothing is returned.
 pub fn set_field(src: &str, path: &[&str], value: &Value) -> Result<String, String> {
+    set_with(src, path, value, false)
+}
+
+/// `set_field`, but a non-empty list becomes a block list (one `- item` line each),
+/// also where the key is new or held a flow list. An empty list stays `[]`.
+pub fn set_block_list(src: &str, path: &[&str], value: &Value) -> Result<String, String> {
+    set_with(src, path, value, true)
+}
+
+fn set_with(src: &str, path: &[&str], value: &Value, block: bool) -> Result<String, String> {
     check_path(path)?;
     let text = emit(value)?;
     let before = parse(src)?;
-    let out = patch(src, |doc| set_in(doc, Scope::top(doc), path, value, &text))?;
+    let block = block.then_some(value).and_then(Value::as_array).filter(|a| !a.is_empty());
+    let out = patch(src, |doc| set_in(doc, Scope::top(doc), path, value, &text, block))?;
     let mut expected = before;
     json_set(&mut expected, path, Some(value.clone()));
     verify(&out, &expected)?;
@@ -304,15 +315,29 @@ fn with_value(line: &str, kl: &KeyLine, new: Option<&str>) -> String {
     format!("{head}{tail}{eol}")
 }
 
-fn set_in(doc: &mut Doc, scope: Scope, path: &[&str], value: &Value, text: &str) -> Result<(), String> {
+/// `- item` lines for a block list at `pad`.
+fn block_items(items: &[Value], pad: &str, eol: &str) -> Result<Vec<String>, String> {
+    items.iter().map(|v| Ok(format!("{pad}- {}{eol}", emit_item(false)(v)?))).collect()
+}
+
+/// `block`: the list to write as a block list (see `set_block_list`).
+fn set_in(doc: &mut Doc, scope: Scope, path: &[&str], value: &Value, text: &str, block: Option<&Vec<Value>>) -> Result<(), String> {
     let eol = doc.eol;
     let Some((i, kl)) = find_key(doc, scope, path[0]) else {
         // New keys go to the end of their map.
         let at = (scope.start..scope.end).rev().find(|&j| !is_blank(&doc.lines[j])).map_or(scope.start, |j| j + 1);
-        let new = path.iter().enumerate().map(|(d, key)| {
+        let mut new = Vec::new();
+        for (d, key) in path.iter().enumerate() {
             let pad = " ".repeat(scope.indent + 2 * d);
-            if d + 1 == path.len() { format!("{pad}{key}: {text}{eol}") } else { format!("{pad}{key}:{eol}") }
-        });
+            match block {
+                _ if d + 1 < path.len() => new.push(format!("{pad}{key}:{eol}")),
+                Some(items) => {
+                    new.push(format!("{pad}{key}:{eol}"));
+                    new.extend(block_items(items, &format!("{pad}  "), eol)?);
+                }
+                None => new.push(format!("{pad}{key}: {text}{eol}")),
+            }
+        }
         doc.lines.splice(at..at, new);
         return Ok(());
     };
@@ -332,7 +357,7 @@ fn set_in(doc: &mut Doc, scope: Scope, path: &[&str], value: &Value, text: &str)
             return Err(format!("'{}' is a list, not a map", path[0]));
         }
         let child_indent = first.map_or(scope.indent + 2, |j| indent(&doc.lines[j]));
-        return set_in(doc, Scope { start: i + 1, end, indent: child_indent }, &path[1..], value, text);
+        return set_in(doc, Scope { start: i + 1, end, indent: child_indent }, &path[1..], value, text, block);
     }
 
     // Block lists stay block lists; unchanged item lines are reused verbatim.
@@ -363,6 +388,12 @@ fn set_in(doc: &mut Doc, scope: Scope, path: &[&str], value: &Value, text: &str)
         return Ok(());
     }
 
+    if let Some(items) = block {
+        let pad = " ".repeat(indent(&doc.lines[i]) + 2);
+        doc.lines[i] = with_value(&doc.lines[i], &kl, None);
+        doc.lines.splice(i + 1..end, block_items(items, &pad, eol)?);
+        return Ok(());
+    }
     doc.lines[i] = with_value(&doc.lines[i], &kl, Some(text));
     doc.lines.drain(i + 1..end);
     Ok(())
@@ -456,6 +487,13 @@ mod tests {
         assert_eq!(set(block, "tags", json!([])), "---\ntags: []\nx: 1\n---\n");
         let compact = "---\ntags:\n- a\nx: 1\n---\n";
         assert_eq!(set(compact, "tags", json!(["a", "b"])), "---\ntags:\n- a\n- b\nx: 1\n---\n");
+        // Block mode: new keys, flow lists and null become block lists; [] stays flow.
+        let b = |src: &str, path: &str, v: Value| set_block_list(src, &path.split('.').collect::<Vec<_>>(), &v).unwrap();
+        assert_eq!(b("---\nid: x\n---\n", "agent.changes", json!(["a b.ts", "c: d"])), "---\nid: x\nagent:\n  changes:\n    - a b.ts\n    - \"c: d\"\n---\n");
+        let flow = "---\nagent:\n  changes: [a]   # paths\n  repo: r\n---\n";
+        assert_eq!(b(flow, "agent.changes", json!(["a", "b"])), "---\nagent:\n  changes:   # paths\n    - a\n    - b\n  repo: r\n---\n");
+        assert_eq!(b(&b(flow, "agent.changes", json!(["a", "b"])), "agent.changes", json!([])), "---\nagent:\n  changes: []   # paths\n  repo: r\n---\n");
+        assert_eq!(b(block, "tags", json!(["b", "c"])), set(block, "tags", json!(["b", "c"])));
     }
 
     #[test]
