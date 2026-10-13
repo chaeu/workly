@@ -1,5 +1,5 @@
 import { ask } from "@tauri-apps/plugin-dialog";
-import { workspace, deleteTask, type TaskEntry, type ProjectEntry } from "$lib/stores/workspace.svelte";
+import { workspace, deleteTask, type AgentPreset, type TaskEntry, type ProjectEntry } from "$lib/stores/workspace.svelte";
 
 /** Ticks once a minute for the agent badge; nothing else runs while idle. */
 export const clock = $state({ now: Date.now() });
@@ -90,11 +90,45 @@ export function agentBadge(t: TaskEntry) {
   return `${agentName(a.active)} working · ${took}`;
 }
 
-/** Agent name for a task: its runner, else the workspace default, else "agent". */
-export function runnerOf(t: TaskEntry) {
-  const pick = (r: string | null | undefined) => (r && r !== "auto" ? r : null);
-  return pick(t.agent?.runner) ?? pick(workspace.index?.config.agent_defaults?.runner) ?? "agent";
+const unset = (v: string | null | undefined) => (v && v !== "auto" ? v : null);
+/** The Agent menu from config.yml; the first entry is the default. */
+export const agentList = (): AgentPreset[] => workspace.index?.config.agents ?? [];
+
+/**
+ * What starts for a task, as the core's agent_choice: its own fields when it names a runner, else the first
+ * agent; without agents, missing fields come from agent_defaults.
+ */
+export function agentChoice(t: TaskEntry): AgentPreset {
+  const list = agentList();
+  const own = unset(t.agent?.runner);
+  const c: AgentPreset = own
+    ? { name: agentName(own), runner: own, model: unset(t.agent?.model), effort: unset(t.agent?.effort) }
+    : (list[0] ?? { name: "", runner: unset(workspace.index?.config.agent_defaults?.runner) ?? "" });
+  if (list.length) return c;
+  const d = workspace.index?.config.agent_defaults;
+  return { ...c, model: unset(c.model) ?? unset(d?.model), effort: unset(c.effort) ?? unset(d?.effort) };
 }
+
+/** The menu entry a task uses: -1 = default (no runner of its own), null = fields that match no entry. */
+export function agentPick(t: TaskEntry): number | null {
+  const own = unset(t.agent?.runner);
+  if (!own) return -1;
+  const i = agentList().findIndex(
+    (a) => a.runner === own && unset(a.model) === unset(t.agent?.model) && unset(a.effort) === unset(t.agent?.effort),
+  );
+  return i < 0 ? null : i;
+}
+
+/** "Codex Sol" for the start button: the entry's name, else the runner's. */
+export function agentLabel(t: TaskEntry) {
+  const pick = agentPick(t);
+  const list = agentList();
+  const entry = pick === null ? undefined : list[Math.max(pick, 0)];
+  return entry?.name || agentName(runnerOf(t));
+}
+
+/** Agent name for a task (wly --agent): the runner that starts, else "agent". */
+export const runnerOf = (t: TaskEntry) => agentChoice(t).runner || "agent";
 
 /**
  * What you paste into Copilot Chat or Codex: the context comes from `wly task show`, so the agent goes through the CLI.
@@ -195,8 +229,10 @@ export const hasSections = (body: string) => {
 /** A task just moved to waiting: its detail card focuses "Waiting for" once. */
 export const waitingFocus = $state({ id: null as string | null });
 
-export const RUNNERS = ["auto", "codex", "copilot", "claude-code"];
-export const EFFORTS = ["auto", "low", "medium", "high"];
+/** Runners Workly can start (core AGENT_RUNNERS). */
+export const RUNNERS = ["codex", "copilot"];
+/** Codex reasoning effort; "" = Codex's own default. */
+export const EFFORTS = ["", "low", "medium", "high", "xhigh"];
 
 /** Quick add (⌘N) lives in the layout. `hint` is the project the board filter suggests; `parent` opens it as a sub-task. */
 export const quickAdd = $state({ open: false, project: null as string | null, parent: null as string | null, hint: null as string | null });

@@ -125,12 +125,15 @@ export type Process = {
   /** Assessment method; null = no assessment anywhere in the app. */
   assessment: { ko: Labelled[]; criteria: Criterion[] } | null;
 };
+export type AgentPreset = { name: string; runner: string; model?: string | null; effort?: string | null };
 export type Criterion = { id: string; axis: "value" | "feasibility"; label: string; anchors: string[]; bonus: boolean; fte: [number, number] | null };
 export type Snapshot = {
   root: string;
   config: {
     task_statuses: { id: string; label: string; wip_limit: number | null }[];
     agent_defaults?: { runner: string; model: string; effort: string; stale_after_minutes: number };
+    /** The Agent menu from config.yml (B10); the first entry is the default. */
+    agents?: AgentPreset[];
   };
   /** Last activity per task with an active agent: newest run-log entry of the run, else agent.since. */
   agent_activity: Record<string, string>;
@@ -338,6 +341,10 @@ export const agentContext = (key: string | null) => invoke<AgentContext>("agent_
 export const createAgentsMd = (key: string) => run<string>("create_agents_md", { key });
 export const runLog = (id: string) => invoke<RunEntry[]>("run_log", { id });
 export const clearAgent = (id: string) => run("clear_agent", { id });
+/** The whole agents list of config.yml; throws so Settings can keep the edit and show why. */
+export const setAgents = (agents: AgentPreset[]) => invoke("set_agents", { agents: $state.snapshot(agents) });
+/** A task's agent.runner/model/effort from one entry; null = the default agent. */
+export const setTaskAgent = (id: string, agent: AgentPreset | null) => run("set_task_agent", { id, agent: $state.snapshot(agent) });
 /** Throw, so Start agent can stop on a refused start and fall back to the clipboard on a failed launch. */
 export const startAgentTask = (id: string, agent: string) => invoke("start_agent_task", { id, agent });
 export const launchAgent = (id: string, runner: string, prompt: string) => invoke("launch_agent", { id, runner, prompt });

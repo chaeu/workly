@@ -16,11 +16,14 @@
     enableBackup,
     addWaitingStatus,
     openInVscode,
+    setAgents,
     BACKUP_DEFAULTS,
+    type AgentPreset,
     type BackupInfo,
     type BackupSettings,
   } from "$lib/stores/workspace.svelte";
   import { getVersion } from "@tauri-apps/api/app";
+  import { EFFORTS, RUNNERS, agentName } from "$lib/tasks.svelte";
 
   const themes = ["system", "light", "dark"] as const;
   const detailModes = [["popup", "Popup"], ["panel", "Side panel"]] as const;
@@ -83,6 +86,36 @@
     } catch {
       waitingError = true;
     }
+  }
+
+  // Agents (B10): the Agent menu in config.yml. Every complete change writes the whole list.
+  const agents = $derived(workspace.index?.config.agents ?? []);
+  let draft = $state<AgentPreset | null>(null);
+  let agentsError = $state<string | null>(null);
+  async function saveAgents(list: AgentPreset[]) {
+    try {
+      await setAgents(list);
+      agentsError = null;
+      draft = null;
+    } catch (e) {
+      agentsError = String(e);
+    }
+  }
+  /** r = row in the list, -1 = the new row (saved once it has a name). */
+  const agentCell = (r: number, field: keyof AgentPreset) => (e: Event) => {
+    const value = (e.currentTarget as HTMLInputElement | HTMLSelectElement).value.trim();
+    const row: AgentPreset = { ...(r < 0 ? draft! : agents[r]), [field]: value || (field === "name" ? "" : null) };
+    if (row.runner === "copilot") Object.assign(row, { model: null, effort: null });
+    if (r < 0) {
+      draft = row;
+      if (!row.name) return;
+    }
+    saveAgents(r < 0 ? [...agents, row] : agents.map((a, j) => (j === r ? row : a)));
+  };
+  function moveAgent(r: number, by: number) {
+    const list = [...agents];
+    [list[r], list[r + by]] = [list[r + by], list[r]];
+    saveAgents(list);
   }
 
   const remove = (path: string) => saveSettings({ workspaces: settings!.workspaces.filter((w) => w.path !== path) });
@@ -303,6 +336,91 @@
     {/if}
   </section>
 
+  {#if agentsEnabled() && workspace.index}
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="w-h2">Agents</h2>
+          <p class="w-sub">The Agent menu on tasks; the first one is the default. Saved in .workly/config.yml of this workspace.</p>
+        </div>
+      </div>
+      {#if agents.length || draft}
+        <table class="agents">
+          <thead>
+            <tr><th>Name</th><th class="runner">Runner</th><th>Model</th><th class="effort">Effort</th><th></th></tr>
+          </thead>
+          <tbody>
+            {#each [...agents, ...(draft ? [draft] : [])] as a, i (i)}
+              {@const r = i < agents.length ? i : -1}
+              {@const copilot = a.runner === "copilot"}
+              <!-- {#key} resets the inputs to the file's values after every reload. -->
+              {#key workspace.reloads}
+                <tr>
+                  <td>
+                    <input
+                      value={a.name}
+                      placeholder="e.g. Codex Sol"
+                      aria-label="Name"
+                      onchange={agentCell(r, "name")}
+                      {@attach (el) => {
+                        if (r < 0 && !a.name) el.focus();
+                      }}
+                    />
+                  </td>
+                  <td class="runner">
+                    <select value={a.runner} aria-label="Runner" onchange={agentCell(r, "runner")}>
+                      {#each RUNNERS as x (x)}<option value={x}>{agentName(x)}</option>{/each}
+                    </select>
+                  </td>
+                  <td>
+                    <input
+                      class="w-mono"
+                      value={a.model ?? ""}
+                      disabled={copilot}
+                      placeholder={copilot ? "Picked in VS Code" : "Codex default"}
+                      aria-label="Model"
+                      onchange={agentCell(r, "model")}
+                    />
+                  </td>
+                  <td class="effort">
+                    <select value={a.effort ?? ""} disabled={copilot} aria-label="Effort" onchange={agentCell(r, "effort")}>
+                      {#each EFFORTS as x (x)}<option value={x}>{x || "default"}</option>{/each}
+                      {#if a.effort && !EFFORTS.includes(a.effort)}<option value={a.effort}>{a.effort}</option>{/if}
+                    </select>
+                  </td>
+                  <td class="acts">
+                    {#if i === 0}<span class="w-caps default">Default</span>{/if}
+                    <button type="button" class="rm" aria-label="Move up" disabled={r <= 0} onclick={() => moveAgent(r, -1)}>↑</button>
+                    <button type="button" class="rm" aria-label="Move down" disabled={r < 0 || r === agents.length - 1} onclick={() => moveAgent(r, 1)}>↓</button>
+                    <button
+                      type="button"
+                      class="rm"
+                      aria-label="Remove agent"
+                      onclick={() => (r < 0 ? (draft = null) : saveAgents(agents.filter((_, j) => j !== r)))}>✕</button
+                    >
+                  </td>
+                </tr>
+              {/key}
+            {/each}
+          </tbody>
+        </table>
+      {:else}
+        <p class="w-sub">No agents yet. Tasks start the runner from agent_defaults in config.yml.</p>
+      {/if}
+      <div>
+        <button type="button" class="w-btn w-btn--quiet" disabled={!!draft} onclick={() => (draft = { name: "", runner: "codex", model: null, effort: null })}
+          >+ Add agent</button
+        >
+      </div>
+      {#if agentsError}
+        <div class="row">
+          <span class="grow cli-error">{agentsError}</span>
+          <button type="button" class="w-btn w-btn--quiet" onclick={() => openInVscode(".workly/config.yml")}>Open config.yml</button>
+        </div>
+      {/if}
+    </section>
+  {/if}
+
   <p class="w-sub version">Workly <span class="w-mono">{version}</span> · About: Workly menu → About Workly · Shortcuts: press ?</p>
 {/if}
 
@@ -387,6 +505,79 @@
     font-size: var(--w-fs-small);
     text-align: right;
     font-variant-numeric: tabular-nums;
+  }
+  .agents {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--w-fs-small);
+  }
+  .agents th {
+    text-align: left;
+    font-weight: 500;
+    font-size: var(--w-fs-caption);
+    color: var(--w-muted);
+    padding: 0 4px 2px;
+    border-bottom: 1px solid var(--w-line);
+  }
+  .agents td {
+    padding: 2px 0;
+    border-bottom: 1px solid var(--w-line);
+  }
+  .agents .runner {
+    width: 110px;
+  }
+  .agents .effort {
+    width: 100px;
+  }
+  .agents .acts {
+    padding-left: var(--w-s-3);
+    width: 1%;
+    white-space: nowrap;
+    text-align: right;
+  }
+  .agents input,
+  .agents select {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid transparent;
+    border-radius: var(--w-r-sm);
+    padding: 4px 6px;
+    background: none;
+    font-size: var(--w-fs-small);
+  }
+  .agents input:hover:not(:disabled),
+  .agents select:hover:not(:disabled) {
+    border-color: var(--w-line);
+  }
+  .agents input:focus,
+  .agents select:focus {
+    border-color: var(--w-accent);
+    background: var(--w-surface);
+    outline: none;
+  }
+  .agents :disabled {
+    color: var(--w-muted);
+  }
+  .default {
+    color: var(--w-accent);
+    margin-right: var(--w-s-2);
+  }
+  .rm {
+    border: 0;
+    background: none;
+    color: var(--w-muted);
+    cursor: pointer;
+    border-radius: var(--w-r-sm);
+    width: 24px;
+    height: 24px;
+  }
+  .rm:hover:not(:disabled) {
+    background: var(--w-tray);
+    color: var(--w-ink);
+  }
+  .rm:disabled {
+    opacity: 0.3;
+    cursor: default;
   }
   .fte-hours:focus {
     border-color: var(--w-accent);

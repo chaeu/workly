@@ -21,6 +21,7 @@
     inDailyWork,
     runLog,
     clearAgent,
+    setTaskAgent,
     startAgentTask,
     launchAgent,
     ensureBaseline,
@@ -36,8 +37,10 @@
     type FileChange,
   } from "$lib/stores/workspace.svelte";
   import {
-    EFFORTS,
-    RUNNERS,
+    agentChoice,
+    agentLabel,
+    agentList,
+    agentPick,
     agentName,
     agentPrompt,
     agentStale,
@@ -212,9 +215,27 @@
               : t.agent?.active
                 ? `${agentName(t.agent.active)} is already working on this task`
                 : runner !== "copilot" && runner !== "codex"
-                  ? "Pick Copilot or Codex as runner"
+                  ? "Pick an agent that runs Copilot or Codex"
                   : null,
   );
+  // Agent menu (B10): one entry writes runner, model and effort; "default" clears them.
+  const pick = $derived(t ? agentPick(t) : -1);
+  const pickValue = $derived(pick === null ? "custom" : pick < 0 ? "default" : String(pick));
+  const choice = $derived(t ? agentChoice(t) : null);
+  const choiceText = $derived(choice ? [agentName(choice.runner), choice.model, choice.effort].filter(Boolean).join(" · ") : "");
+  const choiceDetail = $derived(
+    !choice
+      ? ""
+      : choice.runner === "copilot"
+        ? "Model picked in VS Code"
+        : choice.runner === "codex"
+          ? `${choice.model ?? "default model"} · ${choice.effort ?? "default effort"}`
+          : choiceText,
+  );
+  function pickAgent(value: string) {
+    if (value === "custom") return;
+    setTaskAgent(id, value === "default" ? null : agentList()[+value]);
+  }
   let copied = $state(false);
   async function copyPrompt() {
     if (!t) return;
@@ -543,28 +564,14 @@
           <div class="t-group">
             <span class="w-caps">Agent</span>
             <dl class="t-kv">
-              <dt>Runner</dt>
-              <dd>
-                <select class="field" value={t.agent?.runner ?? "auto"} aria-label="Runner" onchange={(e) => save("agent.runner", e.currentTarget.value)}>
-                  {#each RUNNERS as r (r)}<option value={r}>{r === "auto" ? "auto" : agentName(r)}</option>{/each}
+              <dt>Agent</dt>
+              <dd class="t-agent-pick">
+                <select class="field" value={pickValue} aria-label="Agent" onchange={(e) => pickAgent(e.currentTarget.value)}>
+                  <option value="default">Default{agentList()[0] ? ` · ${agentList()[0].name}` : ""}</option>
+                  {#each agentList() as a, i (a.name)}<option value={String(i)}>{a.name}</option>{/each}
+                  {#if pickValue === "custom"}<option value="custom">{choiceText}</option>{/if}
                 </select>
-              </dd>
-              <dt>Model</dt>
-              <dd>
-                {#key t.agent?.model}
-                  <input
-                    class="field"
-                    value={t.agent?.model ?? "auto"}
-                    aria-label="Model"
-                    onchange={(e) => save("agent.model", e.currentTarget.value.trim() || "auto", e.currentTarget, t.agent?.model ?? "auto")}
-                  />
-                {/key}
-              </dd>
-              <dt>Effort</dt>
-              <dd>
-                <select class="field" value={t.agent?.effort ?? "auto"} aria-label="Effort" onchange={(e) => save("agent.effort", e.currentTarget.value)}>
-                  {#each EFFORTS as x (x)}<option value={x}>{x}</option>{/each}
-                </select>
+                <span class="t-agent-sub w-sub">{choiceDetail}</span>
               </dd>
               <dt>Active</dt>
               <dd>{t.agent?.active ? agentName(t.agent.active) : "–"}</dd>
@@ -579,7 +586,7 @@
                 class="w-btn w-btn--primary"
                 disabled={!!startBlock || starting}
                 use:tip={startBlock ?? (runner === "codex" ? "Codex in a new Terminal window, in the repo" : "Copilot agent chat in the project's VS Code workspace")}
-                onclick={startAgent}>{starting ? "Starting…" : "Start agent"}</button
+                onclick={startAgent}>{starting ? "Starting…" : `Start ${agentLabel(t)}`}</button
               >
               <button type="button" class="w-btn" onclick={copyPrompt}>{copied ? "Copied" : "Copy prompt"}</button>
               {#if repo}
@@ -921,6 +928,14 @@
     gap: 7px;
     min-width: 0;
     min-height: 28px;
+  }
+  .t-kv dd.t-agent-pick {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+  }
+  .t-agent-sub {
+    padding-left: 8px;
   }
   .t-kv .w-seg button {
     padding: 2px 9px;

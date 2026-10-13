@@ -2,7 +2,7 @@
   import { tick } from "svelte";
   import { grow } from "$lib/grow";
   import { workspace, createTask, inDailyWork, agentsEnabled } from "$lib/stores/workspace.svelte";
-  import { EFFORTS, RUNNERS, agentName } from "$lib/tasks.svelte";
+  import { agentList } from "$lib/tasks.svelte";
 
   let {
     project: initial,
@@ -23,9 +23,8 @@
   let tags = $state("");
   let description = $state("");
   let criteria = $state<string[]>([""]);
-  let runner = $state("");
-  let model = $state("");
-  let effort = $state("");
+  // Index into the Agent menu; "" = the default agent (no fields written).
+  let agent = $state("");
   let busy = $state(false);
   // `autofocus` does not fire when the layout mounts this later.
   let input: HTMLInputElement;
@@ -35,6 +34,7 @@
     e?.preventDefault();
     if (!title.trim() || busy) return;
     busy = true;
+    const pick = agent === "" ? undefined : agentList()[+agent];
     const id = await createTask({
       title: title.trim(),
       project: project || null,
@@ -44,9 +44,9 @@
       tags: tags.split(/[,\s]+/).map((x) => x.replace(/^#/, "")).filter(Boolean),
       description,
       acceptance: criteria.map((c) => c.trim()).filter(Boolean),
-      runner: runner || null,
-      model: model.trim() || null,
-      effort: effort || null,
+      runner: pick?.runner ?? null,
+      model: pick?.model ?? null,
+      effort: pick?.effort ?? null,
     });
     busy = false;
     if (id) onclose(id);
@@ -153,20 +153,11 @@
       <details>
         <summary>Agent settings</summary>
         <div class="grid">
-          <label for="qa-runner">Runner</label>
+          <label for="qa-agent">Agent</label>
           <span class="select">
-            <select id="qa-runner" bind:value={runner}>
-              <option value="">Default</option>
-              {#each RUNNERS as r (r)}<option value={r}>{r === "auto" ? "auto" : agentName(r)}</option>{/each}
-            </select>
-          </span>
-          <label for="qa-model">Model</label>
-          <input id="qa-model" class="field" bind:value={model} placeholder="Default" />
-          <label for="qa-effort">Effort</label>
-          <span class="select">
-            <select id="qa-effort" bind:value={effort}>
-              <option value="">Default</option>
-              {#each EFFORTS as x (x)}<option value={x}>{x}</option>{/each}
+            <select id="qa-agent" bind:value={agent}>
+              <option value="">Default{agentList()[0] ? ` · ${agentList()[0].name}` : ""}</option>
+              {#each agentList() as a, i (a.name)}<option value={String(i)}>{a.name}</option>{/each}
             </select>
           </span>
         </div>

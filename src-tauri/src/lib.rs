@@ -264,6 +264,16 @@ fn run_log(state: State<AppState>, id: String) -> Result<Vec<RunEntry>, String> 
 }
 
 #[tauri::command]
+fn set_agents(app: AppHandle, state: State<AppState>, agents: Vec<workly_core::model::AgentPreset>) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.set_agents(&agents, ACTOR)))
+}
+
+#[tauri::command]
+fn set_task_agent(app: AppHandle, state: State<AppState>, id: String, agent: Option<workly_core::model::AgentPreset>) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.set_task_agent(&id, agent.as_ref(), ACTOR)))
+}
+
+#[tauri::command]
 fn clear_agent(app: AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
     changed(&app, with_ws(&state, |ws| ws.clear_agent(&id, ACTOR)))
 }
@@ -690,6 +700,8 @@ pub fn run() {
             agent_context,
             run_log,
             clear_agent,
+            set_agents,
+            set_task_agent,
             start_agent_task,
             launch_agent,
             ensure_baseline,
