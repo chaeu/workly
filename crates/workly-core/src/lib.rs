@@ -77,6 +77,9 @@ fn one_line(text: &str, empty: &str) -> Result<String> {
     if text.is_empty() { Err(Error::Invalid(empty.into())) } else { Ok(text) }
 }
 
+/// Task fields that are absent rather than `null` when unset.
+const OPTIONAL_FIELDS: [&str; 2] = ["parent", "waiting_for"];
+
 /// Most tasks on the focus strip.
 pub const FOCUS_MAX: usize = 3;
 
@@ -175,10 +178,17 @@ impl Workspace {
         }
     }
 
-    /// Set one field (`status`, `agent.active`, ...) of a task.
+    /// Set one field (`status`, `agent.active`, ...) of a task. `null` for an
+    /// optional field (`parent`, `waiting_for`) removes its line.
     pub fn update_task_field(&mut self, id: &str, field: &str, value: &Value, actor: &str) -> Result<()> {
         let path: Vec<&str> = field.split('.').collect();
         self.check_update(field, value, actor)?;
+        if field == "parent" {
+            self.check_parent(Some(id), value.as_str())?;
+        }
+        if value.is_null() && OPTIONAL_FIELDS.contains(&field) {
+            return self.remove_task_field(id, field, actor);
+        }
         let file = self.task_path(id)?;
         let src = fs::read_to_string(&file)?;
         let from = patch::get_field(&src, &path).map_err(Error::Invalid)?;
@@ -379,6 +389,25 @@ impl Workspace {
         Ok(())
     }
 
+    /// One level of parents: `parent` exists, is not `child` itself and has no
+    /// parent; `child` (None = a new task) has no sub-tasks.
+    fn check_parent(&self, child: Option<&str>, parent: Option<&str>) -> Result<()> {
+        let Some(parent) = parent else { return Ok(()) };
+        let p = self.index.task(parent).ok_or_else(|| Error::NotFound(format!("parent task {parent} not found")))?;
+        if child == Some(parent) {
+            return Err(Error::Invalid(format!("{parent} cannot be its own parent")));
+        }
+        if let Some(grand) = &p.task.parent {
+            return Err(Error::Invalid(format!("{parent} is a sub-task of {grand}; sub-tasks cannot have sub-tasks (one level)")));
+        }
+        if let Some(child) = child
+            && self.index.tasks.iter().any(|t| t.task.parent.as_deref() == Some(child))
+        {
+            return Err(Error::Invalid(format!("{child} has sub-tasks, so it cannot get a parent (one level)")));
+        }
+        Ok(())
+    }
+
     fn check_update(&self, field: &str, value: &Value, actor: &str) -> Result<()> {
         match field {
             "id" => Err(Error::Invalid("the id of a task cannot change".into())),
@@ -392,6 +421,9 @@ impl Workspace {
                     return Err(Error::InvalidTransition("agents never set a task to done".into()));
                 }
                 Ok(())
+            }
+            "parent" | "waiting_for" if !value.is_null() && value.as_str().is_none_or(|s| s.trim().is_empty()) => {
+                Err(Error::Invalid(format!("{field} must be a text or null, got {value}")))
             }
             "priority" if !matches!(value.as_u64(), Some(1..=3)) && !value.is_null() => {
                 Err(Error::Invalid(format!("priority must be 1, 2 or 3, got {value}")))

@@ -1534,3 +1534,26 @@ fn add_criterion_and_sections() {
     assert_eq!(ws.index.task("WR-5").unwrap().acceptance, [item("Works with keyboard", false)]);
     assert!(matches!(ws.add_acceptance("WR-5", " ", "app"), Err(Error::Invalid(_))));
 }
+
+#[test]
+fn parent_has_one_level() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    let msg = |r: Result<(), Error>| r.unwrap_err().to_string();
+    // OPS-3 is a child of OPS-2.
+    assert_eq!(msg(ws.update_task_field("WR-5", "parent", &json!("OPS-3"), "app")), "OPS-3 is a sub-task of OPS-2; sub-tasks cannot have sub-tasks (one level)");
+    assert_eq!(msg(ws.update_task_field("OPS-2", "parent", &json!("WR-5"), "app")), "OPS-2 has sub-tasks, so it cannot get a parent (one level)");
+    assert_eq!(msg(ws.update_task_field("WR-5", "parent", &json!("WR-5"), "app")), "WR-5 cannot be its own parent");
+    assert!(matches!(ws.update_task_field("WR-5", "parent", &json!("WR-99"), "app"), Err(Error::NotFound(_))));
+    assert!(matches!(ws.update_task_field("WR-5", "parent", &json!(" "), "app"), Err(Error::Invalid(_))));
+    // Allowed: a new child of OPS-2, across projects; null removes the line.
+    let file = root.join("projects/website-relaunch/tasks/WR-5-navigation.md");
+    let before = fs::read_to_string(&file).unwrap();
+    ws.update_task_field("WR-5", "parent", &json!("OPS-2"), "app").unwrap();
+    assert!(fs::read_to_string(&file).unwrap().contains("\nparent: OPS-2\n"));
+    ws.update_task_field("WR-5", "parent", &Value::Null, "app").unwrap();
+    assert_eq!(fs::read_to_string(&file).unwrap(), before);
+    // Deleting a parent does not touch its children.
+    ws.delete_task("OPS-2", "app").unwrap();
+    assert_eq!(ws.index.task("OPS-3").unwrap().task.parent.as_deref(), Some("OPS-2"));
+}
