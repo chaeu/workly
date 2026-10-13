@@ -5,7 +5,7 @@
   import AssessmentPill from "$lib/components/AssessmentPill.svelte";
   import { workspace, updateProjectField, type KoValue, type Process, type UseCaseAssessment } from "$lib/stores/workspace.svelte";
   import { today } from "$lib/tasks.svelte";
-  import { assess, axisCalc, fmtFte, fteScore, savedFte, type UC } from "$lib/usecases.svelte";
+  import { assess, axisCalc, fmtFte, fmtScore, fteScore, savedFte, type UC } from "$lib/usecases.svelte";
 
   let { key, process: p, onclose }: { key: string; process: Process; onclose: () => void } = $props();
 
@@ -17,17 +17,19 @@
   // ponytail: assumes p.assessment exists; the callers only open the editor when it does.
   const m = $derived(p.assessment!);
   // Only ids the method knows (the core refuses unknown ones), so re-assessing an old assessment drops ids
-  // that left process.yml. Every K.O. question is written, open by default.
+  // that left process.yml, and a bonus only as 3 (an old reuse: 1 or 2 means no). Every K.O. question is written, open by default.
   // svelte-ignore state_referenced_locally
   const cur = u?.usecase.assessment;
   // svelte-ignore state_referenced_locally
   let draft = $state<UseCaseAssessment>({
     date: null,
     ko: Object.fromEntries(p.assessment!.ko.map((k) => [k.id, cur?.ko[k.id] ?? "open"])),
-    scores: Object.fromEntries(p.assessment!.criteria.filter((c) => cur?.scores[c.id] != null).map((c) => [c.id, cur!.scores[c.id]])),
+    scores: Object.fromEntries(
+      p.assessment!.criteria.filter((c) => cur?.scores[c.id] != null && (!c.bonus || cur.scores[c.id] === 3)).map((c) => [c.id, cur!.scores[c.id]]),
+    ),
     note: cur?.note ?? "",
   });
-  // A criterion with `fte` takes its points from Manual effort while there is any (D10): fixed here, never written.
+  // A criterion with `fte` takes its points from Manual effort while there is any (D12): fixed here, never written.
   const fte = $derived(u ? savedFte(u) : null);
   const r = $derived(assess(p, draft, fte));
 
@@ -95,9 +97,10 @@
         </section>
       {/if}
       {#each AXES as [axis, name] (axis)}
+        {@const bonus = m.criteria.filter((c) => c.axis === axis && c.bonus)}
         <section>
           <h3 class="w-caps">{name}</h3>
-          {#each m.criteria.filter((c) => c.axis === axis) as c (c.id)}
+          {#each m.criteria.filter((c) => c.axis === axis && !c.bonus) as c (c.id)}
             {@const derived = fteScore(c, fte)}
             {@const s = derived ?? draft.scores[c.id] ?? null}
             <div class="row crit">
@@ -111,7 +114,7 @@
                 </ol>
               </div>
               {#if derived !== null}
-                <span class="derived"><b class="w-mono">{derived}</b>From Manual effort: {fmtFte(fte ?? 0)} FTE</span>
+                <span class="derived">From Manual effort: {fmtFte(fte ?? 0)} FTE → <b class="w-mono">{fmtScore(derived)}</b></span>
               {:else}
                 <div class="w-seg" role="group" aria-label={c.label}>
                   {#each [1, 2, 3, null] as n (n)}
@@ -121,6 +124,16 @@
               {/if}
             </div>
           {/each}
+          {#if bonus.length}
+            <!-- Yes/no (D13): checked = 3, unchecked = not counted and not open. -->
+            <h4 class="w-caps bonus-h">Bonus <span>only raises the value</span></h4>
+            {#each bonus as c (c.id)}
+              <label class="bonus">
+                <input type="checkbox" checked={draft.scores[c.id] === 3} onchange={(e) => setScore(c.id, e.currentTarget.checked ? 3 : null)} />
+                <span class="bonus-txt"><span class="lbl">{c.label}</span><span class="w-sub">{c.anchors[0]}</span></span>
+              </label>
+            {/each}
+          {/if}
         </section>
       {/each}
       <label class="field">
@@ -221,6 +234,30 @@
   .derived b {
     font-size: var(--w-fs-small);
     color: var(--w-ink);
+  }
+  .bonus-h {
+    margin: 12px 0 2px;
+  }
+  .bonus-h span {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .bonus {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 0;
+    cursor: pointer;
+  }
+  .bonus input {
+    accent-color: var(--w-accent);
+  }
+  .bonus-txt {
+    display: grid;
+  }
+  .bonus .w-sub {
+    font-size: var(--w-fs-caption);
   }
   .anchors {
     list-style: none;

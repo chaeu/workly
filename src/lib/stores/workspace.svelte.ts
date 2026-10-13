@@ -121,7 +121,7 @@ export type Process = {
   /** Assessment method; null = no assessment anywhere in the app. */
   assessment: { ko: Labelled[]; criteria: Criterion[] } | null;
 };
-export type Criterion = { id: string; axis: "value" | "feasibility"; label: string; anchors: string[]; fte: [number, number] | null };
+export type Criterion = { id: string; axis: "value" | "feasibility"; label: string; anchors: string[]; bonus: boolean; fte: [number, number] | null };
 export type Snapshot = {
   root: string;
   config: {

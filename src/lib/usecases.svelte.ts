@@ -120,12 +120,20 @@ export const QUADRANT_COLOR: Record<Quadrant | "K.O.", string> = {
   "K.O.": "var(--w-danger)",
 };
 
-/** Points from Manual effort for a criterion with `fte: [low, high]` (D10); null without thresholds or effort entries. */
-export const fteScore = (c: Criterion, fte: number | null) => (c.fte && fte != null ? (fte <= c.fte[0] ? 1 : fte > c.fte[1] ? 3 : 2) : null);
+/**
+ * Points from Manual effort for a criterion with `fte: [low, high]`: continuous, 1 + 2 · (FTE − low) / (high − low)
+ * within 1–3 (D12); null without thresholds or effort entries. Rounded to one decimal so the shown arithmetic adds up.
+ */
+export function fteScore(c: Criterion, fte: number | null) {
+  if (!c.fte || fte == null) return null;
+  const s = 1 + (2 * (fte - c.fte[0])) / (c.fte[1] - c.fte[0]);
+  return Math.round(Math.min(3, Math.max(1, s)) * 10) / 10;
+}
 
 /**
  * Result of one assessment against the method in process.yml. Computed, never stored.
  * scores: the stored points, FTE-derived ones on top (`fte` = savedFte of the use case); only criteria in process.yml.
+ *   A bonus counts (as 3) only when stored as 3 (D13); otherwise it is left out and never open.
  * value / feasibility: mean of the scored criteria per axis, null when none is scored.
  * ko: fail if any fails, else open if any is open or missing, else pass.
  * open: labels of open K.O. questions, then unscored criteria (what the pilot has to answer).
@@ -134,7 +142,7 @@ export function assess(p: Process, a: UseCaseAssessment, fte: number | null) {
   const m = p.assessment!;
   const scores: Record<string, number> = {};
   for (const c of m.criteria) {
-    const s = fteScore(c, fte) ?? a.scores[c.id];
+    const s = c.bonus ? (a.scores[c.id] === 3 ? 3 : null) : (fteScore(c, fte) ?? a.scores[c.id]);
     if (s != null) scores[c.id] = s;
   }
   const mean = (axis: string) => {
@@ -150,7 +158,7 @@ export function assess(p: Process, a: UseCaseAssessment, fte: number | null) {
         : feasibility >= ASSESS_THRESHOLD ? "Fill-in" : "Drop";
   const koOf = (id: string) => a.ko[id] ?? "open";
   const failed = m.ko.filter((k) => koOf(k.id) === "fail").map((k) => k.label);
-  const open = [...m.ko.filter((k) => koOf(k.id) === "open").map((k) => k.label), ...m.criteria.filter((c) => scores[c.id] == null).map((c) => c.label)];
+  const open = [...m.ko.filter((k) => koOf(k.id) === "open").map((k) => k.label), ...m.criteria.filter((c) => !c.bonus && scores[c.id] == null).map((c) => c.label)];
   const ko = failed.length ? "fail" : m.ko.some((k) => koOf(k.id) === "open") ? "open" : "pass";
   return { scores, value, feasibility, quadrant, ko, failed, open };
 }
@@ -166,10 +174,12 @@ export function assessRank(p: Process, u: UC) {
 }
 const scoreFmt = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 export const fmtScore = (n: number | null) => (n === null ? "–" : scoreFmt.format(n));
-/** The arithmetic behind one axis from the effective scores (AssessResult.scores): "(3 + 2 + 2) / 3 = 2.3"; "nothing scored" when no criterion has points. */
+/** One criterion's points: "3", or "2.9" for one derived from Manual effort. */
+const ptsFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+/** The arithmetic behind one axis from the effective scores (AssessResult.scores): "(2.9 + 2 + 3) / 3 = 2.6"; "nothing scored" when no criterion has points. */
 export function axisCalc(p: Process, scores: Record<string, number>, axis: string) {
   const pts = p.assessment!.criteria.filter((c) => c.axis === axis && scores[c.id] != null).map((c) => scores[c.id]);
-  return pts.length ? `(${pts.join(" + ")}) / ${pts.length} = ${fmtScore(pts.reduce((x, y) => x + y, 0) / pts.length)}` : "nothing scored";
+  return pts.length ? `(${pts.map((n) => ptsFmt.format(n)).join(" + ")}) / ${pts.length} = ${fmtScore(pts.reduce((x, y) => x + y, 0) / pts.length)}` : "nothing scored";
 }
 export const scoreLine = (r: AssessResult) => `Value ${fmtScore(r.value)} · Feasibility ${fmtScore(r.feasibility)}`;
 export const assessTip = (r: AssessResult) =>

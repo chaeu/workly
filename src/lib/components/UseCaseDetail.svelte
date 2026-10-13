@@ -23,7 +23,7 @@
     savedFte,
     savedHours,
     savingHours,
-    scoreLine,
+    fmtScore,
     statusColor,
     stepName,
     stepOf,
@@ -283,7 +283,11 @@
               <span class="w-caps">Assessment</span>
               {#if assessed && a}
                 <AssessmentPill result={assessed} />
-                <span class="w-sub">{scoreLine(assessed)}</span>
+                <!-- scoreLine, plus the open count (D14); wraps only between the parts in the narrow column. -->
+                <span class="w-sub"
+                  ><span class="nowrap">Value {fmtScore(assessed.value)} ·</span>{" "}<span class="nowrap">Feasibility {fmtScore(assessed.feasibility)}{assessed.open.length ? " ·" : ""}</span
+                  >{#if assessed.open.length}{" "}<span class="nowrap">{assessed.open.length} open</span>{/if}</span
+                >
                 {#if a.date}<span class="w-sub">{a.date}</span>{/if}
               {:else}
                 <span class="w-sub">Not assessed</span>
@@ -864,6 +868,9 @@
     grid-template-columns: 170px minmax(0, 1fr) auto;
     gap: 6px var(--w-s-6);
     align-items: start;
+  }
+  .nowrap {
+    white-space: nowrap;
   }
   .eff-sum {
     display: grid;

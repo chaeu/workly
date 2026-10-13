@@ -192,7 +192,7 @@
           {#each [["value", "Value"], ["feasibility", "Feasibility"]] as const as [axis, name] (axis)}
             <span><b>{name}</b> = average of the scored criteria:</span>
             <ul>
-              {#each p.assessment!.criteria.filter((c) => c.axis === axis) as c (c.id)}<li>{c.label}</li>{/each}
+              {#each p.assessment!.criteria.filter((c) => c.axis === axis) as c (c.id)}<li>{c.label}{#if c.bonus}<span class="w-sub">{" – bonus: yes = 3, no is left out"}</span>{/if}</li>{/each}
             </ul>
           {/each}
           <span><b>Quadrant</b>: a value of {fmtScore(ASSESS_THRESHOLD)} or more counts as high.</span>
@@ -202,7 +202,7 @@
             <span class="w-caps">Value &lt; {fmtScore(ASSESS_THRESHOLD)}</span><span style:--c={QUADRANT_COLOR["Fill-in"]}>Fill-in</span><span style:--c={QUADRANT_COLOR.Drop}>Drop</span>
           </span>
           {#each p.assessment!.criteria.filter((c) => c.fte) as c (c.id)}
-            <span><b>{c.label}</b> comes from Manual effort once there are entries: ≤ {fmtFte(c.fte![0])} FTE = 1, over {fmtFte(c.fte![1])} FTE = 3, else 2.</span>
+            <span><b>{c.label}</b> comes from Manual effort once there are entries: 1 + 2 × (FTE − {fmtFte(c.fte![0])}) / ({fmtFte(c.fte![1])} − {fmtFte(c.fte![0])}), between 1 and 3.</span>
           {/each}
           {#if p.assessment!.ko.length}
             <span><b>K.O.</b>: one failed question ({p.assessment!.ko.map((k) => k.label).join(" · ")}) stops the assessment; the use case gets no position.</span>
