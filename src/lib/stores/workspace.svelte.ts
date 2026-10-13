@@ -51,6 +51,10 @@ export type AgentState = {
   since: string | null;
   commit: string | null;
   last_run: string | null;
+  /** Repo paths the agent changed, set at review (B8); what Commit commits. */
+  changes: string[] | null;
+  /** Repo of `changes`, `~/…`. */
+  repo: string | null;
 };
 export type Link = { label: string | null; url: string };
 export type ProjectEntry = {
@@ -165,6 +169,8 @@ export type Settings = {
 export type AgentFile = { path: string; content: string };
 /** One line of `.workly/runs/<ID>/log.jsonl`. */
 export type RunEntry = { ts: string; agent: string; run: string | null; text: string };
+/** One path of agent.changes as it is now; `drifted` = edited after the review. */
+export type FileChange = { path: string; kind: "new" | "modified" | "deleted" | "clean"; drifted: boolean };
 export type Skill = { name: string; description: string; path: string };
 export type AgentContext = { global: AgentFile | null; project: AgentFile | null; skills: Skill[] };
 // Mirrors trash::TrashItem; `path` is relative to the trash and to the workspace.
@@ -335,6 +341,12 @@ export const clearAgent = (id: string) => run("clear_agent", { id });
 /** Throw, so Start agent can stop on a refused start and fall back to the clipboard on a failed launch. */
 export const startAgentTask = (id: string, agent: string) => invoke("start_agent_task", { id, agent });
 export const launchAgent = (id: string, runner: string, prompt: string) => invoke("launch_agent", { id, runner, prompt });
+/** Copy prompt on a task in doing: the repo baseline for review, unless it has one. */
+export const ensureBaseline = (id: string) => invoke<boolean>("ensure_baseline", { id }).catch(() => false);
+export const taskChanges = (id: string) => invoke<FileChange[]>("task_changes", { id });
+export const changeDiff = (id: string, path: string) => invoke<string>("change_diff", { id, path });
+/** Throws with git's message; returns the short sha. */
+export const commitTask = (id: string, acceptDrift: boolean) => invoke<string>("commit_task", { id, acceptDrift });
 export async function refreshCli() {
   workspace.cli = await invoke<CliLink>("cli_link").catch(() => null);
 }

@@ -16,6 +16,10 @@ agent:
   since: null
   commit: a3f9c1e
   last_run: 2026-10-02T15:10:00Z
+  changes:                    # set by wly task review (B8): what Commit commits
+    - src/lib/components/Hero.svelte
+    - static/hero.avif
+  repo: ~/repos/website
 ---
 Score above 95 on all pages.
 

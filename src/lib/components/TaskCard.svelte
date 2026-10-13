@@ -12,6 +12,7 @@
   const stale = $derived(agents && agentStale(t));
   const project = $derived(projectOf(t));
   const commit = $derived(agents && t.agent?.commit ? `commit ${t.agent.commit.slice(0, 7)}` : null);
+  const changed = $derived(agents && t.status === "review" && !t.agent?.commit ? (t.agent?.changes?.length ?? 0) : 0);
   const commitBy = $derived(t.agent?.runner && t.agent.runner !== "auto" ? ` · ${agentName(t.agent.runner)}` : "");
   const parentGone = $derived(!!t.parent && !workspace.index?.tasks.some((x) => x.id === t.parent));
   const checked = $derived(t.acceptance.filter((a) => a.done).length);
@@ -38,6 +39,7 @@
   {#if t.tags.length}<div class="w-tag">{t.tags.map((x) => `#${x}`).join("  ")}</div>{/if}
   {#if badge}<div class="w-card-agent" class:w-card-agent--stale={stale}>{badge}</div>{/if}
   {#if commit}<div class="w-card-code">{commit}{commitBy}</div>{/if}
+  {#if changed}<div class="w-card-code">{changed} {changed === 1 ? "file" : "files"} changed</div>{/if}
   {#if showProject || (t.due && !done) || t.acceptance.length}
     <div class="w-card-foot">
       {#if t.acceptance.length}<span class="acc" use:tip={`${checked} of ${t.acceptance.length} acceptance criteria met`}>☑ {checked}/{t.acceptance.length}</span>{/if}

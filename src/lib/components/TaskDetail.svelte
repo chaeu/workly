@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from "@tauri-apps/plugin-dialog";
   import { grow } from "$lib/grow";
   import { tip } from "$lib/tip";
   import { renderMarkdown } from "$lib/markdown";
@@ -22,12 +23,17 @@
     clearAgent,
     startAgentTask,
     launchAgent,
+    ensureBaseline,
+    taskChanges,
+    changeDiff,
+    commitTask,
     openProjectInVscode,
     toggleAcceptance,
     addAcceptance,
     addSections,
     type AcceptanceItem,
     type RunEntry,
+    type FileChange,
   } from "$lib/stores/workspace.svelte";
   import {
     EFFORTS,
@@ -85,6 +91,53 @@
     if (t && agentsEnabled()) runLog(id).then((r) => (runs = r.reverse()), () => (runs = []));
   });
   const shownRuns = $derived(runsOpen ? runs : runs.slice(0, 1));
+
+  // Changes (B8): agent.changes as they are now and a diff per file on demand; re-read with the index.
+  const KIND = { new: "A", modified: "M", deleted: "D", clean: "·" } as const;
+  const paths = $derived(t?.agent?.changes ?? []);
+  let files = $state<FileChange[]>([]);
+  let filesError = $state("");
+  let diffs = $state<Record<string, string>>({});
+  let committing = $state(false);
+  $effect(() => {
+    void id;
+    diffs = {};
+  });
+  $effect(() => {
+    void workspace.index;
+    if (!agentsEnabled() || !paths.length) return;
+    taskChanges(id).then(
+      (f) => ((files = f), (filesError = ""), Object.keys(diffs).forEach(loadDiff)),
+      (e) => ((files = []), (filesError = String(e))),
+    );
+  });
+  /** Without a review record on this Mac the paths from the file, without status. */
+  const shownFiles = $derived(files.length ? files : paths.map((path) => ({ path, kind: null, drifted: false })));
+  async function loadDiff(path: string) {
+    diffs[path] = await changeDiff(id, path).then((d) => d || "No difference to the last commit", String);
+  }
+  const toggleDiff = (path: string) => (path in diffs ? delete diffs[path] : loadDiff(path));
+  const lineClass = (l: string) =>
+    /^(\+\+\+|---|diff |index |new file|deleted file)/.test(l) ? "meta" : l.startsWith("@@") ? "hunk" : l[0] === "+" ? "add" : l[0] === "-" ? "del" : "";
+  /** Edited after the review: show those diffs and ask first. Commit & Done then sets done. */
+  async function commit(done: boolean) {
+    if (!t || committing) return;
+    const drifted = files.filter((f) => f.drifted);
+    if (drifted.length) {
+      await Promise.all(drifted.map((f) => loadDiff(f.path)));
+      const names = drifted.map((f) => f.path).join(", ");
+      const msg = `${names} changed after the review. The ${drifted.length === 1 ? "diff is" : "diffs are"} open in the task. Commit as it is now?`;
+      if (!(await ask(msg, { title: `Commit ${id}`, kind: "warning", okLabel: "Commit" }))) return;
+    }
+    committing = true;
+    try {
+      await commitTask(id, drifted.length > 0);
+      if (done) await updateTaskField(id, "status", "done");
+    } catch (e) {
+      workspace.error = String(e);
+    }
+    committing = false;
+  }
   const stale = $derived(!!t && agentStale(t));
   const html = $derived(renderMarkdown(view));
 
@@ -164,7 +217,10 @@
   );
   let copied = $state(false);
   async function copyPrompt() {
-    if (!t || !(await copyText(agentPrompt(t, body)))) return;
+    if (!t) return;
+    // In doing the prompt has no `wly task start`, so the baseline for review is taken here.
+    if (t.status === "doing") await ensureBaseline(id);
+    if (!(await copyText(agentPrompt(t, body)))) return;
     copied = true;
     setTimeout(() => (copied = false), 1600);
   }
@@ -532,6 +588,35 @@
                 >
               {/if}
             </div>
+          </div>
+        {/if}
+
+        {#if agentsEnabled() && paths.length}
+          <div class="t-group">
+            <span class="w-caps">Changes · {paths.length}</span>
+            {#if filesError}<div class="t-files-error">{filesError}</div>{/if}
+            {#each shownFiles as f (f.path)}
+              <button type="button" class="t-file" aria-expanded={f.path in diffs} onclick={() => toggleDiff(f.path)}>
+                <span class="w-mono t-kind t-kind--{f.kind}" use:tip={f.kind ?? "unknown"}>{f.kind ? KIND[f.kind] : "?"}</span>
+                <span class="w-mono t-file-path" use:tip={f.path}>{f.path}</span>
+                {#if f.drifted}<span class="t-drift" use:tip={"Edited after the review: Commit shows the diff and asks first"}>edited</span>{/if}
+              </button>
+              {#if f.path in diffs}
+                <pre class="t-diff">{#each diffs[f.path].split("\n") as l, i (i)}<span class={lineClass(l)}>{l}</span>{/each}</pre>
+              {/if}
+            {/each}
+            {#if t.status === "review" && !t.agent?.commit}
+              <div class="t-agent-acts">
+                <button
+                  type="button"
+                  class="w-btn w-btn--primary"
+                  disabled={committing || !files.length}
+                  use:tip={`Commits exactly these files in ${t.agent?.repo ?? "the repo"} as "${id}: …". Never pushes.`}
+                  onclick={() => commit(false)}>{committing ? "Committing…" : "Commit"}</button
+                >
+                <button type="button" class="w-btn" disabled={committing || !files.length} onclick={() => commit(true)}>Commit & Done</button>
+              </div>
+            {/if}
           </div>
         {/if}
 
@@ -1002,6 +1087,71 @@
     white-space: normal;
     user-select: text;
     -webkit-user-select: text;
+  }
+  .t-file {
+    display: flex;
+    align-items: center;
+    gap: var(--w-s-2);
+    min-width: 0;
+    border: 0;
+    padding: 2px 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: var(--w-fs-small);
+    text-align: left;
+    cursor: pointer;
+  }
+  .t-file-path {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .t-kind {
+    flex: none;
+    width: 1.2em;
+    color: var(--w-muted);
+  }
+  .t-kind--new,
+  .t-diff .add {
+    color: var(--w-ok);
+  }
+  .t-kind--deleted,
+  .t-diff .del {
+    color: var(--w-danger);
+  }
+  .t-drift,
+  .t-files-error {
+    color: var(--w-warn);
+    font-size: var(--w-fs-small);
+  }
+  .t-drift {
+    flex: none;
+    margin-left: auto;
+  }
+  .t-diff {
+    margin: 0;
+    max-height: 320px;
+    overflow: auto;
+    border-radius: var(--w-r-sm);
+    padding: var(--w-s-2);
+    background: var(--w-sunk);
+    font-family: var(--w-font-mono);
+    font-size: var(--w-fs-micro);
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .t-diff span {
+    display: block;
+    min-height: 1lh;
+    white-space: pre;
+  }
+  .t-diff .hunk {
+    color: var(--w-info);
+  }
+  .t-diff .meta {
+    color: var(--w-muted);
   }
   .t-more {
     justify-self: start;

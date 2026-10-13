@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, LogicalSize, Manager, RunEvent, State, WebviewWi
 use tauri_plugin_window_state::StateFlags;
 use workly_core::agent::{AgentContext, RunEntry};
 use workly_core::backup::{self, BackupInfo};
+use workly_core::changes::FileChange;
 use workly_core::frontmatter::AcceptanceItem;
 use workly_core::history::PhaseSpan;
 use workly_core::model::{Config, Process};
@@ -358,10 +359,38 @@ fn open_repo(state: State<AppState>, repo: String) -> Result<(), String> {
 }
 
 /// Start a task for an agent from the app: status doing (from doing only the agent
-/// fields), refused while another agent works in the same repo.
+/// fields), refused while another agent works in the same repo. Async: the
+/// baseline runs git.
 #[tauri::command]
-fn start_agent_task(app: AppHandle, state: State<AppState>, id: String, agent: String) -> Result<(), String> {
+async fn start_agent_task(app: AppHandle, state: State<'_, AppState>, id: String, agent: String) -> Result<(), String> {
     changed(&app, with_ws(&state, |ws| ws.start_task(&id, Some(&agent), ACTOR)))
+}
+
+/// Copy prompt on a task already in doing: a baseline unless it has one.
+#[tauri::command]
+async fn ensure_baseline(state: State<'_, AppState>, id: String) -> Result<bool, String> {
+    with_ws(&state, |ws| ws.ensure_baseline(&id))
+}
+
+#[tauri::command]
+async fn task_changes(state: State<'_, AppState>, id: String) -> Result<Vec<FileChange>, String> {
+    with_ws(&state, |ws| ws.task_changes(&id))
+}
+
+#[tauri::command]
+async fn change_diff(state: State<'_, AppState>, id: String, path: String) -> Result<String, String> {
+    with_ws(&state, |ws| ws.change_diff(&id, &path))
+}
+
+/// Commit the task's changes in its repo; returns the short sha. git add/commit run
+/// without the workspace lock (a pre-commit hook may take up to two minutes).
+#[tauri::command]
+async fn commit_task(app: AppHandle, state: State<'_, AppState>, id: String, accept_drift: bool) -> Result<String, String> {
+    let plan = with_ws(&state, |ws| ws.prepare_commit(&id, accept_drift))?;
+    let run = plan.clone();
+    let sha = tauri::async_runtime::spawn_blocking(move || run.run()).await.map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+    changed(&app, with_ws(&state, |ws| ws.record_commit(&plan, (&sha.0, &sha.1), ACTOR)))?;
+    Ok(sha.0)
 }
 
 /// Hand a started task to its runner, off the UI thread. Copilot: the project's
@@ -663,6 +692,10 @@ pub fn run() {
             clear_agent,
             start_agent_task,
             launch_agent,
+            ensure_baseline,
+            task_changes,
+            change_diff,
+            commit_task,
             create_agents_md,
             cli_link,
             install_cli,
