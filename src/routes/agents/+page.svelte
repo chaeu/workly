@@ -131,7 +131,7 @@ writable_roots = ["{root}"]</pre>
   </section>
 
   {#if openId}
-    <TaskDetail id={openId} mode={detailMode} {focusIds} onclose={() => (openId = null)} />
+    <TaskDetail id={openId} mode={detailMode} {focusIds} onclose={() => (openId = null)} onopen={(x) => (openId = x)} />
   {/if}
 {/if}
 

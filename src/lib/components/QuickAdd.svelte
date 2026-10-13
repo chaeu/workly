@@ -179,10 +179,11 @@
     width: min(520px, calc(100% - 32px));
     top: 28%;
   }
+  /* Expanded: centred like the other modals (they translate by -50%), scrolls when taller than the window. */
   .w-modal.more {
     width: min(600px, calc(100% - 32px));
-    top: 12%;
-    max-height: 80%;
+    top: 50%;
+    max-height: calc(100% - 48px);
     overflow-y: auto;
   }
   form {

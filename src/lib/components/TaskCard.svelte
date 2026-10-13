@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { agentsEnabled, projColor, type TaskEntry } from "$lib/stores/workspace.svelte";
+  import { workspace, agentsEnabled, projColor, type TaskEntry } from "$lib/stores/workspace.svelte";
   import { agentBadge, agentName, agentStale, dueTip, isOverdue, projectOf, shortDate } from "$lib/tasks.svelte";
   import { clipped, tip } from "$lib/tip";
 
@@ -13,6 +13,8 @@
   const project = $derived(projectOf(t));
   const commit = $derived(agents && t.agent?.commit ? `commit ${t.agent.commit.slice(0, 7)}` : null);
   const commitBy = $derived(t.agent?.runner && t.agent.runner !== "auto" ? ` · ${agentName(t.agent.runner)}` : "");
+  const parentGone = $derived(!!t.parent && !workspace.index?.tasks.some((x) => x.id === t.parent));
+  const checked = $derived(t.acceptance.filter((a) => a.done).length);
 </script>
 
 <div
@@ -28,14 +30,17 @@
 >
   <div class="w-card-meta w-mono">
     <span>{t.id}{done && t.done_at ? ` · ${shortDate(t.done_at)}` : ""}</span>
+    {#if t.parent}<span class="up" use:tip={parentGone ? `Parent ${t.parent} is in the trash` : `Sub-task of ${t.parent}`}>↑ {t.parent}{parentGone ? " (deleted)" : ""}</span>{/if}
     {#if t.priority}<span class="w-prio w-prio--{t.priority}">P{t.priority}</span>{/if}
   </div>
   <div class="w-card-title">{t.title}</div>
+  {#if t.status === "waiting" && t.waiting_for}<div class="waiting">Waiting for {t.waiting_for}</div>{/if}
   {#if t.tags.length}<div class="w-tag">{t.tags.map((x) => `#${x}`).join("  ")}</div>{/if}
   {#if badge}<div class="w-card-agent" class:w-card-agent--stale={stale}>{badge}</div>{/if}
   {#if commit}<div class="w-card-code">{commit}{commitBy}</div>{/if}
-  {#if showProject || (t.due && !done)}
+  {#if showProject || (t.due && !done) || t.acceptance.length}
     <div class="w-card-foot">
+      {#if t.acceptance.length}<span class="acc" use:tip={`${checked} of ${t.acceptance.length} acceptance criteria met`}>☑ {checked}/{t.acceptance.length}</span>{/if}
       {#if showProject}
         <span class="w-proj-mark" style:--c={project ? projColor(project.color) : "var(--w-line)"}></span>
         <span class="w-card-proj" use:tip={clipped(project?.title)}>{project?.title ?? "Inbox"}</span>
@@ -46,7 +51,20 @@
 </div>
 
 <style>
-  .overdue {
+  .overdue,
+  .waiting {
     color: var(--w-warn);
+  }
+  .waiting {
+    font-size: var(--w-fs-caption);
+    overflow-wrap: anywhere;
+  }
+  .up {
+    margin-left: 8px;
+    font-size: var(--w-fs-micro);
+  }
+  .acc {
+    flex: none;
+    font-variant-numeric: tabular-nums;
   }
 </style>

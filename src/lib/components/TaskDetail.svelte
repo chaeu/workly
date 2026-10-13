@@ -23,11 +23,37 @@
     startAgentTask,
     launchAgent,
     openProjectInVscode,
+    toggleAcceptance,
+    addAcceptance,
+    addSections,
+    type AcceptanceItem,
     type RunEntry,
   } from "$lib/stores/workspace.svelte";
-  import { EFFORTS, RUNNERS, agentName, agentPrompt, agentStale, bodyView, confirmDeleteTask, descriptionOf, projectOf, runnerOf, shortDate, updatesOf } from "$lib/tasks.svelte";
+  import {
+    EFFORTS,
+    RUNNERS,
+    agentName,
+    agentPrompt,
+    agentStale,
+    bodyView,
+    confirmDeleteTask,
+    descriptionOf,
+    hasSections,
+    openQuickAdd,
+    projectOf,
+    runnerOf,
+    shortDate,
+    updatesOf,
+    waitingFocus,
+  } from "$lib/tasks.svelte";
 
-  let { id, mode, focusIds, onclose }: { id: string; mode: "popup" | "panel"; focusIds: string[]; onclose: () => void } = $props();
+  let {
+    id,
+    mode,
+    focusIds,
+    onclose,
+    onopen,
+  }: { id: string; mode: "popup" | "panel"; focusIds: string[]; onclose: () => void; onopen?: (id: string) => void } = $props();
 
   const t = $derived(workspace.index?.tasks.find((x) => x.id === id));
   const project = $derived(t && projectOf(t));
@@ -67,6 +93,40 @@
     const ok = await updateTaskField(id, field, value);
     if (!ok && input) input.value = shown;
   }
+
+  // Waiting: the field shows while waiting (or when a value is left); moving into waiting focuses it once.
+  let waitingInput = $state<HTMLInputElement>();
+  $effect(() => {
+    if (t?.status === "waiting" && waitingFocus.id === id && waitingInput) {
+      waitingInput.focus();
+      waitingFocus.id = null;
+    }
+  });
+  function setStatus(status: string) {
+    if (status === "waiting") waitingFocus.id = id;
+    save("status", status);
+  }
+
+  // Acceptance: real checkboxes. The box shows the file's state until the index changes.
+  const checked = $derived(t?.acceptance.filter((a) => a.done).length ?? 0);
+  function toggle(e: Event & { currentTarget: HTMLInputElement }, n: number, a: AcceptanceItem) {
+    e.currentTarget.checked = a.done;
+    toggleAcceptance(id, n, a);
+  }
+  let criterion = $state("");
+  async function addCriterion() {
+    if (!criterion.trim()) return;
+    await addAcceptance(id, criterion);
+    if (!workspace.error) criterion = "";
+  }
+
+  // Parent, one level: a parent has no parent; a task with sub-tasks gets none.
+  const tasks = $derived(workspace.index?.tasks ?? []);
+  const children = $derived(tasks.filter((x) => x.parent === id));
+  const childrenDone = $derived(children.filter((x) => x.status === "done").length);
+  const parentTask = $derived(t?.parent ? tasks.find((x) => x.id === t.parent) : undefined);
+  const parentCandidates = $derived(tasks.filter((x) => !x.parent && x.id !== id && x.status !== "done"));
+  const statusLabel = (s: string) => statuses.find((x) => x.id === s)?.label ?? s;
 
   const tagsText = $derived(t?.tags.join(", ") ?? "");
   const parseTags = (s: string) =>
@@ -255,7 +315,7 @@
       {/key}
       <div class="t-status" role="group" aria-label="Status">
         {#each statuses as s (s.id)}
-          <button type="button" aria-pressed={t.status === s.id} onclick={() => save("status", s.id)}>{s.label}</button>
+          <button type="button" aria-pressed={t.status === s.id} onclick={() => setStatus(s.id)}>{s.label}</button>
         {/each}
       </div>
     </div>
@@ -267,7 +327,7 @@
             class="t-desc-edit"
             bind:value={draft}
             aria-label="Description (Markdown)"
-            placeholder="Description and acceptance criteria"
+            placeholder="Description (Markdown)"
             use:grow
             use:focus
             onblur={saveDesc}
@@ -295,6 +355,35 @@
           </div>
         {:else}
           <button type="button" class="t-desc-add" onclick={editDesc}>Add description</button>
+        {/if}
+
+        {#if t.acceptance.length || hasSections(body)}
+          <div class="t-group">
+            <span class="w-caps">Acceptance{t.acceptance.length ? ` · ${checked}/${t.acceptance.length}` : ""}</span>
+            <ul class="t-acc">
+              {#each t.acceptance as a, n (n)}
+                <li class:done={a.done}>
+                  <input type="checkbox" id="acc-{n}" checked={a.done} onchange={(e) => toggle(e, n, a)} />
+                  <label for="acc-{n}">{a.text}</label>
+                </li>
+              {/each}
+            </ul>
+            <input
+              class="t-acc-add"
+              bind:value={criterion}
+              placeholder="+ Add criterion"
+              aria-label="Add acceptance criterion"
+              onkeydown={(e) => e.key === "Enter" && addCriterion()}
+            />
+          </div>
+        {/if}
+        {#if !hasSections(body)}
+          <button
+            type="button"
+            class="t-desc-add"
+            use:tip={"Puts ## Description above the text and an empty ## Acceptance above ## Updates"}
+            onclick={() => addSections(id)}>Add sections</button
+          >
         {/if}
       </div>
 
@@ -332,11 +421,67 @@
               />
             {/key}
           </dd>
+          {#if t.status === "waiting" || t.waiting_for}
+            <dt>Waiting for</dt>
+            <dd>
+              {#key t.waiting_for}
+                <input
+                  bind:this={waitingInput}
+                  class="field waiting"
+                  value={t.waiting_for ?? ""}
+                  placeholder="Who or what?"
+                  aria-label="Waiting for"
+                  onchange={(e) => save("waiting_for", e.currentTarget.value.trim() || null, e.currentTarget, t.waiting_for ?? "")}
+                />
+              {/key}
+            </dd>
+          {/if}
+          {#if !children.length}
+            <dt>Parent</dt>
+            <dd>
+              {#key t.parent}
+                <input
+                  class="field w-mono"
+                  list="t-parents"
+                  value={t.parent ?? ""}
+                  placeholder="–"
+                  aria-label="Parent task id"
+                  onchange={(e) => save("parent", e.currentTarget.value.trim() || null, e.currentTarget, t.parent ?? "")}
+                />
+              {/key}
+              {#if t.parent}
+                <button
+                  type="button"
+                  class="t-link"
+                  disabled={!parentTask}
+                  use:tip={parentTask ? parentTask.title : `${t.parent} is in the trash`}
+                  onclick={() => parentTask && onopen?.(parentTask.id)}>{parentTask ? "↑ Open" : "(deleted)"}</button
+                >
+              {/if}
+              <datalist id="t-parents">
+                {#each parentCandidates as x (x.id)}<option value={x.id}>{x.title}</option>{/each}
+              </datalist>
+            </dd>
+          {/if}
           {#if t.status === "done" && t.done_at}
             <dt>Done</dt>
             <dd class="w-mono">{shortDate(t.done_at)}</dd>
           {/if}
         </dl>
+
+        {#if !t.parent}
+          <div class="t-group">
+            <span class="w-caps">Sub-tasks{children.length ? ` · ${childrenDone}/${children.length} done` : ""}</span>
+            {#each children as c (c.id)}
+              <button type="button" class="t-child" class:done={c.status === "done"} onclick={() => onopen?.(c.id)}>
+                <span class="w-mono">{c.id}</span>
+                <span class="t-child-title">{c.title}</span>
+                <span class="t-child-status">{statusLabel(c.status)}</span>
+              </button>
+            {/each}
+            <button type="button" class="t-more" onclick={() => openQuickAdd(project?.key ?? null, id)}>+ Add sub-task</button>
+          </div>
+        {/if}
 
         {#if agentsEnabled()}
           <div class="t-group">
@@ -711,6 +856,96 @@
   .field:focus {
     outline: none;
     box-shadow: 0 0 0 2px var(--w-accent-soft);
+  }
+  .field.waiting {
+    color: var(--w-warn);
+  }
+  .t-link {
+    flex: none;
+    border: 0;
+    padding: 0;
+    background: none;
+    color: var(--w-muted);
+    font: inherit;
+    font-size: var(--w-fs-small);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .t-link:hover:not(:disabled) {
+    color: var(--w-ink);
+  }
+  .t-link:disabled {
+    cursor: default;
+  }
+  .t-acc {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .t-acc li {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    font-size: var(--w-fs-small);
+    line-height: 1.35;
+  }
+  .t-acc input {
+    margin: 2px 0 0;
+    flex: none;
+  }
+  .t-acc li.done label {
+    text-decoration: line-through;
+    color: var(--w-muted);
+  }
+  .t-acc-add {
+    border: 0;
+    background: var(--w-tray);
+    border-radius: var(--w-r-sm);
+    padding: 5px 8px;
+    font-size: var(--w-fs-small);
+  }
+  .t-acc-add:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--w-accent-soft);
+  }
+  .t-child {
+    display: flex;
+    align-items: baseline;
+    gap: var(--w-s-2);
+    min-width: 0;
+    border: 0;
+    border-radius: var(--w-r-sm);
+    padding: 2px 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-size: var(--w-fs-small);
+    text-align: left;
+    cursor: pointer;
+  }
+  .t-child .w-mono {
+    flex: none;
+    color: var(--w-muted);
+  }
+  .t-child-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .t-child:hover .t-child-title {
+    text-decoration: underline;
+  }
+  .t-child.done .t-child-title {
+    text-decoration: line-through;
+    color: var(--w-muted);
+  }
+  .t-child-status {
+    flex: none;
+    color: var(--w-muted);
   }
   .t-update {
     background: var(--w-sunk);

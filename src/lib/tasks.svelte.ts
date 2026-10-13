@@ -192,6 +192,9 @@ export const hasSections = (body: string) => {
   return lines.some(isDescription) && lines.some(isAcceptance);
 };
 
+/** A task just moved to waiting: its detail card focuses "Waiting for" once. */
+export const waitingFocus = $state({ id: null as string | null });
+
 export const RUNNERS = ["auto", "codex", "copilot", "claude-code"];
 export const EFFORTS = ["auto", "low", "medium", "high"];
 

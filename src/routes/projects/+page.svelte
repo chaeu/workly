@@ -28,6 +28,7 @@
     backlog: "color-mix(in srgb, var(--w-edge) 45%, transparent)",
     todo: "var(--w-hold)",
     doing: "var(--w-info)",
+    waiting: "var(--w-warn)",
     review: "var(--w-accent)",
     done: "var(--w-ok)",
   };
@@ -326,7 +327,7 @@
 {/if}
 
 {#if openId}
-  <TaskDetail id={openId} mode={detailMode} {focusIds} onclose={() => (openId = null)} />
+  <TaskDetail id={openId} mode={detailMode} {focusIds} onclose={() => (openId = null)} onopen={(x) => (openId = x)} />
 {/if}
 
 <style>

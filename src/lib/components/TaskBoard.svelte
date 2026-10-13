@@ -27,6 +27,7 @@
     shortDate,
     startClock,
     today,
+    waitingFocus,
   } from "$lib/tasks.svelte";
 
   /**
@@ -45,7 +46,15 @@
     const paths = new Set(projects.map((p) => p.path));
     return (workspace.index?.tasks ?? []).filter((t) => !t.project || paths.has(t.project));
   });
-  const tasks = $derived([...(project ? (workspace.index?.tasks ?? []).filter((t) => t.project === project.path) : live)].sort(byBoardOrder));
+  // Tasks that have sub-tasks; "Hide parents" takes them off the board.
+  const parentIds = $derived(new Set((workspace.index?.tasks ?? []).flatMap((t) => (t.parent ? [t.parent] : []))));
+  const hideParents = $derived(workspace.settings?.hide_parents ?? false);
+  const tasks = $derived(
+    [...(project ? (workspace.index?.tasks ?? []).filter((t) => t.project === project.path) : live)]
+      .filter((t) => !(hideParents && parentIds.has(t.id)))
+      .sort(byBoardOrder),
+  );
+  const hasParents = $derived((project ? (workspace.index?.tasks ?? []).filter((t) => t.project === project.path) : live).some((t) => parentIds.has(t.id)));
   const lanes = $derived([
     ...projects.map((p) => ({ key: p.key, title: p.title, color: projColor(p.color) })),
     { key: "", title: "Inbox", color: "var(--w-line)" },
@@ -217,7 +226,11 @@
     // Another column changes only the status; another lane moves the file first.
     const [status, lane] = key.split("|");
     if (lane !== "*" && lane !== laneOf(t)) await moveTask(id, lane || null);
-    if (status !== t.status) await updateTaskField(id, "status", status);
+    if (status !== t.status && (await updateTaskField(id, "status", status)) && status === "waiting") {
+      // Ask what it waits for: the card opens with the field focused (not mandatory).
+      waitingFocus.id = id;
+      openId = id;
+    }
   }
 
   // ------------------------------------------------------------ keyboard
@@ -349,6 +362,11 @@
       ><span class="w-dot" style:--c="var(--w-warn)"></span>Overdue</button
     >
     <button type="button" class="w-chip" aria-pressed={fDue === "week"} onclick={() => (fDue = fDue === "week" ? "" : "week")}>Due this week</button>
+    {#if hasParents || hideParents}
+      <button type="button" class="w-chip" aria-pressed={hideParents} use:tip={"Hide tasks that have sub-tasks"} onclick={() => saveSettings({ hide_parents: !hideParents })}
+        >Hide parents</button
+      >
+    {/if}
     {#if filtering}
       <span class="w-sub">{matchCount} {matchCount === 1 ? "match" : "matches"}</span>
       <button type="button" class="w-btn w-btn--quiet clear" onclick={clearFilters}>Clear</button>
@@ -401,7 +419,7 @@
 
 {#if openId}
   {#key openId}
-    <TaskDetail id={openId} mode={detailMode} {focusIds} onclose={() => (openId = null)} />
+    <TaskDetail id={openId} mode={detailMode} {focusIds} onclose={() => (openId = null)} onopen={(x) => (openId = x)} />
   {/key}
 {/if}
 
