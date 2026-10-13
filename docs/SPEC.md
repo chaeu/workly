@@ -59,7 +59,7 @@ Ein Workspace ist ein Ordner, zugleich Obsidian-Vault und Git-Repo. Menschenlesb
 | Ebene | Ort | Inhalt |
 | --- | --- | --- |
 | Gerät | `~/Library/Application Support/Workly/settings.json` | Workspaces (Name + Pfad, mehrere, umschaltbar), Repos-Ordner, Theme, UI-Präferenzen, Agent-Funktionen an/aus, Stunden pro FTE und Jahr, Backup je Workspace (`backup: {interval: off | 15m | hourly | daily, push}` im Eintrag des Workspace, Standard hourly und Push an). Fenster (Größe, Position, maximiert) speichert das Plugin `window-state` daneben in `~/Library/Application Support/dev.chaeu.workly/.window-state.json` |
-| Workspace | `<workspace>/.workly/config.yml` | Ordner für neue Projekte und Inbox, Scan-Ausschlüsse, Task-Status, WIP-Limits, Agent-Standards (`agent_defaults`: `runner`, `model`, `effort`, `stale_after_minutes`, Standard 30) |
+| Workspace | `<workspace>/.workly/config.yml` | Ordner für neue Projekte und Inbox, Scan-Ausschlüsse, Task-Status, WIP-Limits, Agent-Standards (`agent_defaults`: `runner`, `model`, `effort`, `stale_after_minutes`, Standard 30), Agent-Liste (`agents:`, siehe Runner-Adapter) |
 | Workspace | `<workspace>/.workly/process.yml` | Use-Case-Prozess (Phasen, Schritte, Gates, Kanten) und Bewertungskriterien (`assessment:` mit Kriterien je Achse samt Ankern, optional `fte`-Schwellen, Bonus-Kriterien mit `bonus: true`; K.-o.-Fragen optional) |
 
 ### Ordnerstruktur
@@ -149,9 +149,9 @@ done_at: null
 waiting_for: "IT: read access" # optional, only while status is waiting
 parent: WR-10                 # optional, one level: WR-10 has no parent itself
 agent:                        # optional; ready: (old files) is still read, never written
-  runner: auto                # auto | codex | copilot | claude-code
-  model: auto
-  effort: auto                # auto | low | medium | high
+  runner: codex               # codex | copilot; missing, null or auto = the default agent
+  model: gpt-5                # missing/null/auto = the runner's own default
+  effort: high                # low | medium | high | xhigh (Codex); same
   active: null                # set while an agent works, e.g. codex
   since: null                 # ISO timestamp, drives "Codex working · 14 min"
   commit: null                # set by Commit (short sha) or review --commit
@@ -272,14 +272,29 @@ Jeder Agent ist ein Adapter: Kontext zusammensetzen, starten, Status über `wly`
 2. **Start** über dieselbe Core-Funktion als App: Status `doing`, `agent.active` = Runner, `agent.since`. Aus `doing` setzt sie nur die Agent-Felder.
 3. Der Prompt (derselbe wie „Copy prompt“, mit „bereits gestartet“) landet in `.workly/runs/<ID>/prompt.md`; im argv steht nie der Prompt, nur sein Pfad.
 4. **Copilot:** `code` aus dem App-Bundle der neuesten VS-Code-Installation ab 1.98 (`/Applications`, sonst Spotlight nach `com.microsoft.VSCode`; nie PATH, eine aus dem Finder gestartete App hat den Shell-PATH nicht). Erst `code <key>.code-workspace` (vorher neu geschrieben), nach einer kurzen Pause `code chat -m agent -r -a <prompt.md> "<Zeile>"`: Chat im Agent-Modus im zuletzt aktiven Fenster, mit dem Prompt als angehängter Datei, sofort abgeschickt. Ein nicht vertrauter Workspace fragt vorher nach Workspace Trust.
-5. **Codex:** `.workly/runs/<ID>/start.command` (Modus 700), geöffnet mit `open -a Terminal` (kein AppleScript, keine Bedienungshilfen-Freigabe). Terminal führt es in der Login-Shell des Nutzers aus, `codex` kommt also aus dessen PATH, sonst aus der neuesten VS-Code-Extension (`~/.vscode/extensions/openai.chatgpt-*/bin/macos-aarch64/codex`), sonst eine lesbare Meldung. Das Skript wechselt ins erste Repo, setzt `WORKLY_WORKSPACE` und `WORKLY_AGENT=codex` und startet `codex [-m <model>] [-c model_reasoning_effort=<effort>] "$(cat prompt.md)"`; Modell und Effort aus dem Task, sonst `agent_defaults`, „auto“ = kein Flag. Jeder Pfad im Skript ist in einfachen Anführungszeichen (ein Helfer), der Prompt steht nie im Skript.
+5. **Codex:** `.workly/runs/<ID>/start.command` (Modus 700), geöffnet mit `open -a Terminal` (kein AppleScript, keine Bedienungshilfen-Freigabe). Terminal führt es in der Login-Shell des Nutzers aus, `codex` kommt also aus dessen PATH, sonst aus der neuesten VS-Code-Extension (`~/.vscode/extensions/openai.chatgpt-*/bin/macos-aarch64/codex`), sonst eine lesbare Meldung. Das Skript wechselt ins erste Repo, setzt `WORKLY_WORKSPACE` und `WORKLY_AGENT=codex` und startet `codex [-m <model>] [-c model_reasoning_effort=<effort>] "$(cat prompt.md)"`; Modell und Effort aus der Agent-Wahl (unten), ungesetzt = kein Flag, Codex nimmt dann `~/.codex/config.toml`. Jeder Pfad im Skript ist in einfachen Anführungszeichen (ein Helfer), der Prompt steht nie im Skript.
 6. **Rückfall** (VS Code oder `code` fehlt, Startfehler): Prompt in die Zwischenablage, Workspace in VS Code öffnen, Banner mit Grund und „Prompt copied – paste into the chat“. Der Task bleibt gestartet. Nie im UI-Thread.
 
-Deaktiviert mit Grund: Projekt ohne Repo, Repo fehlt auf diesem Mac, Task `done`, anderer Agent im Repo, Agent schon aktiv an diesem Task, Runner weder Copilot noch Codex. „Copy prompt“ bleibt immer verfügbar. Runner = `agent.runner`, sonst `agent_defaults.runner`. Claude Code folgt als weiterer Adapter.
+Deaktiviert mit Grund: Projekt ohne Repo, Repo fehlt auf diesem Mac, Task `done`, anderer Agent im Repo, Agent schon aktiv an diesem Task, Runner weder Copilot noch Codex. „Copy prompt“ bleibt immer verfügbar. Claude Code folgt als weiterer Adapter.
+
+**Agent-Liste (B10).** `agents:` in `.workly/config.yml` ist das Menü, aus dem man wählt; der erste Eintrag ist der Standard:
+
+```yaml
+agents:
+  - { name: Codex Luna, runner: codex, model: gpt-6-luna, effort: medium }
+  - { name: Codex Sol, runner: codex, model: gpt-6-sol, effort: high }
+  - { name: Copilot, runner: copilot }
+```
+
+`name` ist Pflicht und eindeutig, `runner` ist `codex` oder `copilot`, `model` und `effort` sind optional (fehlt = Standard des Runners). Copilot ignoriert beides: `code chat` hat keinen Modell-Parameter, das Modell wählt man in VS Code. **Agent-Wahl** (Core `agent_choice`, im Frontend gespiegelt): Nennt der Task einen Runner (`agent.runner` gesetzt, nicht `auto`), gelten seine drei Felder so, wie sie sind; sonst der erste Eintrag der Liste. Ohne `agents:` füllt `agent_defaults` fehlende Felder (Workspaces vor B10).
+
+- **Task-Detailkarte:** ein Menü „Agent“ statt Runner/Model/Effort: „Default · <erster Name>“, die Einträge, und – wenn die Felder des Tasks zu keinem Eintrag passen – deren Werte als eigene Zeile („Codex · gpt-x · low“), damit nichts verloren geht. Darunter Modell und Effort, die tatsächlich starten („gpt-5 · high“, „default model · medium“, bei Copilot „Model picked in VS Code“). Die Wahl schreibt `agent.runner/model/effort` in einem Write (fehlend = `null`), „Default“ setzt alle drei auf `null`. Der Knopf heißt „Start <Name>“. QuickAdd hat dasselbe Menü.
+- **Settings → Agents** (hinter `agents_enabled`): Tabelle Name, Runner, Model, Effort (—, low, medium, high, xhigh), je Zeile ↑ ↓ ✕, die erste Zeile mit „Default“, darunter „+ Add agent“. Jede vollständige Änderung schreibt die ganze Liste (eine neue Zeile erst mit Namen). Bei Copilot sind Model und Effort gesperrt und werden geleert. Geschrieben wird verlustfrei: nur der Block `agents:` ändert sich (eine Zeile je Eintrag als Flow-Map, unveränderte Zeilen bleiben byte-gleich), fehlt er, wird er angehängt, leer = `agents: []`; eine Logzeile `config.update` mit Feld `agents`. Ungültige Einträge oder eine Form, die der Patcher nicht sicher ändern kann, werden abgelehnt, nichts wird geschrieben, die Meldung steht mit „Open config.yml“ im Panel.
+- „auto“ gibt es in der UI nicht mehr; alte Werte `auto` gelten als ungesetzt. Eine automatische Wahl (Orchestrator) ist v2 und käme als weiterer Eintrag dazu.
 
 ### Übergabe per Prompt
 
-„Copy prompt“ im Agent-Bereich der Task-Detailkarte (Prompt: Task-ID, zuerst `wly task show <ID>`, dann die globalen Regeln mit `--agent <runner>`; bei `doing` ohne `start`; danach Beschreibung und Acceptance-Punkte des Tasks, wenn vorhanden) und „Open repo“ (erstes Repo des Projekts in VS Code). Der Prompt wird in Copilot Chat oder Codex eingefügt; „Start agent“ nimmt denselben Text. Runner = `agent.runner`, sonst `agent_defaults.runner`, sonst `agent`. Die Ansicht „Agents“ zeigt die Agent-Aktivität (Working, Back for review) und eine Anleitung für den Test von `wly`. `agent.ready` ist veraltet: alte Dateien laden weiter, Workly schreibt es nie und zeigt es nicht.
+„Copy prompt“ im Agent-Bereich der Task-Detailkarte (Prompt: Task-ID, zuerst `wly task show <ID>`, dann die globalen Regeln mit `--agent <runner>`; bei `doing` ohne `start`; danach Beschreibung und Acceptance-Punkte des Tasks, wenn vorhanden) und „Open repo“ (erstes Repo des Projekts in VS Code). Der Prompt wird in Copilot Chat oder Codex eingefügt; „Start agent“ nimmt denselben Text. Runner = der der Agent-Wahl, sonst `agent`. Die Ansicht „Agents“ zeigt die Agent-Aktivität (Working, Back for review) und eine Anleitung für den Test von `wly`. `agent.ready` ist veraltet: alte Dateien laden weiter, Workly schreibt es nie und zeigt es nicht.
 
 ### Run-Log
 
@@ -304,7 +319,7 @@ Nicht in v1: „Commit all reviewed“ pro Repo (eine Commit-Folge über mehrere
 
 ### Schalter Agent-Funktionen
 
-`agents_enabled` in den Geräte-Einstellungen (Standard: aus). Aus blendet jede Agent-Oberfläche aus: Ansicht und Menüpunkt „Agents“, Agent-Bereich, Changes und Agent activity der Task-Detailkarte samt „Clear agent“ und „Commit“, Agent-Badge (auch „Agent inactive?“), -Ring, Commit und „N files changed“ auf Karten, Agent-Dateien in der Projektansicht, „Install CLI“ und „Start agent“. Nichts wird gelöscht: `agent:`-Felder bleiben in den Dateien, `wly` funktioniert weiter. Jede neue Agent-Oberfläche hängt an diesem einen Schalter.
+`agents_enabled` in den Geräte-Einstellungen (Standard: aus). Aus blendet jede Agent-Oberfläche aus: Ansicht und Menüpunkt „Agents“, Agent-Bereich, Changes und Agent activity der Task-Detailkarte samt „Clear agent“ und „Commit“, Agent-Badge (auch „Agent inactive?“), -Ring, Commit und „N files changed“ auf Karten, Agent-Dateien in der Projektansicht, „Install CLI“, das Panel „Agents“ in Settings und „Start agent“. Nichts wird gelöscht: `agent:`-Felder bleiben in den Dateien, `wly` funktioniert weiter. Jede neue Agent-Oberfläche hängt an diesem einen Schalter.
 
 ### Stufen
 
@@ -327,7 +342,7 @@ Nicht in v1: „Commit all reviewed“ pro Repo (eine Commit-Folge über mehrere
 | Detail card | Popup oder Seitenleiste (schließt mit Esc, ✕ oder einem Klick außerhalb; beide liegen über einem grauen Overlay, ein Klick daneben schließt nur und öffnet nichts), Status, Priorität, Fälligkeit, Tags, Beschreibung, Acceptance als Checkboxen mit „2/5“ und „+ Add criterion“ (alte Tasks ohne Abschnitte: „Add sections“), „Waiting for“ (in Waiting), Parent (Eingabe mit Vorschlägen, fehlt bei Tasks mit Kindern; Link zum Parent), bei Tasks ohne Parent „Sub-tasks · 3/7 done“ mit Status je Kind und „+ Add sub-task“ (Schnelleingabe mit Parent und Projekt), Updates | Wie im Design System |
 | Focus | Streifen mit bis zu drei Tasks, ein- und ausblendbar | `focus`, `focus_order` gesetzt |
 | Use-case cockpit | Liste (sortierbare Tabelle, Standard; Spalte „Assessment“ sortiert Quick win, Big bet, Fill-in, Drop, K.O., Incomplete, unbewertet immer zuletzt), Board, Prozesslandkarte und Matrix (nur mit `assessment:` in `process.yml`, sonst kein Knopf: 2×2-Feld, x = Feasibility 1–3 nach rechts leichter, y = Value 1–3 nach oben mehr, Mittellinien bei 2,0, Quadrantnamen in den Ecken; ein Punkt pro bewertetem Use Case in seiner Projektfarbe, daneben ein Label mit Key und Titel – kollidierende Labels weichen aus und behalten eine Linie zum Punkt; Tooltip mit Titel, FTE, Rechenweg je Achse und offenen Punkten, Klick öffnet die Detailkarte; rechts eine Liste nach Quadranten (Anzahl, Σ FTE; je Use Case V/F, Schritt, offene Punkte), so hoch wie das Feld und intern scrollend, Hover verbindet Liste und Punkt; ein Stift an jeder Listenzeile und jedem Chip öffnet „Assess…“ direkt über der Matrix, nach dem Speichern bleibt die Matrix offen und der Punkt springt; „How is this calculated?“ unter dem Feld zeigt beim Hover die Methode aus `process.yml` (Kriterien je Achse, Durchschnitt ohne Gewichte, Grenze 2,0 mit Quadrant-Tabelle, FTE-Schwellen abgeleiteter Kriterien, K.-o.-Fragen nur mit `ko:`); darunter die Zeilen „K.O. (n)“ (nur mit `ko:`) und „Not assessed (n)“ mit Chips, Incomplete steht bei Not assessed; Schalter Standard | Advanced links neben „Details“: Advanced zeigt Blasengröße nach FTE, Farbe nach Quadrant, gestrichelt = noch in der ersten Phase; dieselben Filter wie die Liste; kein Drag, Punkte gibt es nur im Formular), Detailkarte als leichte Version der Use-Case-Seite (Popup `--w-uc-detail-w` breit, mindestens `--w-uc-detail-min-h` hoch, oder Seitenleiste; Hauptspalte: Blocked by, Current state, Next step; Seitenspalte: Classification, Assessment (nur die Pill, Tooltip mit Value/Feasibility und offenen Punkten), Manual effort (nur Summe), Tasks, Entscheidungen; bearbeitbar sind Titel, Status, Texte, Classification, Task-Häkchen und Gate-Buttons; keine Beschreibung; „Open page ↗“ im Kopf neben ✕ oder ⌘↩ führt zum Tab Use case), Filter, Knopf „Edit process“ (öffnet `process.yml` in VS Code) | Wie im Prototyp, Prozess aus `process.yml`. Areas sind Freitext mit Vorschlägen (`process.yml`-Areas ∪ von Use Cases benutzte Areas), der Core prüft sie nicht gegen die Liste. Board nach Area zeigt nur Areas mit Use Cases (Reihenfolge aus `process.yml`) |
-| Agents | CLI `wly`, Agent-Dateien, Schalter, Live-Status, Ansicht mit Aktivität und Test-Anleitung, „Start agent“ (Copilot per `code chat` in VS Code, Codex im Terminal; ein Agent pro Repo) und „Copy prompt“ in der Task-Karte | Ein Agent setzt einen Task über `wly` auf Review; Schalter aus zeigt keine Agent-Oberfläche |
+| Agents | CLI `wly`, Agent-Dateien, Schalter, Live-Status, Ansicht mit Aktivität und Test-Anleitung, „Start agent“ (Copilot per `code chat` in VS Code, Codex im Terminal; ein Agent pro Repo) mit Agent-Menü aus `agents:` (B10, Editor in Settings) und „Copy prompt“ in der Task-Karte | Ein Agent setzt einen Task über `wly` auf Review; Schalter aus zeigt keine Agent-Oberfläche |
 | Log | Jede Änderung in `.workly/log/` | |
 
 **Nicht in v1:** Queue-Runner, Wochenreview, Jira/SharePoint, Markdown-Editor, Geräte-Sync, Mobile.
