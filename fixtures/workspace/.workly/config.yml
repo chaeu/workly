@@ -10,8 +10,12 @@ task_statuses:
   - { id: waiting, label: Waiting }
   - { id: review,  label: Review }
   - { id: done,    label: Done }
-agent_defaults:
-  runner: codex          # codex | copilot | claude-code
+agent_defaults:           # fallback without agents:
+  runner: codex          # codex | copilot
   model: auto
   effort: medium
   stale_after_minutes: 30   # "Agent inactive?" after this long without a run-log entry
+agents:                    # the Agent menu; the first entry is the default
+  - { name: Codex, runner: codex, effort: medium }
+  - { name: Codex deep, runner: codex, model: gpt-5, effort: high }
+  - { name: Copilot, runner: copilot }

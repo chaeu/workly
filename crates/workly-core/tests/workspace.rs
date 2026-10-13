@@ -1268,7 +1268,7 @@ fn codex_start_script_runs_with_quoted_paths() {
         fs::write(&f, src.replacen(from, to, 1)).unwrap();
     };
     edit("projects/website-relaunch/_project.md", "repos: [~/repos/website]", &format!("repos: [\"{}\"]", repo.display()));
-    edit("projects/website-relaunch/tasks/WR-5-navigation.md", "  model: auto\n", "  model: gpt-5\n");
+    edit("projects/website-relaunch/tasks/WR-5-navigation.md", "  runner: auto\n  model: auto\n", "  runner: codex\n  model: gpt-5\n");
     let ws = Workspace::open(&root).unwrap();
     let prompt = "Work on WR-5.\nIt's \"quoted\", $(not run) and `nor this`.";
     let script = ws.write_codex_start("WR-5", prompt).unwrap();
@@ -1590,4 +1590,84 @@ fn create_full_task_writes_once() {
     let child = NewTask { parent: Some("OPS-3".into()), ..NewTask::new("Nope", Some("OPS")) };
     assert!(matches!(ws.create_task(&child, "app"), Err(Error::Invalid(_))));
     assert_eq!(ws.next_id("OPS"), "OPS-5");
+}
+
+fn preset(name: &str, runner: &str, model: Option<&str>, effort: Option<&str>) -> workly_core::model::AgentPreset {
+    workly_core::model::AgentPreset { name: name.into(), runner: runner.into(), model: model.map(Into::into), effort: effort.map(Into::into) }
+}
+
+#[test]
+fn set_agents_rewrites_only_the_agents_block() {
+    let (_tmp, root) = fixture();
+    let path = root.join(".workly/config.yml");
+    let with = fs::read_to_string(&path).unwrap();
+    let (head, block) = with.split_at(with.find("\nagents:").unwrap() + 1);
+    let mut ws = Workspace::open(&root).unwrap();
+    assert_eq!(ws.config.agents.len(), 3);
+
+    // Reorder and change one: unchanged item lines stay verbatim, the rest of the file too.
+    let mut list = ws.config.agents.clone();
+    list.swap(0, 2);
+    list[1] = preset("Codex Sol", "codex", Some("gpt-6-sol"), Some("high"));
+    ws.set_agents(&list, "app").unwrap();
+    let out = fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        out,
+        format!(
+            "{head}{}\n  - {{ name: Copilot, runner: copilot }}\n  - {{ name: Codex Sol, runner: codex, model: gpt-6-sol, effort: high }}\n  - {{ name: Codex, runner: codex, effort: medium }}\n",
+            block.lines().next().unwrap()
+        )
+    );
+    assert_eq!(ws.config.agents, list);
+    let last = log_lines(&root).pop().unwrap();
+    assert_eq!((&last["kind"], &last["field"]), (&json!("config.update"), &json!("agents")));
+    assert_eq!(last["to"][1]["model"], json!("gpt-6-sol"));
+
+    // Blank model/effort are dropped; empty list = `agents: []`; a missing block is appended.
+    ws.set_agents(&[preset(" Copilot ", "copilot", Some(" "), None)], "app").unwrap();
+    assert!(fs::read_to_string(&path).unwrap().ends_with("agents:                    # the Agent menu; the first entry is the default\n  - { name: Copilot, runner: copilot }\n"));
+    ws.set_agents(&[], "app").unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), format!("{head}agents: []                    # the Agent menu; the first entry is the default\n"));
+    fs::write(&path, head).unwrap();
+    ws.rescan();
+    ws.set_agents(&list[..1], "app").unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), format!("{head}agents:\n  - {{ name: Copilot, runner: copilot }}\n"));
+
+    // Invalid entries are refused, nothing written.
+    let n = log_lines(&root).len();
+    let before = fs::read_to_string(&path).unwrap();
+    for bad in [
+        vec![preset("", "codex", None, None)],
+        vec![preset("A", "codex", None, None), preset("A", "copilot", None, None)],
+        vec![preset("A", "claude-code", None, None)],
+    ] {
+        assert!(matches!(ws.set_agents(&bad, "app"), Err(Error::Invalid(_))));
+    }
+    assert_eq!((fs::read_to_string(&path).unwrap(), log_lines(&root).len()), (before, n));
+}
+
+#[test]
+fn agent_choice_and_set_task_agent() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    // WR-5 has runner auto: the first entry of agents.
+    assert_eq!(ws.agent_choice("WR-5"), preset("Codex", "codex", None, Some("medium")));
+    let deep = ws.config.agents[1].clone();
+    ws.set_task_agent("WR-5", Some(&deep), "app").unwrap();
+    assert_eq!(ws.agent_choice("WR-5"), preset("codex", "codex", Some("gpt-5"), Some("high")));
+    // Default: all three null, back to the first entry.
+    ws.set_task_agent("WR-5", None, "app").unwrap();
+    assert_eq!(ws.agent_choice("WR-5"), ws.config.agents[0]);
+    assert!(matches!(ws.set_task_agent("WR-5", Some(&preset("X", "claude-code", None, None)), "app"), Err(Error::Invalid(_))));
+
+    // Without agents: the pre-B10 fallback to agent_defaults per field.
+    ws.set_agents(&[], "app").unwrap();
+    assert_eq!(ws.agent_choice("WR-5"), preset("", "codex", None, Some("medium")));
+
+    // Lossless on WR-8: only an agent block is appended to the frontmatter.
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    ws.set_task_agent("WR-8", Some(&deep), "app").unwrap();
+    let after = fs::read_to_string(root.join(WR8)).unwrap();
+    let fence = before.find("done_at: null\n").unwrap() + "done_at: null\n".len();
+    assert_eq!(after, format!("{}agent:\n  runner: codex\n  model: gpt-5\n  effort: high\n{}", &before[..fence], &before[fence..]));
 }

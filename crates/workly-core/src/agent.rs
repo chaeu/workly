@@ -2,7 +2,8 @@
 //! an agent works with (global rules, project instructions, skills).
 
 use crate::ids::split_id;
-use crate::model::parse_file;
+use crate::model::{AgentPreset, Config, parse_file};
+use crate::patch;
 use crate::project::AGENTS_TEMPLATE;
 use crate::scan::rel;
 use crate::settings::expand_home;
@@ -19,6 +20,8 @@ use std::path::PathBuf;
 pub const GLOBAL_AGENTS_MD: &str = ".workly/agent/AGENTS.md";
 /// `start` is allowed from these statuses.
 pub const STARTABLE: [&str; 4] = ["backlog", "todo", "waiting", "review"];
+/// Runners Workly can start (B9); entries of `agents:` use one of these.
+pub const AGENT_RUNNERS: [&str; 2] = ["codex", "copilot"];
 
 /// A Markdown file and its content. `path` is relative to the workspace.
 #[derive(Debug, Clone, Serialize)]
@@ -248,6 +251,89 @@ impl Workspace {
             .collect()
     }
 
+    /// What starts for a task: its own agent fields when it names a runner, else the
+    /// first `agents` entry. Without `agents`, missing fields come from `agent_defaults`
+    /// (pre-B10 workspaces). "auto" = unset; `None` = no flag, the runner's own default.
+    pub fn agent_choice(&self, id: &str) -> AgentPreset {
+        let set = |v: Option<&String>| v.filter(|v| !v.is_empty() && *v != "auto").cloned();
+        let agent = self.index.task(id).and_then(|t| t.task.agent.as_ref());
+        let mut choice = match (agent.and_then(|a| set(a.runner.as_ref())), self.config.agents.first()) {
+            (Some(runner), _) => {
+                let agent = agent.unwrap();
+                AgentPreset { name: runner.clone(), runner, model: set(agent.model.as_ref()), effort: set(agent.effort.as_ref()) }
+            }
+            (None, Some(first)) => first.clone(),
+            (None, None) => AgentPreset { name: String::new(), runner: self.config.agent_defaults.runner.clone(), model: None, effort: None },
+        };
+        if self.config.agents.is_empty() {
+            let d = &self.config.agent_defaults;
+            choice.model = choice.model.or_else(|| set(Some(&d.model)));
+            choice.effort = choice.effort.or_else(|| set(Some(&d.effort)));
+        }
+        choice
+    }
+
+    /// Pick an agent for a task: `agent.runner`, `agent.model`, `agent.effort` in one
+    /// write; `None` (the default agent) or a missing model/effort writes `null`.
+    pub fn set_task_agent(&mut self, id: &str, agent: Option<&AgentPreset>, actor: &str) -> Result<()> {
+        self.status_of(id)?;
+        let v = |f: fn(&AgentPreset) -> Option<&String>| agent.and_then(f).map_or(Value::Null, |s| Value::from(s.as_str()));
+        if let Some(a) = agent
+            && !AGENT_RUNNERS.contains(&a.runner.as_str())
+        {
+            return Err(Error::Invalid(format!("runner must be one of {}", AGENT_RUNNERS.join(", "))));
+        }
+        let changes = [("agent.runner", v(|a| Some(&a.runner))), ("agent.model", v(|a| a.model.as_ref())), ("agent.effort", v(|a| a.effort.as_ref()))];
+        self.set_task_fields(id, &changes, actor)
+    }
+
+    /// Replace `agents:` in `.workly/config.yml` with `agents` (block list of flow maps,
+    /// first = default). Lossless: every other line stays as it is. Refused, nothing
+    /// written, when an entry is invalid or the file has a shape the patcher cannot edit.
+    pub fn set_agents(&mut self, agents: &[AgentPreset], actor: &str) -> Result<()> {
+        let clean = |v: &Option<String>| v.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(String::from);
+        let agents: Vec<AgentPreset> = (agents.iter())
+            .map(|a| AgentPreset { name: a.name.trim().into(), runner: a.runner.clone(), model: clean(&a.model), effort: clean(&a.effort) })
+            .collect();
+        for (i, a) in agents.iter().enumerate() {
+            if a.name.is_empty() {
+                return Err(Error::Invalid("every agent needs a name".into()));
+            }
+            if agents[..i].iter().any(|b| b.name == a.name) {
+                return Err(Error::Invalid(format!("two agents are called {}", a.name)));
+            }
+            if !AGENT_RUNNERS.contains(&a.runner.as_str()) {
+                return Err(Error::Invalid(format!("{}: runner must be one of {}", a.name, AGENT_RUNNERS.join(", "))));
+            }
+        }
+        let path = self.root.join(".workly/config.yml");
+        let src = fs::read_to_string(&path).unwrap_or_default();
+        let refuse = || Error::Invalid("agents in .workly/config.yml has a shape Workly cannot edit safely. Edit it by hand.".into());
+        // The patcher works on frontmatter: wrap the file in fences, unwrap after.
+        if src.lines().any(|l| l.trim_end() == "---") {
+            return Err(refuse());
+        }
+        let eol = if src.contains("\r\n") { "\r\n" } else { "\n" };
+        let body = if src.is_empty() || src.ends_with('\n') { src.clone() } else { format!("{src}{eol}") };
+        let wrapped = format!("---{eol}{body}---{eol}");
+        let value = serde_json::to_value(&agents).map_err(|e| Error::Invalid(e.to_string()))?;
+        let patched = if agents.is_empty() { patch::set_field(&wrapped, &["agents"], &value) } else { patch::set_block_list(&wrapped, &["agents"], &value) };
+        let patched = patched.map_err(|_| refuse())?;
+        let p = crate::frontmatter::split(&patched);
+        let out = p.frontmatter.to_string();
+        if serde_yaml::from_str::<Config>(&out).map(|c| c.agents).ok().as_deref() != Some(&agents[..]) {
+            return Err(refuse());
+        }
+        if out == src {
+            return Ok(());
+        }
+        let from = serde_json::to_value(&self.config.agents).unwrap_or(Value::Null);
+        atomic_write(&path, &out, &self.own)?;
+        log(&self.root, &LogEntry::new(actor, "config.update", "", Some("agents"), from, value))?;
+        self.rescan();
+        Ok(())
+    }
+
     /// Clear `agent.active` and `agent.since`, e.g. after an agent stopped
     /// without `review`. The status stays. One write, logged.
     pub fn clear_agent(&mut self, id: &str, actor: &str) -> Result<()> {
@@ -295,22 +381,17 @@ impl Workspace {
 
     /// `prompt.md` plus `.workly/runs/<ID>/start.command` (mode 700): Terminal runs it in the
     /// user's login shell, so `codex` resolves through their own PATH, else the VS Code
-    /// extension's binary. Model and effort from the task, else `agent_defaults`; "auto" = no flag.
+    /// extension's binary. Model and effort from `agent_choice`; unset = no flag.
     pub fn write_codex_start(&self, id: &str, prompt: &str) -> Result<PathBuf> {
         use std::os::unix::fs::PermissionsExt;
         let repo = self.repo_dir(id)?;
         let prompt = self.write_run_prompt(id, prompt)?;
-        let agent = self.index.task(id).and_then(|t| t.task.agent.as_ref());
-        let defaults = &self.config.agent_defaults;
-        let pick = |task: Option<String>, default: &str| {
-            let v = task.filter(|v| v != "auto").unwrap_or_else(|| default.to_string());
-            (v != "auto" && !v.is_empty()).then_some(v)
-        };
+        let choice = self.agent_choice(id);
         let mut flags = String::new();
-        if let Some(model) = pick(agent.and_then(|a| a.model.clone()), &defaults.model) {
-            flags += &format!(" -m {}", shell_quote(&model));
+        if let Some(model) = &choice.model {
+            flags += &format!(" -m {}", shell_quote(model));
         }
-        if let Some(effort) = pick(agent.and_then(|a| a.effort.clone()), &defaults.effort) {
+        if let Some(effort) = &choice.effort {
             flags += &format!(" -c {}", shell_quote(&format!("model_reasoning_effort={effort}")));
         }
         let q = |p: &std::path::Path| shell_quote(&p.to_string_lossy());

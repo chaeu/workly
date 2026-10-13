@@ -284,6 +284,8 @@ pub struct Config {
     pub scan_exclude: Vec<String>,
     pub task_statuses: Vec<TaskStatus>,
     pub agent_defaults: AgentDefaults,
+    /// The agents to pick from (B10); the first is the default.
+    pub agents: Vec<AgentPreset>,
 }
 
 impl Default for Config {
@@ -303,6 +305,7 @@ impl Default for Config {
                 status("done", "Done"),
             ],
             agent_defaults: AgentDefaults::default(),
+            agents: Vec::new(),
         }
     }
 }
@@ -328,6 +331,17 @@ impl Default for AgentDefaults {
     fn default() -> Self {
         AgentDefaults { runner: "auto".into(), model: "auto".into(), effort: "auto".into(), stale_after_minutes: 30 }
     }
+}
+
+/// One entry of `agents:` in config.yml. Missing model or effort = the runner's own default.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct AgentPreset {
+    pub name: String,
+    pub runner: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
 }
 
 // --------------------------------------------------------------- process.yml
