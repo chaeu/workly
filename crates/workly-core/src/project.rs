@@ -503,6 +503,93 @@ impl Workspace {
         let src = fs::read_to_string(self.resolve(rel_path)?)?;
         Ok(crate::frontmatter::split(&src).body.to_string())
     }
+
+    /// "Add Waiting column": one line `- { id: waiting, label: Waiting }` in
+    /// `task_statuses` of `.workly/config.yml`, before `review` (else at the end).
+    /// Refused, nothing written, when the list has another shape than one flow
+    /// map per line; Settings then shows `WAITING_LINE` to add by hand.
+    pub fn add_waiting_status(&mut self, actor: &str) -> Result<()> {
+        let path = self.root.join(".workly/config.yml");
+        let src = fs::read_to_string(&path)?;
+        let out = insert_waiting(&src).ok_or_else(|| {
+            Error::Invalid(format!("task_statuses in .workly/config.yml has a shape Workly cannot edit safely. Add this line by hand: {WAITING_LINE}"))
+        })?;
+        if out == src {
+            return Ok(());
+        }
+        let ids = |s: &str| -> Value { serde_yaml::from_str::<crate::model::Config>(s).map(|c| c.task_statuses.iter().map(|s| s.id.clone()).collect()).unwrap_or_default() };
+        atomic_write(&path, &out, &self.own)?;
+        log(&self.root, &LogEntry::new(actor, "config.update", "", Some("task_statuses"), ids(&src), ids(&out)))?;
+        self.rescan();
+        Ok(())
+    }
+}
+
+pub const WAITING_LINE: &str = "- { id: waiting, label: Waiting }";
+
+/// `src` with the waiting line inserted (unchanged if waiting is there), or
+/// `None` when `task_statuses` is not a block list of one-line flow maps.
+fn insert_waiting(src: &str) -> Option<String> {
+    let before: serde_yaml::Value = serde_yaml::from_str(src).ok()?;
+    let list = before.get("task_statuses")?.as_sequence()?;
+    if list.iter().any(|s| s.get("id").and_then(|i| i.as_str()) == Some("waiting")) {
+        return Some(src.to_string());
+    }
+    let lines: Vec<&str> = src.split_inclusive('\n').collect();
+    let text = |l: &str| l.trim_end_matches(['\n', '\r']).to_string();
+    let head = lines.iter().position(|l| {
+        let t = text(l);
+        t.strip_prefix("task_statuses:").is_some_and(|rest| rest.trim().is_empty() || rest.trim_start().starts_with('#'))
+    })?;
+    // Item lines of the list; comments and blank lines may sit in between.
+    let mut items = Vec::new();
+    for (i, l) in lines.iter().enumerate().skip(head + 1) {
+        let t = text(l);
+        let trimmed = t.trim_start();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if !trimmed.starts_with("- ") {
+            if t.len() == trimmed.len() {
+                break; // next top-level key
+            }
+            return None; // block map items or other nesting
+        }
+        items.push(i);
+    }
+    if items.len() != list.len() || items.is_empty() {
+        return None;
+    }
+    let indent = |i: usize| text(lines[i]).len() - text(lines[i]).trim_start().len();
+    let flow = |i: usize| {
+        let item = text(lines[i]).trim_start()[2..].to_string();
+        let item = item.split(" #").next().unwrap_or_default().trim_end().to_string();
+        item.starts_with('{') && item.ends_with('}')
+    };
+    if items.iter().any(|&i| indent(i) != indent(items[0]) || !flow(i)) {
+        return None;
+    }
+    let review = list.iter().position(|s| s.get("id").and_then(|i| i.as_str()) == Some("review"));
+    let (at, neighbour) = match review {
+        Some(n) => (items[n], items[n]),
+        None => (items[items.len() - 1] + 1, items[items.len() - 1]),
+    };
+    let eol = crate::frontmatter::eol_of(src);
+    let spaced = text(lines[neighbour]).trim_start()[2..].starts_with("{ ");
+    let item = if spaced { WAITING_LINE.to_string() } else { WAITING_LINE.replace("{ ", "{").replace(" }", "}") };
+    let mut out: String = lines[..at].concat();
+    if !out.ends_with('\n') {
+        out.push_str(eol);
+    }
+    out.push_str(&format!("{}{item}{eol}", " ".repeat(indent(neighbour))));
+    out.push_str(&lines[at..].concat());
+    // Same document, plus exactly the new entry.
+    let mut after: serde_yaml::Value = serde_yaml::from_str(&out).ok()?;
+    let new_list = after.get_mut("task_statuses")?.as_sequence_mut()?;
+    let pos = review.unwrap_or(list.len());
+    let added = new_list.remove(pos);
+    let expected: serde_yaml::Value = serde_yaml::from_str("{ id: waiting, label: Waiting }").ok()?;
+    (added == expected && after == before).then_some(out)
 }
 
 /// VS Code workspace: the project folder plus its repos (absolute, per Mac).
@@ -518,6 +605,29 @@ fn write_code_workspace(dir: &Path, key: &str, repos: &[String], own: &OwnWrites
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn insert_waiting_shapes() {
+        let ok = "x: 1\ntask_statuses:  # columns\n- {id: todo, label: To do}\n\n- {id: review, label: Review}  # check\nversion: 1\n";
+        assert_eq!(
+            insert_waiting(ok).unwrap(),
+            "x: 1\ntask_statuses:  # columns\n- {id: todo, label: To do}\n\n- {id: waiting, label: Waiting}\n- {id: review, label: Review}  # check\nversion: 1\n"
+        );
+        // No review: at the end, also without a final newline.
+        assert_eq!(insert_waiting("task_statuses:\n  - { id: a, label: A }").unwrap(), "task_statuses:\n  - { id: a, label: A }\n  - { id: waiting, label: Waiting }\n");
+        // Already there: unchanged.
+        let has = "task_statuses:\n  - { id: waiting, label: W }\n";
+        assert_eq!(insert_waiting(has).unwrap(), has);
+        for bad in [
+            "task_statuses: [{ id: a, label: A }]\n",
+            "task_statuses:\n  - id: a\n    label: A\n",
+            "task_statuses:\n  - { id: a,\n      label: A }\n",
+            "version: 1\n",
+            "task_statuses:\n  - { id: a, label: A }\n    - { id: b, label: B }\n",
+        ] {
+            assert_eq!(insert_waiting(bad), None, "{bad}");
+        }
+    }
 
     #[test]
     fn keys() {

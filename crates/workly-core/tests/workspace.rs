@@ -1436,3 +1436,31 @@ fn usecase_history_from_the_log() {
     assert_eq!((&pilot["start"], &pilot["end"]), (&json!("2026-09-24"), &Value::Null));
     assert_eq!((&pilot["events"][0]["status"], &pilot["events"][0]["until"]), (&json!("waiting"), &Value::Null));
 }
+
+#[test]
+fn add_waiting_column_is_a_one_line_diff() {
+    let (_tmp, root) = fixture();
+    let path = root.join(".workly/config.yml");
+    let with = fs::read_to_string(&path).unwrap();
+    let without = with.replace("  - { id: waiting, label: Waiting }\n", "");
+    assert_ne!(with, without);
+    fs::write(&path, &without).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    assert!(!ws.config.task_statuses.iter().any(|s| s.id == "waiting"));
+    ws.add_waiting_status("app").unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), with);
+    assert_eq!(ws.config.task_statuses[3].id, "waiting");
+    let last = log_lines(&root).pop().unwrap();
+    assert_eq!((&last["kind"], &last["field"]), (&json!("config.update"), &json!("task_statuses")));
+    assert_eq!(last["to"], json!(["backlog", "todo", "doing", "waiting", "review", "done"]));
+    // Twice: nothing happens.
+    let n = log_lines(&root).len();
+    ws.add_waiting_status("app").unwrap();
+    assert_eq!(log_lines(&root).len(), n);
+    // A shape it cannot edit: refused, file untouched.
+    let flow = "task_statuses: [{ id: todo, label: To do }, { id: done, label: Done }]\n";
+    fs::write(&path, flow).unwrap();
+    ws.rescan();
+    assert!(matches!(ws.add_waiting_status("app"), Err(Error::Invalid(_))));
+    assert_eq!(fs::read_to_string(&path).unwrap(), flow);
+}

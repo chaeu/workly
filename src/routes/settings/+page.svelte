@@ -14,6 +14,8 @@
     backupNow,
     backupInfo,
     enableBackup,
+    addWaitingStatus,
+    openInVscode,
     BACKUP_DEFAULTS,
     type BackupInfo,
     type BackupSettings,
@@ -68,6 +70,18 @@
       backupError = null;
     } catch (e) {
       backupError = String(e);
+    }
+  }
+
+  // Existing workspaces keep their own config.yml; this adds the column on request.
+  const WAITING_LINE = "- { id: waiting, label: Waiting }";
+  const noWaiting = $derived(!!workspace.index && !workspace.index.config.task_statuses.some((s) => s.id === "waiting"));
+  let waitingError = $state(false);
+  async function addWaiting() {
+    try {
+      await addWaitingStatus();
+    } catch {
+      waitingError = true;
     }
   }
 
@@ -215,6 +229,25 @@
     </div>
   </section>
 
+  {#if noWaiting}
+    <section class="panel">
+      <div class="panel-head">
+        <div class="grow">
+          <h2 class="w-h2">Waiting column</h2>
+          <p class="w-sub">This workspace has no Waiting column. Adds one line to task_statuses in .workly/config.yml, before Review.</p>
+        </div>
+        <button type="button" class="w-btn" onclick={addWaiting}>Add Waiting column</button>
+      </div>
+      {#if waitingError}
+        <div class="row">
+          <span class="grow">The list in config.yml has a shape Workly does not edit. Add this line under task_statuses by hand:</span>
+          <button type="button" class="w-btn w-btn--quiet" onclick={() => openInVscode(".workly/config.yml")}>Open config.yml</button>
+        </div>
+        <code class="w-mono waiting-line">{WAITING_LINE}</code>
+      {/if}
+    </section>
+  {/if}
+
   <section class="panel">
     <div class="panel-head">
       <div>
@@ -337,6 +370,12 @@
   .current {
     color: var(--w-accent);
     padding: 0 14px;
+  }
+  .waiting-line {
+    padding: var(--w-s-2) var(--w-s-3);
+    background: var(--w-tray);
+    border-radius: var(--w-r-md);
+    user-select: text;
   }
   .fte-hours {
     width: 90px;

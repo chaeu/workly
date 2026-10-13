@@ -222,6 +222,8 @@ export async function updateTaskField(id: string, field: string, value: unknown)
 export const createTask = (title: string, project: string | null, priority: number | null = null) =>
   run<string>("create_task", { title, project, priority });
 export const reorderTasks = (ids: string[]) => run("reorder_tasks", { ids });
+/** Inserts the Waiting line into .workly/config.yml; throws when the list has a shape it cannot edit. */
+export const addWaitingStatus = () => invoke("add_waiting_status");
 export const setFocus = (ids: string[]) => run("set_focus", { ids });
 export const addTaskUpdate = (id: string, text: string) => run("add_task_update", { id, text });
 /** true = saved, false = changed outside since `expected` was read (nothing written). */

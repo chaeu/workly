@@ -113,6 +113,11 @@ fn create_task(app: AppHandle, state: State<AppState>, title: String, project: O
 }
 
 #[tauri::command]
+fn add_waiting_status(app: AppHandle, state: State<AppState>) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.add_waiting_status(ACTOR)))
+}
+
+#[tauri::command]
 fn reorder_tasks(app: AppHandle, state: State<AppState>, ids: Vec<String>) -> Result<(), String> {
     changed(&app, with_ws(&state, |ws| ws.reorder_tasks(&ids, ACTOR)))
 }
@@ -612,6 +617,7 @@ pub fn run() {
             get_index,
             update_task_field,
             create_task,
+            add_waiting_status,
             reorder_tasks,
             set_focus,
             add_task_update,
