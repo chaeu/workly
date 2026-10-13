@@ -1,12 +1,15 @@
 ---
 id: {{id}}
 title: {{title}}
-status: todo
+status: backlog
 priority: 2
 due: null
 tags: []
 created: {{date}}
 done_at: null
 ---
-## Acceptance criteria
-- 
+## Description
+
+## Acceptance
+
+## Updates

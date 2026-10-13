@@ -18,7 +18,7 @@ use std::path::PathBuf;
 /// Workspace-wide agent rules.
 pub const GLOBAL_AGENTS_MD: &str = ".workly/agent/AGENTS.md";
 /// `start` is allowed from these statuses.
-pub const STARTABLE: [&str; 3] = ["backlog", "todo", "review"];
+pub const STARTABLE: [&str; 4] = ["backlog", "todo", "waiting", "review"];
 
 /// A Markdown file and its content. `path` is relative to the workspace.
 #[derive(Debug, Clone, Serialize)]
@@ -119,7 +119,7 @@ impl Workspace {
         Ok(path)
     }
 
-    /// Status `doing` from backlog, todo or review. With an agent name, also
+    /// Status `doing` from backlog, todo, waiting or review. With an agent name, also
     /// `agent.active` and `agent.since` (now); from `doing` only those. One write.
     /// One agent per repo: refused while another task of a project with the
     /// same first repo has an active agent.
@@ -138,7 +138,8 @@ impl Workspace {
             changes.push(("agent.active", Value::from(name)));
             changes.push(("agent.since", now()));
         }
-        self.set_task_fields(id, &changes, actor)
+        self.set_task_fields(id, &changes, actor)?;
+        self.left_waiting(id, &Value::from(status), actor)
     }
 
     /// First repo of the task's project, if the project has one.

@@ -24,9 +24,6 @@ use write::{LogEntry, OwnWrites, atomic_write, log, own_rename};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-const DEFAULT_TASK_TEMPLATE: &str =
-    "---\nid: {{id}}\ntitle: {{title}}\nstatus: todo\npriority: 2\ndue: null\ntags: []\ncreated: {{date}}\ndone_at: null\n---\n";
-
 #[derive(Debug)]
 pub enum Error {
     /// Bad input: unknown field, invalid value, target exists. CLI exit 1.
@@ -189,6 +186,19 @@ impl Workspace {
         if field == "status" && (*value == "done" || from == "done") {
             let done_at = if *value == "done" { Value::from(today()) } else { Value::Null };
             self.update_task_field(id, "done_at", &done_at, actor)?;
+        }
+        if field == "status" {
+            self.left_waiting(id, &from, actor)?;
+        }
+        Ok(())
+    }
+
+    /// `waiting_for` only lives while the status is `waiting`: removed once the
+    /// task left it (the log keeps the old value in `from`).
+    pub(crate) fn left_waiting(&mut self, id: &str, from: &Value, actor: &str) -> Result<()> {
+        let status = self.index.task(id).map(|t| t.task.status.as_str());
+        if from == "waiting" && status != Some("waiting") {
+            self.remove_task_field(id, "waiting_for", actor)?;
         }
         Ok(())
     }
@@ -363,7 +373,7 @@ impl Workspace {
         let dir = self.tasks_dir(project)?;
         let id = self.next_id(project.unwrap_or(ids::INBOX_KEY));
         let file = dir.join(format!("{id}-{}.md", ids::slug(title)));
-        let template = fs::read_to_string(self.root.join("_templates/task.md")).unwrap_or_else(|_| DEFAULT_TASK_TEMPLATE.into());
+        let template = fs::read_to_string(self.root.join("_templates/task.md")).unwrap_or_else(|_| project::WORKSPACE_FILES[1].1.into());
         let title_yaml = patch::emit(&Value::from(title)).map_err(Error::Invalid)?;
         let mut content = template.replace("{{id}}", &id).replace("{{title}}", &title_yaml).replace("{{date}}", &today());
         if let Some(p) = priority {

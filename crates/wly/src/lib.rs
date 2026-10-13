@@ -52,7 +52,7 @@ enum TaskCmd {
     },
     /// Task, project and agent context (global rules, project AGENTS.md, skills)
     Show { id: String },
-    /// Set doing (from backlog, todo or review); with --agent also agent.active and agent.since
+    /// Set doing (from backlog, todo, waiting or review); with --agent also agent.active and agent.since
     Start { id: String },
     /// Append a note to the run log (.workly/runs/<ID>/log.jsonl); the task file stays untouched
     Note {

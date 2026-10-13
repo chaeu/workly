@@ -24,6 +24,10 @@ pub struct Task {
     pub order: Option<i64>,
     pub created: Option<String>,
     pub done_at: Option<String>,
+    /// Only while the status is `waiting`; removed when the task leaves it.
+    pub waiting_for: Option<String>,
+    /// Id of the parent task. One level: a parent has no parent itself.
+    pub parent: Option<String>,
     pub agent: Option<AgentState>,
     #[serde(flatten)]
     pub extra: Extra,
@@ -287,6 +291,7 @@ impl Default for Config {
                 status("backlog", "Backlog"),
                 status("todo", "To do"),
                 status("doing", "Doing"),
+                status("waiting", "Waiting"),
                 status("review", "Review"),
                 status("done", "Done"),
             ],

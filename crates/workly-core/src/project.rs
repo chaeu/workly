@@ -24,7 +24,7 @@ macro_rules! fixture {
 }
 
 /// Built-in defaults for a new workspace: the fixture's files.
-const WORKSPACE_FILES: [(&str, &str); 7] = [
+pub(crate) const WORKSPACE_FILES: [(&str, &str); 7] = [
     fixture!("_templates/project.md"),
     fixture!("_templates/task.md"),
     fixture!("_templates/note.md"),

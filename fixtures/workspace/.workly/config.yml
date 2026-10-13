@@ -7,6 +7,7 @@ task_statuses:
   - { id: backlog, label: Backlog }
   - { id: todo,    label: To do }
   - { id: doing,   label: Doing, wip_limit: 3 }
+  - { id: waiting, label: Waiting }
   - { id: review,  label: Review }
   - { id: done,    label: Done }
 agent_defaults:

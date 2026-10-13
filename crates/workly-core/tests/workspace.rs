@@ -45,7 +45,7 @@ fn loads_fixture_with_one_parse_error() {
     let idx = &ws.index;
     let keys: Vec<&str> = idx.projects.iter().map(|p| p.project.key.as_str()).collect();
     assert_eq!(keys, ["WR", "IE", "OPS", "NA", "ST", "OI"]);
-    assert_eq!(idx.tasks.len(), 12);
+    assert_eq!(idx.tasks.len(), 14);
     assert_eq!(idx.errors.len(), 1, "{:?}", idx.errors);
     let e = &idx.errors[0];
     assert_eq!(e.path, "inbox/IN-3-broken-frontmatter.md");
@@ -60,6 +60,43 @@ fn loads_fixture_with_one_parse_error() {
     assert_eq!(process.steps.len(), 19);
     assert!(process.validate().is_empty());
     assert_eq!(ws.config.task_statuses[2].wip_limit, Some(3));
+    let ids: Vec<&str> = ws.config.task_statuses.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(ids, ["backlog", "todo", "doing", "waiting", "review", "done"]);
+    let ops3 = &idx.task("OPS-3").unwrap().task;
+    assert_eq!((ops3.waiting_for.as_deref(), ops3.parent.as_deref()), (Some("IT: read access to the job database"), Some("OPS-2")));
+}
+
+#[test]
+fn default_config_matches_the_fixture() {
+    let ws = Workspace::open(FIXTURE).unwrap();
+    let ids = |c: &workly_core::model::Config| c.task_statuses.iter().map(|s| s.id.clone()).collect::<Vec<_>>();
+    assert_eq!(ids(&workly_core::model::Config::default()), ids(&ws.config));
+}
+
+#[test]
+fn leaving_waiting_removes_waiting_for() {
+    let (_tmp, root) = fixture();
+    let file = root.join("projects/ops-dashboard/tasks/OPS-3-job-db-connection.md");
+    let before = fs::read_to_string(&file).unwrap();
+    let mut ws = Workspace::open(&root).unwrap();
+    // Changing another field keeps it.
+    ws.update_task_field("OPS-3", "priority", &json!(2), "app").unwrap();
+    assert!(ws.index.task("OPS-3").unwrap().task.waiting_for.is_some());
+    ws.update_task_field("OPS-3", "status", &json!("todo"), "app").unwrap();
+    let after = fs::read_to_string(&file).unwrap();
+    let expected = before
+        .replace("priority: 1\n", "priority: 2\n")
+        .replace("status: waiting\n", "status: todo\n")
+        .replace("waiting_for: \"IT: read access to the job database\"\n", "");
+    assert_eq!(after, expected);
+    let last = log_lines(&root).pop().unwrap();
+    assert_eq!((&last["field"], &last["from"], &last["to"]), (&json!("waiting_for"), &json!("IT: read access to the job database"), &Value::Null));
+    // `wly task start` works from waiting and clears it too.
+    ws.update_task_field("OPS-3", "status", &json!("waiting"), "app").unwrap();
+    ws.update_task_field("OPS-3", "waiting_for", &json!("Legal"), "app").unwrap();
+    ws.start_task("OPS-3", Some("codex"), "cli").unwrap();
+    let t = &ws.index.task("OPS-3").unwrap().task;
+    assert_eq!((t.status.as_str(), t.waiting_for.as_deref()), ("doing", None));
 }
 
 #[test]
@@ -131,7 +168,8 @@ fn create_tasks() {
     let id = ws.create_task("Collect volume: numbers", Some("ST"), None, "app").unwrap();
     assert_eq!(id, "ST-1");
     let src = fs::read_to_string(root.join("projects/support-triage/tasks/ST-1-collect-volume-numbers.md")).unwrap();
-    assert!(src.starts_with("---\nid: ST-1\ntitle: \"Collect volume: numbers\"\nstatus: todo\n"), "{src}");
+    assert!(src.starts_with("---\nid: ST-1\ntitle: \"Collect volume: numbers\"\nstatus: backlog\n"), "{src}");
+    assert!(src.ends_with("---\n## Description\n\n## Acceptance\n\n## Updates\n"), "{src}");
     assert_eq!(ws.create_task("Inbox thing", None, None, "app").unwrap(), "IN-4");
     assert_eq!(ws.create_task("Next", Some("WR"), None, "app").unwrap(), "WR-10");
     assert!(matches!(ws.create_task("x", Some("NOPE"), None, "app"), Err(Error::NotFound(_))));
