@@ -96,70 +96,85 @@
   }}
 >
   <form onsubmit={save}>
-    <h2 class="w-h2" id="qa-title">{initialParent ? `New sub-task of ${initialParent}` : "New task"}</h2>
-    <input bind:this={input} bind:value={title} placeholder="What needs doing?" aria-label="Title" />
-    <div class="row">
-      <select bind:value={project} aria-label="Project">
-        <option value="">Inbox</option>
-        {#each projects as p (p.key)}<option value={p.key}>{p.title}</option>{/each}
-      </select>
-      <div class="w-seg" role="group" aria-label="Priority">
+    <div class="head">
+      <h2 class="meta" id="qa-title">{initialParent ? `New sub-task of ${initialParent}` : "New task"}</h2>
+      <input bind:this={input} bind:value={title} class="title" placeholder="What needs doing?" aria-label="Title" />
+    </div>
+
+    <div class="grid">
+      <label for="qa-project">Project</label>
+      <span class="select">
+        <select id="qa-project" bind:value={project}>
+          <option value="">Inbox</option>
+          {#each projects as p (p.key)}<option value={p.key}>{p.title}</option>{/each}
+        </select>
+      </span>
+
+      <span class="label" id="qa-prio">Priority</span>
+      <div class="w-seg prio" role="group" aria-labelledby="qa-prio">
         {#each [1, 2, 3] as p (p)}
           <button type="button" aria-pressed={priority === p} onclick={() => (priority = p)}>P{p}</button>
         {/each}
       </div>
-    </div>
 
-    <div class="kv">
       <label for="qa-due">Due</label>
-      <input id="qa-due" type="date" bind:value={due} />
+      <input id="qa-due" class="field" class:empty={!due} type="date" bind:value={due} />
+
       <label for="qa-parent">Parent</label>
-      <input id="qa-parent" class="w-mono" list="qa-parents" bind:value={parent} placeholder="WR-12" />
+      <input id="qa-parent" class="field" list="qa-parents" bind:value={parent} placeholder="None – or a task id like WR-12" />
       <datalist id="qa-parents">
         {#each parents as t (t.id)}<option value={t.id}>{t.title}</option>{/each}
       </datalist>
+
+      <label for="qa-tags">Tags</label>
+      <input id="qa-tags" class="field" bind:value={tags} placeholder="frontend, ux" />
+
+      <label for="qa-desc" class="top">Description</label>
+      <textarea id="qa-desc" class="field" bind:value={description} placeholder="What and why, in Markdown" use:grow></textarea>
+
+      <span class="label top" id="qa-acc">Acceptance</span>
+      <div class="crit" role="group" aria-labelledby="qa-acc">
+        {#each criteria as _, i (i)}
+          <label class="field crit-row">
+            <span class="box" aria-hidden="true"></span>
+            <input
+              bind:this={rows[i]}
+              bind:value={criteria[i]}
+              placeholder={i === 0 ? "Done when … (Enter adds the next)" : "Next criterion"}
+              aria-label="Acceptance criterion {i + 1}"
+              onkeydown={(e) => onCriterionKey(e, i)}
+            />
+          </label>
+        {/each}
+      </div>
     </div>
-    <textarea bind:value={description} aria-label="Description (Markdown)" placeholder="Description" use:grow></textarea>
-    <div class="crit">
-      <span class="w-caps">Acceptance</span>
-      {#each criteria as _, i (i)}
-        <label class="crit-row">
-          <span class="box" aria-hidden="true"></span>
-          <input
-            bind:this={rows[i]}
-            bind:value={criteria[i]}
-            placeholder={i === 0 ? "Criterion – Enter adds the next" : ""}
-            aria-label="Acceptance criterion {i + 1}"
-            onkeydown={(e) => onCriterionKey(e, i)}
-          />
-        </label>
-      {/each}
-    </div>
-    <details>
-      <summary class="w-caps">Tags</summary>
-      <input class="w-mono" bind:value={tags} placeholder="frontend, ux" aria-label="Tags, comma separated" />
-    </details>
+
     {#if agentsEnabled()}
       <details>
-        <summary class="w-caps">Agent</summary>
-        <div class="kv">
+        <summary>Agent settings</summary>
+        <div class="grid">
           <label for="qa-runner">Runner</label>
-          <select id="qa-runner" bind:value={runner}>
-            <option value="">Default</option>
-            {#each RUNNERS as r (r)}<option value={r}>{r === "auto" ? "auto" : agentName(r)}</option>{/each}
-          </select>
+          <span class="select">
+            <select id="qa-runner" bind:value={runner}>
+              <option value="">Default</option>
+              {#each RUNNERS as r (r)}<option value={r}>{r === "auto" ? "auto" : agentName(r)}</option>{/each}
+            </select>
+          </span>
           <label for="qa-model">Model</label>
-          <input id="qa-model" bind:value={model} placeholder="auto" />
+          <input id="qa-model" class="field" bind:value={model} placeholder="Default" />
           <label for="qa-effort">Effort</label>
-          <select id="qa-effort" bind:value={effort}>
-            <option value="">Default</option>
-            {#each EFFORTS as x (x)}<option value={x}>{x}</option>{/each}
-          </select>
+          <span class="select">
+            <select id="qa-effort" bind:value={effort}>
+              <option value="">Default</option>
+              {#each EFFORTS as x (x)}<option value={x}>{x}</option>{/each}
+            </select>
+          </span>
         </div>
       </details>
     {/if}
+
     <div class="foot">
-      <span class="w-sub">⌘↵</span>
+      <kbd class="w-sub">⌘↵</kbd>
       <button type="submit" class="w-btn w-btn--primary" disabled={!title.trim() || busy}>Add task</button>
     </div>
   </form>
@@ -171,96 +186,194 @@
     width: min(600px, calc(100% - 32px));
     max-height: calc(100% - 48px);
     overflow-y: auto;
+    /* One box for every control: height, label column. */
+    --qa-h: 32px;
+    --qa-label: 92px;
   }
   form {
     display: flex;
     flex-direction: column;
-    gap: var(--w-s-3);
+    gap: var(--w-s-4);
     padding: var(--w-s-5) var(--w-s-6);
   }
-  .row {
-    display: flex;
-    align-items: center;
-    gap: var(--w-s-2);
+  /* Same head as the detail card: meta line, then the title as the one large element. */
+  .head {
+    display: grid;
+    gap: 6px;
+    padding-bottom: var(--w-s-4);
+    border-bottom: 1px solid var(--w-line);
   }
-  input,
-  select,
-  textarea {
-    border: 0;
-    outline: none;
-    background: var(--w-tray);
-    border-radius: var(--w-r-md);
-    padding: 7px 11px;
+  .meta {
+    margin: 0;
     font-size: var(--w-fs-small);
-    min-width: 0;
-    box-sizing: border-box;
+    font-weight: 400;
+    color: var(--w-muted);
   }
-  input:first-of-type {
-    font-size: var(--w-fs-body);
+  .title {
+    margin: 0 -6px;
+    padding: 2px 6px;
+    border: 0;
+    border-radius: var(--w-r-sm);
+    background: none;
+    font-family: var(--w-font-label);
+    font-size: var(--w-fs-headline);
+    font-weight: 600;
+    line-height: 1.2;
   }
-  .row select {
-    flex: 1;
+  .title::placeholder {
+    color: var(--w-muted);
+    font-weight: 500;
   }
-  textarea {
-    min-height: 72px;
-    resize: none;
-    overflow: hidden;
-    line-height: 1.5;
-  }
-  input:focus,
-  select:focus,
-  textarea:focus {
+  .title:focus {
+    outline: none;
+    background: var(--w-sunk);
     box-shadow: 0 0 0 2px var(--w-accent-soft);
   }
-  .kv {
+  .grid {
     display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 6px 12px;
+    grid-template-columns: var(--qa-label) minmax(0, 1fr);
+    gap: var(--w-s-2) var(--w-s-3);
     align-items: center;
-    font-size: var(--w-fs-small);
   }
-  .kv label {
+  .grid > label,
+  .label {
+    font-size: var(--w-fs-small);
     color: var(--w-muted);
+  }
+  /* Multi-line controls: the label sits on the first line. */
+  .top {
+    align-self: start;
+    line-height: var(--qa-h);
+  }
+  .field,
+  .select select {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    height: var(--qa-h);
+    margin: 0;
+    border: 0;
+    border-radius: var(--w-r-md);
+    padding: 0 10px;
+    background: var(--w-tray);
+    font-size: var(--w-fs-small);
+    line-height: var(--qa-h);
+    outline: none;
+  }
+  .field::placeholder {
+    color: var(--w-muted);
+  }
+  .field:focus,
+  .field:focus-within,
+  .select select:focus {
+    box-shadow: 0 0 0 2px var(--w-accent-soft);
+  }
+  textarea.field {
+    height: auto;
+    min-height: calc(var(--qa-h) * 2.5);
+    padding: 7px 10px;
+    line-height: 1.45;
+    resize: none;
+    overflow: hidden;
+  }
+  /* Native select without its own height and arrow; the chevron is drawn in currentColor. */
+  .select {
+    position: relative;
+    display: block;
+    min-width: 0;
+  }
+  .select select {
+    appearance: none;
+    -webkit-appearance: none;
+    padding-right: 28px;
+    cursor: pointer;
+  }
+  .select::after {
+    content: "";
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    border: solid var(--w-muted);
+    border-width: 0 1.5px 1.5px 0;
+    transform: translateY(-70%) rotate(45deg);
+    pointer-events: none;
+  }
+  /* WebKit draws empty date parts in its own colour; keep them in the field's colours. */
+  input[type="date"]::-webkit-datetime-edit,
+  input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+  input[type="date"]::-webkit-datetime-edit-text,
+  input[type="date"]::-webkit-datetime-edit-day-field,
+  input[type="date"]::-webkit-datetime-edit-month-field,
+  input[type="date"]::-webkit-datetime-edit-year-field {
+    color: inherit;
+    padding: 0;
+  }
+  input[type="date"].empty {
+    color: var(--w-muted);
+  }
+  .prio {
+    justify-self: start;
+    box-sizing: border-box;
+    height: var(--qa-h);
+  }
+  .prio button {
+    padding: 0 14px;
   }
   .crit {
     display: grid;
-    gap: 4px;
+    gap: 6px;
   }
   .crit-row {
     display: flex;
     align-items: center;
     gap: var(--w-s-2);
+    cursor: text;
   }
   .crit-row input {
     flex: 1;
-    padding: 4px 8px;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    padding: 0;
+    background: none;
+    font-size: var(--w-fs-small);
+    outline: none;
+  }
+  .crit-row input::placeholder {
+    color: var(--w-muted);
   }
   .box {
     flex: none;
     width: 12px;
     height: 12px;
+    box-sizing: border-box;
     border: 1.5px solid var(--w-edge);
-    border-radius: var(--w-r-sm);
+    border-radius: var(--w-r-xs);
   }
-  details {
-    display: grid;
-    gap: var(--w-s-2);
-  }
-  details[open] > summary {
-    margin-bottom: var(--w-s-2);
+  details > .grid {
+    margin-top: var(--w-s-2);
   }
   summary {
-    cursor: pointer;
+    width: max-content;
+    font-size: var(--w-fs-small);
     color: var(--w-muted);
+    cursor: pointer;
   }
-  details > input {
-    width: 100%;
+  summary:hover {
+    color: var(--w-ink);
   }
   .foot {
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: var(--w-s-3);
+    padding-top: var(--w-s-4);
+    border-top: 1px solid var(--w-line);
+  }
+  kbd {
+    font: inherit;
   }
   .w-btn--primary:disabled {
     opacity: 0.5;

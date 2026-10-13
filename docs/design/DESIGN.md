@@ -26,7 +26,7 @@ Alle Werte stehen in `tokens.css`. Präfix `--w-`. Die App übernimmt diese Date
 | Projekte | `proj-1` … `proj-6` | Reihum vergeben, Farbe im Projekt-Frontmatter speichern |
 | Bahnen | `lane-fb`, `lane-me`, `lane-gov`, `lane-it` | nur Prozesslandkarte |
 | Höhe | `shadow-card`, `shadow-raised`, `shadow-panel`, `shadow-pop`, `ring-active` | Karte, Pille/Segment, Panel, Modal/Drag, aktive Karte |
-| Form | `r-sm` 5, `r-md` 9, `r-lg` 12, `r-xl` 14, `r-pill` | Tag, Karte/Button, Ablage/Panel, Modal |
+| Form | `r-xs` 3, `r-sm` 5, `r-md` 9, `r-lg` 12, `r-xl` 14, `r-pill` | Checkbox, Tag, Karte/Button, Ablage/Panel, Modal |
 | Abstand | `s-1` … `s-8` (4 bis 32 px) | Abstände per `gap`, nicht per Margin |
 
 ### Typografie

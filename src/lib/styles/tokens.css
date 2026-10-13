@@ -54,6 +54,7 @@
   --w-scrim: rgba(14, 19, 24, .38);
 
   /* Shape */
+  --w-r-xs: 3px;              /* checkbox squares */
   --w-r-sm: 5px;              /* chips, tags, inline code */
   --w-r-md: 9px;              /* cards, buttons, inputs, nav items */
   --w-r-lg: 12px;             /* trays, panels */
