@@ -240,3 +240,26 @@ fn parent_waiting_and_acceptance() {
     let t = stdout_json(&wly(ws, &["task", "start", "OPS-3", "--agent", "codex", "--json"]));
     assert_eq!((&t["status"], &t["waiting_for"]), (&"doing".into(), &Value::Null));
 }
+
+#[test]
+fn start_and_review_record_the_changed_files() {
+    let (tmp, root) = fixture();
+    let ws = Some(root.as_path());
+    let repo = tmp.path().join("code");
+    fs::create_dir_all(&repo).unwrap();
+    let git = |args: &[&str]| assert!(Command::new("git").args(args).current_dir(&repo).output().unwrap().status.success(), "git {args:?}");
+    git(&["init", "-q"]);
+    fs::write(repo.join("mine.txt"), "dirty before the start\n").unwrap();
+    let repo = repo.canonicalize().unwrap();
+    let project = root.join("projects/website-relaunch/_project.md");
+    let src = fs::read_to_string(&project).unwrap().replace("repos: [~/repos/website]", &format!("repos: [\"{}\"]", repo.display()));
+    fs::write(&project, src).unwrap();
+    free_website_repo(&root);
+
+    assert_eq!(code(&wly(ws, &["task", "start", "WR-5", "--agent", "codex"])), 0);
+    assert!(root.join(".workly/runs/WR-5/baseline.json").exists());
+    fs::write(repo.join("agent.txt"), "new\n").unwrap();
+    let t = stdout_json(&wly(ws, &["task", "review", "WR-5", "--agent", "codex", "--summary", "Added agent.txt", "--json"]));
+    assert_eq!((&t["agent"]["changes"], &t["agent"]["repo"]), (&serde_json::json!(["agent.txt"]), &repo.to_str().unwrap().into()));
+    assert!(root.join(".workly/runs/WR-5/review.json").exists());
+}

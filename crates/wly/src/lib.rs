@@ -56,7 +56,8 @@ enum TaskCmd {
     },
     /// Task, project and agent context (global rules, project AGENTS.md, skills)
     Show { id: String },
-    /// Set doing (from backlog, todo, waiting or review); with --agent also agent.active and agent.since
+    /// Set doing (from backlog, todo, waiting or review); with --agent also agent.active and agent.since.
+    /// Records the project repo's dirty files as the baseline for review
     Start { id: String },
     /// Append a note to the run log (.workly/runs/<ID>/log.jsonl); the task file stays untouched
     Note {
@@ -67,7 +68,7 @@ enum TaskCmd {
         #[arg(long)]
         to_body: bool,
     },
-    /// Set review (from doing) and clear agent.active
+    /// Set review (from doing) and clear agent.active; with a baseline also agent.changes and agent.repo
     Review {
         id: String,
         #[arg(long, value_name = "SHA")]
@@ -133,6 +134,8 @@ struct AgentOut {
     since: Option<String>,
     commit: Option<String>,
     last_run: Option<String>,
+    changes: Option<Vec<String>>,
+    repo: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -189,6 +192,8 @@ fn task_out(ws: &Workspace, t: &TaskEntry) -> TaskOut {
             since: a.since.clone(),
             commit: a.commit.clone(),
             last_run: a.last_run.clone(),
+            changes: a.changes.clone(),
+            repo: a.repo.clone(),
         }),
         body: None,
     }
