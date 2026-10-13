@@ -25,12 +25,9 @@
     openProjectInVscode,
     type RunEntry,
   } from "$lib/stores/workspace.svelte";
-  import { agentName, agentPrompt, agentStale, confirmDeleteTask, projectOf, rawDescription, runnerOf, shortDate, splitBody, today } from "$lib/tasks.svelte";
+  import { EFFORTS, RUNNERS, agentName, agentPrompt, agentStale, bodyView, confirmDeleteTask, descriptionOf, projectOf, runnerOf, shortDate, updatesOf } from "$lib/tasks.svelte";
 
   let { id, mode, focusIds, onclose }: { id: string; mode: "popup" | "panel"; focusIds: string[]; onclose: () => void } = $props();
-
-  const RUNNERS = ["auto", "codex", "copilot", "claude-code"];
-  const EFFORTS = ["auto", "low", "medium", "high"];
 
   const t = $derived(workspace.index?.tasks.find((x) => x.id === id));
   const project = $derived(t && projectOf(t));
@@ -50,7 +47,8 @@
     void workspace.index;
     if (path) readMarkdown(path).then((b) => (body = b), (e) => (workspace.error = String(e)));
   });
-  const parts = $derived(splitBody(body));
+  const view = $derived(bodyView(body));
+  const updates = $derived(updatesOf(body));
 
   // Agent activity: the run log, newest first; re-read with the index (the watcher reports .workly/runs/).
   let runs = $state<RunEntry[]>([]);
@@ -62,7 +60,7 @@
   });
   const shownRuns = $derived(runsOpen ? runs : runs.slice(0, 1));
   const stale = $derived(!!t && agentStale(t));
-  const html = $derived(renderMarkdown(parts.description));
+  const html = $derived(renderMarkdown(view));
 
   /** Write one field; a refused write puts the file's value back into the input. */
   async function save(field: string, value: unknown, input?: HTMLInputElement, shown = "") {
@@ -173,7 +171,7 @@
   let conflict = $state(false);
   let saving = false;
   function editDesc() {
-    expected = rawDescription(body);
+    expected = descriptionOf(body).text;
     draft = expected.replace(/\r\n/g, "\n");
     conflict = false;
   }
@@ -281,7 +279,7 @@
               <button type="button" class="w-btn w-btn--quiet" onclick={cancelDesc}>Reload</button>
             </div>
           {/if}
-        {:else if parts.description.trim()}
+        {:else if view.trim()}
           <!-- Sanitised by DOMPurify in renderMarkdown. -->
           <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
           <div
@@ -416,8 +414,8 @@
         {/if}
 
         <div class="t-group">
-          <span class="w-caps">Updates · {parts.updates.length}</span>
-          {#each parts.updates as u, i (i)}
+          <span class="w-caps">Updates · {updates.length}</span>
+          {#each updates as u, i (i)}
             <div class="t-update"><span class="w-mono">{u.meta}</span>{u.text}</div>
           {/each}
           <textarea

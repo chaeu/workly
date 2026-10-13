@@ -96,7 +96,7 @@
   let newTask = $state("");
   async function addTask() {
     if (!newTask.trim()) return;
-    if (await createTask(newTask.trim(), key)) newTask = "";
+    if (await createTask({ title: newTask.trim(), project: key })) newTask = "";
   }
 </script>
 

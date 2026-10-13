@@ -42,11 +42,12 @@ export const isOverdue = (t: TaskEntry) => !!t.due && t.status !== "done" && t.d
 
 /**
  * The one open task to do next: overdue (oldest due first), then in today's focus (focus order),
- * priority, due date, id. Backlog counts only when nothing else is open.
+ * priority, due date, id. Backlog and waiting count only when nothing else is open.
  */
 export function nextUp(tasks: TaskEntry[]) {
   const open = tasks.filter((t) => t.status !== "done");
-  const pool = open.some((t) => t.status !== "backlog") ? open.filter((t) => t.status !== "backlog") : open;
+  const later = (t: TaskEntry) => t.status === "backlog" || t.status === "waiting";
+  const pool = open.some((t) => !later(t)) ? open.filter((t) => !later(t)) : open;
   const day = today();
   // "~" sorts after every date, so a missing value goes last.
   const rank = (t: TaskEntry) => [
@@ -102,7 +103,8 @@ export function runnerOf(t: TaskEntry) {
 export function agentPrompt(t: TaskEntry, body = "", started = false) {
   const name = runnerOf(t);
   const id = t.id;
-  const { description, acceptance } = taskBrief(body);
+  const description = bodyView(body).trim();
+  const acceptance = t.acceptance.map((a) => `- [${a.done ? "x" : " "}] ${a.text}`);
   return [
     `Work on Workly task ${id} ("${t.title}") in this repo. Report through wly as agent "${name}".`,
     `1. Run \`wly task show ${id}\` first. Follow the workspace rules, project instructions and skills it prints.`,
@@ -116,23 +118,8 @@ export function agentPrompt(t: TaskEntry, body = "", started = false) {
     `7. Finish with exactly one \`wly task review ${id} --summary "<3-6 lines: what changed, how to verify, open points>" --agent ${name}\`. Never set the task to done.`,
     `8. Work only inside this repo. Delete nothing outside it.`,
     ...(description ? ["", "Task description:", description] : []),
-    ...(acceptance.length ? ["", "Acceptance:", ...acceptance.map((a) => `- ${a}`)] : []),
+    ...(acceptance.length ? ["", "Acceptance:", ...acceptance] : []),
   ].join("\n");
-}
-
-/** Description (body without `## Acceptance` and `## Updates`) and the acceptance items, checkboxes stripped. */
-export function taskBrief(body: string) {
-  const lines = splitBody(body).description.split(/\r?\n/);
-  const head = lines.findIndex((l) => /^## Acceptance( criteria)?\s*$/.test(l));
-  if (head < 0) return { description: lines.join("\n").trim(), acceptance: [] as string[] };
-  let end = lines.findIndex((l, i) => i > head && /^#{1,2} /.test(l));
-  if (end < 0) end = lines.length;
-  const acceptance = lines
-    .slice(head + 1, end)
-    .filter((l) => /^\s*[-*] /.test(l))
-    .map((l) => l.replace(/^\s*[-*] (\[[ xX]\] )?/, "").trim())
-    .filter(Boolean);
-  return { description: [...lines.slice(0, head), ...lines.slice(end)].join("\n").trim(), acceptance };
 }
 
 /** Column order: `order`, then priority, then id (`WR-9` before `WR-10`). Missing values go last. */
@@ -145,14 +132,14 @@ export const byBoardOrder = (a: TaskEntry, b: TaskEntry) =>
 export const projectOf = (t: TaskEntry): ProjectEntry | undefined =>
   t.project ? workspace.index?.projects.find((p) => p.path === t.project) : undefined;
 
-/** Description and `## Updates` items of a task body. */
-export function splitBody(body: string) {
+/** The `## Updates` items of a task body; continuation lines join the item above. */
+export function updatesOf(body: string) {
   const lines = body.split(/\r?\n/);
-  const head = lines.findIndex((l) => l.trimEnd() === "## Updates");
-  if (head < 0) return { description: body, updates: [] as { meta: string; text: string }[] };
-  let end = lines.findIndex((l, i) => i > head && /^#{1,2} /.test(l));
-  if (end < 0) end = lines.length;
+  const head = lines.findIndex(isUpdates);
   const updates: { meta: string; text: string }[] = [];
+  if (head < 0) return updates;
+  let end = lines.findIndex((l, i) => i > head && isSectionEnd(l));
+  if (end < 0) end = lines.length;
   for (const l of lines.slice(head + 1, end)) {
     if (/^[-*] /.test(l)) {
       const item = l.slice(2);
@@ -163,19 +150,56 @@ export function splitBody(body: string) {
       updates[updates.length - 1].text += "\n" + l.trim();
     }
   }
-  return { description: [...lines.slice(0, head), ...lines.slice(end)].join("\n"), updates };
+  return updates;
 }
 
-/** The editable description: body before the `## Updates` line, raw (same rule as core's description_end). */
-export function rawDescription(body: string) {
-  const m = /^## Updates[^\S\n]*$/m.exec(body);
-  return (m ? body.slice(0, m.index) : body).trimEnd();
+// Body sections, same rules as workly-core's frontmatter.rs: a section ends at the next heading of level 1 or 2.
+const isSectionEnd = (l: string) => /^#{1,2} /.test(l);
+const isDescription = (l: string) => /^## Description\s*$/.test(l);
+const isAcceptance = (l: string) => /^## Acceptance( criteria)?\s*$/.test(l);
+const isUpdates = (l: string) => /^## Updates\s*$/.test(l);
+
+/**
+ * The editable description, raw (same rule as core's description_range): the `## Description` section,
+ * or in the old layout the text before the first Acceptance or Updates heading. `sectioned` = the body has the section.
+ */
+export function descriptionOf(body: string) {
+  const lines = body.split("\n");
+  const d = lines.findIndex(isDescription);
+  const end = (from: number, stop: (l: string) => boolean) => {
+    const i = lines.findIndex((l, n) => n >= from && stop(l));
+    return i < 0 ? lines.length : i;
+  };
+  if (d >= 0) return { text: lines.slice(d + 1, end(d + 1, isSectionEnd)).join("\n").trimEnd(), sectioned: true };
+  return { text: lines.slice(0, end(0, (l) => isAcceptance(l) || isUpdates(l))).join("\n").trimEnd(), sectioned: false };
 }
 
-/** Quick add (⌘N) lives in the layout. `hint` is the project the board filter suggests. */
-export const quickAdd = $state({ open: false, project: null as string | null, hint: null as string | null });
-export function openQuickAdd(project: string | null = quickAdd.hint) {
+/** The body as the description view shows it: without the Description heading and without the Acceptance and Updates sections (shown on their own). */
+export function bodyView(body: string) {
+  let skip = false;
+  return body
+    .split(/\r?\n/)
+    .filter((l) => {
+      if (isSectionEnd(l)) skip = isAcceptance(l) || isUpdates(l);
+      return !skip && !isDescription(l);
+    })
+    .join("\n");
+}
+
+/** Whether the body has the B3 layout; "Add sections" is offered otherwise. */
+export const hasSections = (body: string) => {
+  const lines = body.split(/\r?\n/);
+  return lines.some(isDescription) && lines.some(isAcceptance);
+};
+
+export const RUNNERS = ["auto", "codex", "copilot", "claude-code"];
+export const EFFORTS = ["auto", "low", "medium", "high"];
+
+/** Quick add (⌘N) lives in the layout. `hint` is the project the board filter suggests; `parent` opens it as a sub-task. */
+export const quickAdd = $state({ open: false, project: null as string | null, parent: null as string | null, hint: null as string | null });
+export function openQuickAdd(project: string | null = quickAdd.hint, parent: string | null = null) {
   quickAdd.project = project;
+  quickAdd.parent = parent;
   quickAdd.open = true;
 }
 

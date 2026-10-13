@@ -17,8 +17,29 @@ export type TaskEntry = {
   focus_order: number | null;
   order: number | null;
   done_at: string | null;
+  /** Only while the status is `waiting`. */
+  waiting_for: string | null;
+  /** Parent task id; one level. The parent may be gone (trash). */
+  parent: string | null;
+  /** Items of the body's `## Acceptance` section, in file order (the index the toggle uses). */
+  acceptance: AcceptanceItem[];
   agent: AgentState | null;
   [field: string]: unknown;
+};
+export type AcceptanceItem = { text: string; done: boolean };
+/** Mirrors workly-core's NewTask: only `title` is required. */
+export type NewTask = {
+  title: string;
+  project: string | null;
+  priority?: number | null;
+  due?: string | null;
+  tags?: string[];
+  parent?: string | null;
+  description?: string;
+  acceptance?: string[];
+  runner?: string | null;
+  model?: string | null;
+  effort?: string | null;
 };
 export type AgentState = {
   /** Deprecated (B2): still loaded from old files, never written. */
@@ -130,6 +151,8 @@ export type Settings = {
   repos_dir: string | null;
   theme: "system" | "light" | "dark" | null;
   focus_hidden?: boolean;
+  /** Task board: hide tasks that have sub-tasks. */
+  hide_parents?: boolean;
   task_detail?: "popup" | "panel";
   usecase_compact?: boolean;
   /** Missing = on. */
@@ -219,8 +242,11 @@ export async function updateTaskField(id: string, field: string, value: unknown)
     return false;
   }
 }
-export const createTask = (title: string, project: string | null, priority: number | null = null) =>
-  run<string>("create_task", { title, project, priority });
+export const createTask = (task: NewTask) => run<string>("create_task", { task });
+/** `shown` is the item as displayed; core refuses the toggle when the file has something else there. */
+export const toggleAcceptance = (id: string, n: number, shown: AcceptanceItem) => run("toggle_acceptance", { id, n, shown });
+export const addAcceptance = (id: string, text: string) => run("add_acceptance", { id, text });
+export const addSections = (id: string) => run("add_sections", { id });
 export const reorderTasks = (ids: string[]) => run("reorder_tasks", { ids });
 /** Inserts the Waiting line into .workly/config.yml; throws when the list has a shape it cannot edit. */
 export const addWaitingStatus = () => invoke("add_waiting_status");

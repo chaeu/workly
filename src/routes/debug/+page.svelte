@@ -23,7 +23,7 @@
 
   async function add(key: string | null) {
     if (!newTitle.trim()) return;
-    await createTask(newTitle.trim(), key);
+    await createTask({ title: newTitle.trim(), project: key });
     newTitle = "";
   }
 </script>

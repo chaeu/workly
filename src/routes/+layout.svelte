@@ -251,7 +251,7 @@
 </div>
 
 {#if quickAdd.open}
-  <QuickAdd project={quickAdd.project} onclose={() => (quickAdd.open = false)} />
+  <QuickAdd project={quickAdd.project} parent={quickAdd.parent} onclose={() => (quickAdd.open = false)} />
 {/if}
 {#if showKeys}
   <Shortcuts views={views.map((v) => v.label)} onclose={() => (showKeys = false)} />
