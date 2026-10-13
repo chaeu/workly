@@ -25,10 +25,10 @@ Options can stand anywhere on the line: `wly task show WR-5 --json`.
 ```
 wly task list [--project WR] [--status todo] [--parent WR-12] [--json]   # --parent: only its sub-tasks
 wly task show WR-12 [--json]                  # task + project + agent context
-wly task start WR-12 [--agent codex]          # -> doing; with an agent also agent.active, agent.since (from doing: only those)
+wly task start WR-12 [--agent codex]          # -> doing; with an agent also agent.active, agent.since (from doing: only those); repo baseline
 wly task note WR-12 "text"                    # appends to the run log .workly/runs/WR-12/log.jsonl; task file untouched
 wly task note WR-12 "text" --to-body          # appends "- YYYY-MM-DD HH:MM · <who>: text" under ## Updates instead
-wly task review WR-12 [--summary "text"] [--commit a3f9c1e]   # -> review; clears agent.active/since, stamps agent.last_run
+wly task review WR-12 [--summary "text"] [--commit a3f9c1e]   # -> review; clears agent.active/since, stamps agent.last_run, sets agent.changes
 wly task add "title" [--project WR | --inbox] [--priority 1-3] [--parent WR-12]   # prints the new id
 wly task done WR-12                           # humans only, see below
 wly project list [--json]
@@ -64,6 +64,22 @@ The run log is not in `.workly/log/` and not in the workspace backup (`.gitignor
 ```
 
 The first line follows the stamp, further lines are continuation lines indented by two spaces. Lines are trimmed, blank lines dropped; an empty summary is exit 1. The log gets one `task.summary` line besides the field changes. `--commit` stays for humans.
+
+### Changed files (baseline and review)
+
+`start` records the state of the project's first repo in `.workly/runs/<ID>/baseline.json`: `HEAD` and the `git hash-object` of every modified or untracked file. Starting from backlog, todo or waiting writes a new one; from doing or review the existing one stays (rework). No repo or not a git repo: no baseline, the start works as before.
+
+`review` compares with the baseline: a path counts as changed when it is dirty now and was clean at the start or had other content then (new, modified, deleted; a rename is a delete plus an add). In the same write it sets `agent.changes` (block list), `agent.repo` (`~/…`) and `agent.commit: null` (unless `--commit` is given), and stores the hashes and the summary in `.workly/runs/<ID>/review.json`. Without a baseline nothing of this happens.
+
+```yaml
+agent:
+  changes:
+    - src/lib/Nav.svelte
+    - src/lib/nav.css
+  repo: ~/repos/website
+```
+
+Committing is a click in the app, not a CLI command: it commits exactly these paths and never pushes (spec, section 5 "Commit aus Review").
 
 ### Transitions
 
@@ -128,12 +144,14 @@ Field names are stable. All `path` fields are absolute. Missing values are `null
     "active": null,
     "since": null,
     "commit": "a3f9c1e",
-    "last_run": "2026-10-02T15:10:00Z"
+    "last_run": "2026-10-02T15:10:00Z",
+    "changes": ["src/lib/Nav.svelte"],
+    "repo": "~/repos/website"
   }
 }
 ```
 
-`project` is the project key, `null` for inbox tasks. `waiting_for` is only set while the status is `waiting`. `parent` is the parent task's id (it may be in the trash). `acceptance` lists the items of the body's `## Acceptance` section (also the old heading `## Acceptance criteria`; a plain `- item` counts as open), `[]` without one. `agent` is `null` when the task has no `agent:` block. `agent.ready` is deprecated: still read from old files, never written by Workly.
+`project` is the project key, `null` for inbox tasks. `waiting_for` is only set while the status is `waiting`. `parent` is the parent task's id (it may be in the trash). `acceptance` lists the items of the body's `## Acceptance` section (also the old heading `## Acceptance criteria`; a plain `- item` counts as open), `[]` without one. `agent` is `null` when the task has no `agent:` block. `agent.ready` is deprecated: still read from old files, never written by Workly. `agent.changes` and `agent.repo` are `null` until a review with a baseline sets them.
 
 ### Project (`project list` items)
 

@@ -88,6 +88,9 @@ Ein Workspace ist ein Ordner, zugleich Obsidian-Vault und Git-Repo. Menschenlesb
     runs/<ID>/log.jsonl        # agent run log per task (wly task note), not in the backup
     runs/<ID>/prompt.md        # prompt of the last Start agent
     runs/<ID>/start.command    # Codex start script of the last Start agent (mode 700)
+    runs/<ID>/baseline.json    # dirty files of the code repo at start (B8)
+    runs/<ID>/review.json      # changed files and their hashes at review, summary (B8)
+    runs/<ID>/commit-msg.txt   # message of the last Commit
     trash/                     # deleted items, restorable
 ```
 
@@ -151,8 +154,11 @@ agent:                        # optional; ready: (old files) is still read, neve
   effort: auto                # auto | low | medium | high
   active: null                # set while an agent works, e.g. codex
   since: null                 # ISO timestamp, drives "Codex working · 14 min"
-  commit: null
+  commit: null                # set by Commit (short sha) or review --commit
   last_run: null
+  changes:                    # set at review: repo paths changed since start; what Commit commits
+    - src/lib/Nav.svelte
+  repo: ~/repos/website       # repo of changes
 ---
 ## Description
 Burger menu below 720 px, keyboard accessible.
@@ -219,6 +225,7 @@ Jedes Projekt hat genau ein Zuhause: seinen Projektordner. Das Repo enthält nur
   - **Backup:** beim App-Start und Workspace-Wechsel (fängt Änderungen aus Obsidian ab), im Intervall, mit „Back up now“ und beim Beenden (höchstens 3 s, Beenden wartet nie länger). Nie im UI-Thread, nie zwei Läufe gleichzeitig. Übersprungen mit Fehler bei detached HEAD, laufendem Merge, Rebase, Cherry-Pick oder Revert und bei Konflikten im Index. Sonst `git add -A` und Commit `backup: JJJJ-MM-TT HH:MM (N files)`; nichts geändert (oder nur die eigene Logzeile unter `.workly/log/`, die fährt beim nächsten Backup mit) = kein Commit.
   - **Push** auf den Upstream des aktuellen Branches (`git push <remote> HEAD:<merge-ref>`), wenn Push an ist, auch nachgeholt, solange der Branch voraus ist. Nie Force, nie andere Branches, nie History umschreiben, kein Pull. Workly richtet keine Remotes ein und ändert keine; ohne Upstream bleiben die Commits lokal („Backed up locally“, kein Fehler).
   - **Ohne Rückfrage:** System-`git` mit Argumentliste (keine Shell), `GIT_TERMINAL_PROMPT=0`, SSH mit `BatchMode`, Git Credential Manager nicht interaktiv, 30 s Timeout je Aufruf. Fehlende Zugangsdaten sind ein Fehler, kein hängendes Fenster. Zugangsdaten in URLs werden in Anzeige und Log durch `***` ersetzt.
+  - **Code-Repo (B8):** Commit nur auf Klick („Commit“, „Commit & Done“ in der Task-Detailkarte), nur die Pfade aus `agent.changes`, nie Push. Abgelehnt mit lesbarer Meldung, wenn der Index schon fremde gestagte Änderungen hat; die werden nie mitcommittet. Jeder Pfad wird vor `git add` geprüft (relativ, im Repo, kein `..`), Pfade sind literal (`GIT_LITERAL_PATHSPECS`), die Nachricht kommt aus einer Datei (`git commit -F`). Hooks des Repos laufen, bis 120 s. Derselbe Git-Aufruf wie beim Backup.
   - **Anzeige:** Sidebar-Fuß „Backed up 12 min ago“ (muted), „Backed up locally …“, „Backup failed – details“ (`--w-warn`, führt zu Settings → Backup mit den letzten 20 Zeilen stderr) oder „Backup off“ (kein Repo oder Intervall aus). Settings → Backup: Intervall, Push, „Back up now“, Upstream nur lesend. Der Status lebt nur im Speicher; die Commits sind der Nachweis.
 
 ## 5. Agentic Workflow
@@ -230,10 +237,10 @@ Läuft auf demselben Core wie die App. Agents (und der Nutzer) lesen und ändern
 ```
 wly task list [--project WR] [--status todo] [--json]
 wly task show WR-12 [--json]          # task + project + agent files as context
-wly task start WR-12 --agent codex    # status doing, agent.active + agent.since set; from doing only the agent fields
+wly task start WR-12 --agent codex    # status doing, agent.active + agent.since set; from doing only the agent fields; repo baseline
 wly task note WR-12 "text"            # appends to the run log .workly/runs/WR-12/log.jsonl
 wly task note WR-12 "text" --to-body  # appends to ## Updates instead (escape hatch)
-wly task review WR-12 [--summary "…"] [--commit a3f9c1]   # status review, agent.active cleared; never done
+wly task review WR-12 [--summary "…"] [--commit a3f9c1]   # status review, agent.active cleared, agent.changes; never done
 wly task add "title" [--project WR | --inbox] [--priority 2]
 wly project list [--json]
 ```
@@ -284,9 +291,20 @@ Der Watcher meldet Änderungen unter `.workly/runs/` ohne Rescan des Index; die 
 
 Letzte Aktivität = jüngster Run-Log-Eintrag des laufenden Laufs, sonst `agent.since`. Ist sie bei gesetztem `agent.active` älter als `agent_defaults.stale_after_minutes` (Standard 30), zeigt die Karte „Agent inactive?“ (`--w-warn`, ohne Ring) statt „Codex working · n min“, und die Detailkarte bietet „Clear agent“: löscht `agent.active` und `agent.since` in einem Write mit Log, der Status bleibt. Kein PID-Watching, kein `agent.status`, kein `last_seen`: Copilot und Codex laufen als VS-Code-Extensions, es gibt keinen Prozess, den Workly sehen könnte.
 
+### Commit aus Review
+
+Workly committet die Änderungen eines Agents im Code-Repo auf einen ausdrücklichen Klick; Agents committen nie (Regel 3).
+
+1. **Baseline:** `start_task` im Core (also `wly task start`, „Start agent“ und der Start durch den Agent nach „Copy prompt“) hält den Zustand des Repos fest: Repo = erstes Repo des Projekts, im Toplevel des Git-Repos; `HEAD` und `git hash-object` jeder geänderten oder ungetrackten Datei (`git status --porcelain -z --untracked-files=all --no-renames`) → `.workly/runs/<ID>/baseline.json`. Ein Start aus backlog, todo oder waiting schreibt sie neu; ein Start aus doing oder review (Nachbessern) behält die vorhandene, damit nicht committete Änderungen des ersten Laufs in der Liste bleiben. „Copy prompt“ bei `doing` legt eine an, wenn keine da ist. Kein Repo, kein Git-Repo oder Git-Fehler: keine Baseline, der Start klappt trotzdem.
+2. **Review:** `wly task review` vergleicht mit der Baseline. Geändert = jetzt dirty und entweder in der Baseline sauber oder mit anderem Inhalt (neu, geändert, gelöscht; ein Rename zählt als gelöscht + neu). Im selben Write: `agent.changes` (Block-Liste), `agent.repo` (`~/…`), `agent.commit: null` (außer mit `--commit`). `.workly/runs/<ID>/review.json` hält die Hashes zur Review-Zeit und die Summary. Ohne Baseline bleibt alles wie vorher.
+3. **Anzeige** (hinter `agents_enabled`): Review-Karte ohne Commit „N files changed“. Detailkarte, Abschnitt **Changes**: je Pfad A/M/D, ein Klick zeigt den Diff (nur lesen; `git diff HEAD` bzw. der Inhalt einer neuen Datei; ab 400 Zeilen gekürzt, Binärdateien als Hinweis). „edited“ markiert Dateien, die sich seit dem Review geändert haben.
+4. **Commit** (nur aus review): `git add -- <geänderte Pfade aus agent.changes>`, `git commit -F .workly/runs/<ID>/commit-msg.txt` mit `<ID>: <Titel>` und der Summary als Body. Danach `agent.commit` = kurzer SHA, Log `{kind: commit, id, to: {sha, repo, files}}`. Der Task bleibt in review; „Commit & Done“ setzt danach `done`. Hat sich eine Datei seit dem Review geändert, zeigt die App ihren Diff und fragt vor dem Commit. Git läuft nie im UI-Thread, der Commit ohne Workspace-Sperre.
+
+Nicht in v1: „Commit all reviewed“ pro Repo (eine Commit-Folge über mehrere Tasks), Erkennung eines Agents, der trotz Regel selbst committet hat (dann ist die Liste leer), Änderungen beim Ziehen einer Karte nach Review (nur `wly task review` berechnet sie).
+
 ### Schalter Agent-Funktionen
 
-`agents_enabled` in den Geräte-Einstellungen (Standard: aus). Aus blendet jede Agent-Oberfläche aus: Ansicht und Menüpunkt „Agents“, Agent-Bereich und Agent activity der Task-Detailkarte samt „Clear agent“, Agent-Badge (auch „Agent inactive?“), -Ring und Commit auf Karten, Agent-Dateien in der Projektansicht, „Install CLI“ und „Start agent“. Nichts wird gelöscht: `agent:`-Felder bleiben in den Dateien, `wly` funktioniert weiter. Jede neue Agent-Oberfläche hängt an diesem einen Schalter.
+`agents_enabled` in den Geräte-Einstellungen (Standard: aus). Aus blendet jede Agent-Oberfläche aus: Ansicht und Menüpunkt „Agents“, Agent-Bereich, Changes und Agent activity der Task-Detailkarte samt „Clear agent“ und „Commit“, Agent-Badge (auch „Agent inactive?“), -Ring, Commit und „N files changed“ auf Karten, Agent-Dateien in der Projektansicht, „Install CLI“ und „Start agent“. Nichts wird gelöscht: `agent:`-Felder bleiben in den Dateien, `wly` funktioniert weiter. Jede neue Agent-Oberfläche hängt an diesem einen Schalter.
 
 ### Stufen
 
