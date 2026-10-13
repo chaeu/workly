@@ -41,6 +41,8 @@ pub struct AgentState {
     pub runner: Option<String>,
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// Codex only: ask | auto | full (B11); missing = ask.
+    pub permissions: Option<String>,
     pub active: Option<String>,
     pub since: Option<String>,
     pub commit: Option<String>,
@@ -333,7 +335,8 @@ impl Default for AgentDefaults {
     }
 }
 
-/// One entry of `agents:` in config.yml. Missing model or effort = the runner's own default.
+/// One entry of `agents:` in config.yml. Missing model or effort = the runner's own default;
+/// missing permissions = ask.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct AgentPreset {
     pub name: String,
@@ -342,6 +345,8 @@ pub struct AgentPreset {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<String>,
 }
 
 // --------------------------------------------------------------- process.yml

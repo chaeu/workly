@@ -1285,7 +1285,13 @@ fn codex_start_script_runs_with_quoted_paths() {
         fs::set_permissions(dir.join("codex"), fs::Permissions::from_mode(0o755)).unwrap();
     };
     let run = |path: &str, home: &Path| Command::new("/bin/sh").arg(&script).env("PATH", path).env("HOME", home).output().unwrap();
-    let expected = format!("[-m]\n[gpt-5]\n[-c]\n[model_reasoning_effort=high]\n[{prompt}]\n{}\n{}|codex\n", repo.display(), ws.root().display());
+    let dirs = |w: &Workspace| format!("[--add-dir]\n[{0}/projects/website-relaunch]\n[--add-dir]\n[{0}/.workly]\n", w.root().display());
+    let expected = format!(
+        "[-m]\n[gpt-5]\n[-c]\n[model_reasoning_effort=high]\n[-s]\n[workspace-write]\n{}[{prompt}]\n{}\n{}|codex\n",
+        dirs(&ws),
+        repo.display(),
+        ws.root().display()
+    );
 
     // From PATH.
     let bin = dir.path().join("bin");
@@ -1310,7 +1316,16 @@ fn codex_start_script_runs_with_quoted_paths() {
     let ws = Workspace::open(&root).unwrap();
     ws.write_codex_start("WR-5", prompt).unwrap();
     let out = run(&format!("{}:/usr/bin:/bin", bin.display()), &empty);
-    assert!(String::from_utf8_lossy(&out.stdout).starts_with(&format!("[{prompt}]\n")));
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with(&format!("[-s]\n[workspace-write]\n{}[{prompt}]\n", dirs(&ws))));
+    // Permissions (B11): auto never asks, full drops the sandbox; both keep the extra dirs.
+    for (level, flags) in [("auto", "[-s]\n[workspace-write]\n[-a]\n[never]\n"), ("full", "[--dangerously-bypass-approvals-and-sandbox]\n")] {
+        edit("projects/website-relaunch/tasks/WR-5-navigation.md", "  active: null\n", &format!("  permissions: {level}\n  active: null\n"));
+        let ws = Workspace::open(&root).unwrap();
+        ws.write_codex_start("WR-5", prompt).unwrap();
+        let out = run(&format!("{}:/usr/bin:/bin", bin.display()), &empty);
+        assert!(String::from_utf8_lossy(&out.stdout).starts_with(&format!("{flags}{}[{prompt}]\n", dirs(&ws))), "{level}");
+        edit("projects/website-relaunch/tasks/WR-5-navigation.md", &format!("  permissions: {level}\n"), "");
+    }
     assert!(matches!(ws.write_codex_start("NA-1", prompt), Err(Error::Invalid(_))));
 }
 
@@ -1593,7 +1608,7 @@ fn create_full_task_writes_once() {
 }
 
 fn preset(name: &str, runner: &str, model: Option<&str>, effort: Option<&str>) -> workly_core::model::AgentPreset {
-    workly_core::model::AgentPreset { name: name.into(), runner: runner.into(), model: model.map(Into::into), effort: effort.map(Into::into) }
+    workly_core::model::AgentPreset { name: name.into(), runner: runner.into(), model: model.map(Into::into), effort: effort.map(Into::into), permissions: None }
 }
 
 #[test]
@@ -1640,6 +1655,7 @@ fn set_agents_rewrites_only_the_agents_block() {
         vec![preset("", "codex", None, None)],
         vec![preset("A", "codex", None, None), preset("A", "copilot", None, None)],
         vec![preset("A", "claude-code", None, None)],
+        vec![workly_core::model::AgentPreset { permissions: Some("yolo".into()), ..preset("A", "codex", None, None) }],
     ] {
         assert!(matches!(ws.set_agents(&bad, "app"), Err(Error::Invalid(_))));
     }
@@ -1655,7 +1671,10 @@ fn agent_choice_and_set_task_agent() {
     let deep = ws.config.agents[1].clone();
     ws.set_task_agent("WR-5", Some(&deep), "app").unwrap();
     assert_eq!(ws.agent_choice("WR-5"), preset("codex", "codex", Some("gpt-5"), Some("high")));
-    // Default: all three null, back to the first entry.
+    let auto = workly_core::model::AgentPreset { permissions: Some("auto".into()), ..deep.clone() };
+    ws.set_task_agent("WR-5", Some(&auto), "app").unwrap();
+    assert_eq!(ws.agent_choice("WR-5").permissions.as_deref(), Some("auto"));
+    // Default: all null, back to the first entry.
     ws.set_task_agent("WR-5", None, "app").unwrap();
     assert_eq!(ws.agent_choice("WR-5"), ws.config.agents[0]);
     assert!(matches!(ws.set_task_agent("WR-5", Some(&preset("X", "claude-code", None, None)), "app"), Err(Error::Invalid(_))));

@@ -22,6 +22,9 @@ pub const GLOBAL_AGENTS_MD: &str = ".workly/agent/AGENTS.md";
 pub const STARTABLE: [&str; 4] = ["backlog", "todo", "waiting", "review"];
 /// Runners Workly can start (B9); entries of `agents:` use one of these.
 pub const AGENT_RUNNERS: [&str; 2] = ["codex", "copilot"];
+/// Codex permission levels (B11): ask = Codex asks, auto = never asks but stays in the
+/// sandbox, full = no sandbox. Repo, project folder and `.workly/` are writable in all three.
+pub const AGENT_PERMISSIONS: [&str; 3] = ["ask", "auto", "full"];
 
 /// A Markdown file and its content. `path` is relative to the workspace.
 #[derive(Debug, Clone, Serialize)]
@@ -157,6 +160,12 @@ impl Workspace {
         p.project.repos.first().cloned()
     }
 
+    /// The task's project folder in the workspace (docs/, notes/, decisions/).
+    fn task_project_dir(&self, id: &str) -> Result<PathBuf> {
+        let folder = self.index.task(id).and_then(|t| t.project.as_ref()).ok_or_else(|| Error::Invalid(format!("{id} has no project")))?;
+        Ok(self.root.join(folder))
+    }
+
     /// Another task with an active agent in the same first repo: its id and the repo.
     fn agent_in_repo(&self, id: &str) -> Option<(String, String)> {
         let repo = self.task_repo(id)?;
@@ -260,10 +269,12 @@ impl Workspace {
         let mut choice = match (agent.and_then(|a| set(a.runner.as_ref())), self.config.agents.first()) {
             (Some(runner), _) => {
                 let agent = agent.unwrap();
-                AgentPreset { name: runner.clone(), runner, model: set(agent.model.as_ref()), effort: set(agent.effort.as_ref()) }
+                // "auto" is a real permission level, not "unset".
+                let permissions = agent.permissions.clone().filter(|p| !p.is_empty());
+                AgentPreset { name: runner.clone(), runner, model: set(agent.model.as_ref()), effort: set(agent.effort.as_ref()), permissions }
             }
             (None, Some(first)) => first.clone(),
-            (None, None) => AgentPreset { name: String::new(), runner: self.config.agent_defaults.runner.clone(), model: None, effort: None },
+            (None, None) => AgentPreset { name: String::new(), runner: self.config.agent_defaults.runner.clone(), model: None, effort: None, permissions: None },
         };
         if self.config.agents.is_empty() {
             let d = &self.config.agent_defaults;
@@ -273,17 +284,20 @@ impl Workspace {
         choice
     }
 
-    /// Pick an agent for a task: `agent.runner`, `agent.model`, `agent.effort` in one
-    /// write; `None` (the default agent) or a missing model/effort writes `null`.
+    /// Pick an agent for a task: `agent.runner`, `agent.model`, `agent.effort`,
+    /// `agent.permissions` in one write; `None` (the default agent) or a missing field writes `null`.
     pub fn set_task_agent(&mut self, id: &str, agent: Option<&AgentPreset>, actor: &str) -> Result<()> {
         self.status_of(id)?;
         let v = |f: fn(&AgentPreset) -> Option<&String>| agent.and_then(f).map_or(Value::Null, |s| Value::from(s.as_str()));
-        if let Some(a) = agent
-            && !AGENT_RUNNERS.contains(&a.runner.as_str())
-        {
-            return Err(Error::Invalid(format!("runner must be one of {}", AGENT_RUNNERS.join(", "))));
+        if let Some(a) = agent {
+            check_preset(a)?;
         }
-        let changes = [("agent.runner", v(|a| Some(&a.runner))), ("agent.model", v(|a| a.model.as_ref())), ("agent.effort", v(|a| a.effort.as_ref()))];
+        let changes = [
+            ("agent.runner", v(|a| Some(&a.runner))),
+            ("agent.model", v(|a| a.model.as_ref())),
+            ("agent.effort", v(|a| a.effort.as_ref())),
+            ("agent.permissions", v(|a| a.permissions.as_ref())),
+        ];
         self.set_task_fields(id, &changes, actor)
     }
 
@@ -293,7 +307,13 @@ impl Workspace {
     pub fn set_agents(&mut self, agents: &[AgentPreset], actor: &str) -> Result<()> {
         let clean = |v: &Option<String>| v.as_deref().map(str::trim).filter(|v| !v.is_empty()).map(String::from);
         let agents: Vec<AgentPreset> = (agents.iter())
-            .map(|a| AgentPreset { name: a.name.trim().into(), runner: a.runner.clone(), model: clean(&a.model), effort: clean(&a.effort) })
+            .map(|a| AgentPreset {
+                name: a.name.trim().into(),
+                runner: a.runner.clone(),
+                model: clean(&a.model),
+                effort: clean(&a.effort),
+                permissions: clean(&a.permissions),
+            })
             .collect();
         for (i, a) in agents.iter().enumerate() {
             if a.name.is_empty() {
@@ -302,9 +322,7 @@ impl Workspace {
             if agents[..i].iter().any(|b| b.name == a.name) {
                 return Err(Error::Invalid(format!("two agents are called {}", a.name)));
             }
-            if !AGENT_RUNNERS.contains(&a.runner.as_str()) {
-                return Err(Error::Invalid(format!("{}: runner must be one of {}", a.name, AGENT_RUNNERS.join(", "))));
-            }
+            check_preset(a).map_err(|e| Error::Invalid(format!("{}: {e}", a.name)))?;
         }
         let path = self.root.join(".workly/config.yml");
         let src = fs::read_to_string(&path).unwrap_or_default();
@@ -381,7 +399,7 @@ impl Workspace {
 
     /// `prompt.md` plus `.workly/runs/<ID>/start.command` (mode 700): Terminal runs it in the
     /// user's login shell, so `codex` resolves through their own PATH, else the VS Code
-    /// extension's binary. Model and effort from `agent_choice`; unset = no flag.
+    /// extension's binary. Model, effort and permissions from `agent_choice`; unset model/effort = no flag.
     pub fn write_codex_start(&self, id: &str, prompt: &str) -> Result<PathBuf> {
         use std::os::unix::fs::PermissionsExt;
         let repo = self.repo_dir(id)?;
@@ -393,6 +411,15 @@ impl Workspace {
         }
         if let Some(effort) = &choice.effort {
             flags += &format!(" -c {}", shell_quote(&format!("model_reasoning_effort={effort}")));
+        }
+        // B11: the project folder (notes, decisions) and .workly/ (wly writes there) are writable too.
+        match choice.permissions.as_deref() {
+            Some("full") => flags += " --dangerously-bypass-approvals-and-sandbox",
+            Some("auto") => flags += " -s workspace-write -a never",
+            _ => flags += " -s workspace-write",
+        }
+        for dir in [self.task_project_dir(id)?, self.root.join(".workly")] {
+            flags += &format!(" --add-dir {}", shell_quote(&dir.to_string_lossy()));
         }
         let q = |p: &std::path::Path| shell_quote(&p.to_string_lossy());
         let script = format!(
@@ -444,4 +471,15 @@ mod tests {
             assert!(check_name(bad).is_err(), "{bad}");
         }
     }
+}
+
+/// Runner and permissions of an `agents` entry or a task's pick.
+fn check_preset(a: &AgentPreset) -> Result<()> {
+    if !AGENT_RUNNERS.contains(&a.runner.as_str()) {
+        return Err(Error::Invalid(format!("runner must be one of {}", AGENT_RUNNERS.join(", "))));
+    }
+    if a.permissions.as_deref().is_some_and(|p| !AGENT_PERMISSIONS.contains(&p)) {
+        return Err(Error::Invalid(format!("permissions must be one of {}", AGENT_PERMISSIONS.join(", "))));
+    }
+    Ok(())
 }

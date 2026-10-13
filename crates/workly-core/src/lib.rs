@@ -91,10 +91,11 @@ pub struct NewTask {
     pub description: String,
     /// One criterion per entry, written as `- [ ] <text>`.
     pub acceptance: Vec<String>,
-    /// `agent.runner`, `agent.model`, `agent.effort`; missing = not written.
+    /// `agent.runner`, `agent.model`, `agent.effort`, `agent.permissions`; missing = not written.
     pub runner: Option<String>,
     pub model: Option<String>,
     pub effort: Option<String>,
+    pub permissions: Option<String>,
 }
 
 impl NewTask {
@@ -485,7 +486,7 @@ impl Workspace {
             fields.push(("tags", Value::from(new.tags.clone())));
         }
         fields.extend(new.parent.as_ref().map(|p| ("parent", Value::from(p.as_str()))));
-        for (field, v) in [("agent.runner", &new.runner), ("agent.model", &new.model), ("agent.effort", &new.effort)] {
+        for (field, v) in [("agent.runner", &new.runner), ("agent.model", &new.model), ("agent.effort", &new.effort), ("agent.permissions", &new.permissions)] {
             fields.extend(v.as_ref().map(|v| (field, Value::from(v.as_str()))));
         }
         for (field, value) in fields {
