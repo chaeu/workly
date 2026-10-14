@@ -11,6 +11,7 @@ use tauri_plugin_window_state::StateFlags;
 use workly_core::agent::{AgentContext, RunEntry};
 use workly_core::backup::{self, BackupInfo};
 use workly_core::changes::FileChange;
+use workly_core::feed::FeedEvent;
 use workly_core::frontmatter::AcceptanceItem;
 use workly_core::history::PhaseSpan;
 use workly_core::model::{Config, Process};
@@ -77,6 +78,8 @@ struct Snapshot {
     missing_repos: Vec<MissingRepo>,
     /// Last activity per task with an active agent (run log, else agent.since).
     agent_activity: BTreeMap<String, String>,
+    /// Tasks whose active agent stopped with a BLOCKED note: the note, by id.
+    agent_blocked: BTreeMap<String, String>,
     #[serde(flatten)]
     index: Index,
 }
@@ -87,7 +90,8 @@ fn get_index(state: State<AppState>) -> Result<Snapshot, String> {
         let root = ws.root().display().to_string();
         let missing_repos = ws.missing_repos();
         let agent_activity = ws.agent_activity();
-        Ok(Snapshot { root, config: ws.config.clone(), process: ws.process.clone(), missing_repos, agent_activity, index: ws.index.clone() })
+        let agent_blocked = ws.agent_blocked();
+        Ok(Snapshot { root, config: ws.config.clone(), process: ws.process.clone(), missing_repos, agent_activity, agent_blocked, index: ws.index.clone() })
     })
 }
 
@@ -264,6 +268,67 @@ fn run_log(state: State<AppState>, id: String) -> Result<Vec<RunEntry>, String> 
 }
 
 #[tauri::command]
+fn agent_feed(state: State<AppState>) -> Result<Vec<FeedEvent>, String> {
+    with_ws(&state, |ws| Ok(ws.agent_feed()))
+}
+
+#[derive(Serialize)]
+struct Tool {
+    path: String,
+    version: Option<String>,
+}
+
+/// Agents → Setup: what a start needs on this Mac, and the global rules next to the built-in ones.
+#[derive(Serialize)]
+struct AgentChecks {
+    codex: Option<Tool>,
+    vscode: Option<Tool>,
+    /// missing | builtin | custom
+    rules: &'static str,
+    builtin_rules: &'static str,
+}
+
+/// Off the UI thread: Spotlight and `codex --version` take a moment.
+#[tauri::command]
+async fn agent_checks(state: State<'_, AppState>) -> Result<AgentChecks, String> {
+    let rules = with_ws(&state, |ws| Ok(ws.global_rules()))?;
+    let job = move || AgentChecks {
+        codex: codex_bin().map(|p| Tool { version: version_line(&p), path: settings::tilde(&p) }),
+        vscode: vscode_app().ok().map(|(v, app)| Tool {
+            path: settings::tilde(&app),
+            version: Some(v.iter().map(u32::to_string).collect::<Vec<_>>().join(".")),
+        }),
+        rules,
+        builtin_rules: workly_core::agent::builtin_rules(),
+    };
+    tauri::async_runtime::spawn_blocking(job).await.map_err(|e| e.to_string())
+}
+
+/// Where start.command will most likely find `codex`. The script itself asks the login shell.
+// ponytail: fixed places, no shell (an interactive shell can hang); add a place when a setup misses.
+fn codex_bin() -> Option<std::path::PathBuf> {
+    let home = expand_home("~");
+    let fixed = [".local/bin/codex", ".cargo/bin/codex", ".npm-global/bin/codex", ".bun/bin/codex"].map(|p| home.join(p));
+    let system = ["/opt/homebrew/bin/codex", "/usr/local/bin/codex"].map(std::path::PathBuf::from);
+    let newest = |dir: std::path::PathBuf, tail: &str| {
+        let mut found: Vec<_> = std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path().join(tail)).filter(|p| p.is_file()).collect();
+        found.sort_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
+        found.pop()
+    };
+    (fixed.into_iter().chain(system))
+        .find(|p| p.is_file())
+        .or_else(|| newest(home.join(".nvm/versions/node"), "bin/codex"))
+        .or_else(|| newest(home.join(".vscode/extensions"), "bin/macos-aarch64/codex").filter(|p| p.to_string_lossy().contains("openai.chatgpt-")))
+}
+
+/// First line of `<bin> --version`, None when it does not run (e.g. a node script without node on the app's PATH).
+fn version_line(bin: &Path) -> Option<String> {
+    let out = Command::new(bin).arg("--version").stdin(std::process::Stdio::null()).output().ok()?;
+    let line = String::from_utf8_lossy(&out.stdout).lines().next()?.trim().to_string();
+    (out.status.success() && !line.is_empty()).then_some(line)
+}
+
+#[tauri::command]
 fn set_agents(app: AppHandle, state: State<AppState>, agents: Vec<workly_core::model::AgentPreset>) -> Result<(), String> {
     changed(&app, with_ws(&state, |ws| ws.set_agents(&agents, ACTOR)))
 }
@@ -437,9 +502,14 @@ async fn launch_agent(state: State<'_, AppState>, id: String, runner: String, pr
     tauri::async_runtime::spawn_blocking(job).await.map_err(|e| e.to_string())?
 }
 
-/// `code` of the newest VS Code ≥ 1.98 (for `code chat`): /Applications first, then
-/// Spotlight by bundle id. Never PATH: an app started from Finder does not get the user's.
+/// `code` of the newest VS Code ≥ 1.98 (for `code chat`).
 fn vscode_cli() -> Result<std::path::PathBuf, String> {
+    vscode_app().map(|(_, app)| app.join("Contents/Resources/app/bin/code"))
+}
+
+/// Newest VS Code ≥ 1.98 with its `code` CLI, as (version, app): /Applications first, then
+/// Spotlight by bundle id. Never PATH: an app started from Finder does not get the user's.
+fn vscode_app() -> Result<(Vec<u32>, std::path::PathBuf), String> {
     let mut apps = vec![std::path::PathBuf::from("/Applications/Visual Studio Code.app")];
     if let Ok(out) = Command::new("/usr/bin/mdfind").arg(format!("kMDItemCFBundleIdentifier == '{VSCODE}'")).output() {
         apps.extend(String::from_utf8_lossy(&out.stdout).lines().map(std::path::PathBuf::from));
@@ -450,10 +520,9 @@ fn vscode_cli() -> Result<std::path::PathBuf, String> {
         String::from_utf8_lossy(&out.stdout).trim().split('.').map(|n| n.parse().ok()).collect()
     };
     (apps.iter())
-        .map(|app| (version(app), app.join("Contents/Resources/app/bin/code")))
-        .filter(|(v, code)| v.as_ref().is_some_and(|v| v[..] >= [1, 98][..]) && code.is_file())
+        .filter(|app| app.join("Contents/Resources/app/bin/code").is_file())
+        .filter_map(|app| Some((version(app).filter(|v| v[..] >= [1, 98][..])?, app.clone())))
         .max_by(|a, b| a.0.cmp(&b.0))
-        .map(|(_, code)| code)
         .ok_or_else(|| "VS Code 1.98 or newer not found".into())
 }
 
@@ -699,6 +768,8 @@ pub fn run() {
             usecase_history,
             agent_context,
             run_log,
+            agent_feed,
+            agent_checks,
             clear_agent,
             set_agents,
             set_task_agent,
