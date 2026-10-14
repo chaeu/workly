@@ -90,6 +90,25 @@ export function agentBadge(t: TaskEntry) {
   return `${agentName(a.active)} working · ${took}`;
 }
 
+/** A BLOCKED note as its reason: "BLOCKED: no repo" -> "No repo". */
+export const blockedReason = (note: string) => note.replace(/^\s*BLOCKED:?\s*/, "").replace(/^./, (c) => c.toUpperCase());
+
+/**
+ * What the Agents view asks of the user: blocked agents, agent work in review (oldest first),
+ * and agents that stopped reporting. `count` is the number on the sidebar item.
+ */
+export function agentInbox() {
+  const tasks = workspace.index?.tasks ?? [];
+  const blockedNote = workspace.index?.agent_blocked ?? {};
+  const blocked = tasks.filter((t) => t.agent?.active && blockedNote[t.id]);
+  const review = tasks
+    .filter((t) => t.status === "review" && (t.agent?.last_run || t.agent?.changes?.length || t.agent?.commit))
+    .sort((a, b) => (a.agent?.last_run ?? "").localeCompare(b.agent?.last_run ?? ""));
+  const running = tasks.filter((t) => t.agent?.active && !blockedNote[t.id]);
+  const stale = running.filter(agentStale);
+  return { blocked, review, running, stale, count: blocked.length + review.length + stale.length };
+}
+
 const unset = (v: string | null | undefined) => (v && v !== "auto" ? v : null);
 /** The Agent menu from config.yml; the first entry is the default. */
 export const agentList = (): AgentPreset[] => workspace.index?.config.agents ?? [];

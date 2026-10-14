@@ -140,6 +140,8 @@ export type Snapshot = {
   };
   /** Last activity per task with an active agent: newest run-log entry of the run, else agent.since. */
   agent_activity: Record<string, string>;
+  /** Tasks whose active agent stopped with a BLOCKED note: the note, by id. */
+  agent_blocked: Record<string, string>;
   process: Process | null;
   /** Repos of live projects that are not folders on this Mac. */
   missing_repos: { key: string; repo: string }[];
@@ -175,6 +177,15 @@ export type Settings = {
 export type AgentFile = { path: string; content: string };
 /** One line of `.workly/runs/<ID>/log.jsonl`. */
 export type RunEntry = { ts: string; agent: string; run: string | null; text: string };
+/** One event of the Agents timeline (core feed.rs), newest first. */
+export type FeedEvent = { ts: string; kind: "start" | "note" | "blocked" | "review" | "commit"; agent: string; id: string; text: string };
+/** Agents → Setup: what a start needs on this Mac. */
+export type AgentChecks = {
+  codex: { path: string; version: string | null } | null;
+  vscode: { path: string; version: string | null } | null;
+  rules: "missing" | "builtin" | "custom";
+  builtin_rules: string;
+};
 /** One path of agent.changes as it is now; `drifted` = edited after the review. */
 export type FileChange = { path: string; kind: "new" | "modified" | "deleted" | "clean"; drifted: boolean };
 export type Skill = { name: string; description: string; path: string };
@@ -343,6 +354,8 @@ export const agentsEnabled = () => workspace.settings?.agents_enabled === true;
 export const agentContext = (key: string | null) => invoke<AgentContext>("agent_context", { key });
 export const createAgentsMd = (key: string) => run<string>("create_agents_md", { key });
 export const runLog = (id: string) => invoke<RunEntry[]>("run_log", { id });
+export const agentFeed = () => invoke<FeedEvent[]>("agent_feed");
+export const agentChecks = () => invoke<AgentChecks>("agent_checks");
 export const clearAgent = (id: string) => run("clear_agent", { id });
 /** The whole agents list of config.yml; throws so Settings can keep the edit and show why. */
 export const setAgents = (agents: AgentPreset[]) => invoke("set_agents", { agents: $state.snapshot(agents) });

@@ -14,7 +14,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import QuickAdd from "$lib/components/QuickAdd.svelte";
   import Shortcuts from "$lib/components/Shortcuts.svelte";
-  import { isTyping, openQuickAdd, quickAdd } from "$lib/tasks.svelte";
+  import { agentInbox, isTyping, openQuickAdd, quickAdd, startClock } from "$lib/tasks.svelte";
   import {
     workspace,
     startWorkspace,
@@ -42,6 +42,12 @@
   ];
   // Agent features off: no Agents item and no ⌘4.
   const views = $derived(ALL_VIEWS.filter((v) => v.href !== "/agents" || agentsEnabled()));
+  /** What waits for the user in Agents: blocked, in review, inactive. */
+  const agentCount = $derived(agentsEnabled() ? agentInbox().count : 0);
+  // "Agent inactive?" counts too, so the minute clock runs while agent features are on.
+  $effect(() => {
+    if (agentsEnabled()) startClock();
+  });
 
   const theme = $derived(workspace.settings?.theme ?? "system");
   const sidebarProjects = $derived(workspace.index?.projects.filter(inDailyWork) ?? []);
@@ -155,7 +161,8 @@
         <a
           class="w-nav-item"
           href={view.href}
-          aria-current={page.url.pathname === view.href ? "page" : undefined}>{view.label}</a
+          aria-current={page.url.pathname === view.href ? "page" : undefined}
+          >{view.label}{#if view.href === "/agents" && agentCount}<span class="w-count w-mono">{agentCount}</span>{/if}</a
         >
       {/each}
     </div>
