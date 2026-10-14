@@ -108,7 +108,7 @@
 
 /* ---------- Focus strip ---------- */
 /* One row with a fixed height, so the board below starts at the same y in every view. */
-.w-focus, .w-bar { box-sizing: border-box; height: var(--w-bar-h); background: var(--w-surface); border-radius: var(--w-r-lg); box-shadow: var(--w-shadow-panel); padding: 0 18px; display: flex; align-items: center; gap: 16px; }
+.w-focus, .w-bar { flex: none; box-sizing: border-box; height: var(--w-bar-h); background: var(--w-surface); border-radius: var(--w-r-lg); box-shadow: var(--w-shadow-panel); padding: 0 18px; display: flex; align-items: center; gap: 16px; }
 .w-focus > .w-caps { flex: none; }
 .w-focus > .w-btn--quiet { flex: none; margin-left: auto; padding: 4px 8px; font-size: 12.5px; }
 .w-focus-list { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
