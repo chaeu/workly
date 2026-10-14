@@ -74,6 +74,11 @@ pub fn check_name(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// The global rules a new workspace gets (= the fixture's `.workly/agent/AGENTS.md`).
+pub fn builtin_rules() -> &'static str {
+    crate::project::WORKSPACE_FILES.iter().find(|(p, _)| *p == GLOBAL_AGENTS_MD).map_or("", |(_, src)| src)
+}
+
 /// One shell word in single quotes (`'` becomes `'\''`): every path written into a script goes through here.
 pub fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', r"'\''"))
@@ -258,6 +263,25 @@ impl Workspace {
         (self.index.tasks.iter())
             .filter_map(|t| Some((t.task.id.clone(), self.last_activity(&t.task.id).ok()??)))
             .collect()
+    }
+
+    /// Tasks whose active agent stopped with a `BLOCKED` note (the last note of the current run), by id.
+    pub fn agent_blocked(&self) -> BTreeMap<String, String> {
+        let blocked = |id: &str| {
+            let run = self.current_run(id)?;
+            let last = self.run_log(id).ok()?.into_iter().rev().find(|e| e.run.as_ref() == Some(&run))?;
+            crate::feed::is_blocked(&last.text).then_some(last.text)
+        };
+        (self.index.tasks.iter()).filter_map(|t| Some((t.task.id.clone(), blocked(&t.task.id)?))).collect()
+    }
+
+    /// The global rules next to the built-in ones: `missing`, `builtin` (same text) or `custom`.
+    pub fn global_rules(&self) -> &'static str {
+        match fs::read_to_string(self.root.join(GLOBAL_AGENTS_MD)) {
+            Err(_) => "missing",
+            Ok(src) if src.replace("\r\n", "\n").trim_end() == builtin_rules().trim_end() => "builtin",
+            Ok(_) => "custom",
+        }
     }
 
     /// What starts for a task: its own agent fields when it names a runner, else the

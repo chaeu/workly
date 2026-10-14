@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod backup;
 pub mod changes;
+pub mod feed;
 pub mod frontmatter;
 pub mod history;
 pub mod ids;

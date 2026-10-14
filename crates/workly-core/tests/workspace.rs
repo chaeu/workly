@@ -1690,3 +1690,62 @@ fn agent_choice_and_set_task_agent() {
     let fence = before.find("done_at: null\n").unwrap() + "done_at: null\n".len();
     assert_eq!(after, format!("{}agent:\n  runner: codex\n  model: gpt-5\n  effort: high\n{}", &before[..fence], &before[fence..]));
 }
+
+#[test]
+fn agent_feed_and_blocked() {
+    let (_tmp, root) = fixture();
+    let mut ws = Workspace::open(&root).unwrap();
+    ws.clear_agent("WR-3", "app").unwrap(); // WR-3's agent works in the same repo
+    ws.start_task("WR-8", Some("codex"), "agent:codex").unwrap();
+    ws.add_run_note("WR-8", "Migrated 12 pages", "agent:codex").unwrap();
+    assert!(ws.agent_blocked().is_empty());
+    ws.add_run_note("WR-8", "BLOCKED: no Q3 figures", "agent:codex").unwrap();
+    assert_eq!(ws.agent_blocked().get("WR-8").map(String::as_str), Some("BLOCKED: no Q3 figures"));
+    ws.review_task("WR-8", None, Some("Done"), "agent:codex").unwrap();
+    assert!(ws.agent_blocked().is_empty(), "blocked only while the agent is active");
+
+    // A commit counts; the app moving a card to review and lines older than 30 days do not.
+    let now = chrono::Utc::now();
+    let ts = now.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let old = (now - chrono::Duration::days(40)).format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let lines = [
+        json!({"ts": ts, "actor": "app", "kind": "commit", "id": "WR-8", "field": null, "from": null, "to": {"sha": "a3f9c1e0b2", "repo": "~/repos/website", "files": 3}}),
+        json!({"ts": ts, "actor": "app", "kind": "task.update", "id": "WR-5", "field": "status", "from": "doing", "to": "review"}),
+        json!({"ts": old, "actor": "agent:codex", "kind": "task.update", "id": "WR-5", "field": "agent.active", "from": null, "to": "codex"}),
+    ];
+    for (l, month) in lines.iter().zip([&ts[..7], &ts[..7], &old[..7]]) {
+        let file = root.join(format!(".workly/log/{month}.jsonl"));
+        let mut src = fs::read_to_string(&file).unwrap_or_default();
+        src += &format!("{l}\n");
+        fs::write(file, src).unwrap();
+    }
+
+    let feed = ws.agent_feed();
+    assert!(feed.windows(2).all(|w| w[0].ts >= w[1].ts), "newest first");
+    assert!(feed.iter().all(|e| e.id != "WR-5"), "{feed:?}");
+    let mut wr8: Vec<(&str, &str, &str)> = feed.iter().filter(|e| e.id == "WR-8").map(|e| (e.kind, e.agent.as_str(), e.text.as_str())).collect();
+    wr8.sort();
+    assert_eq!(
+        wr8,
+        [
+            ("blocked", "codex", "BLOCKED: no Q3 figures"),
+            ("commit", "me", "a3f9c1e · 3 files"),
+            ("note", "codex", "Migrated 12 pages"),
+            ("review", "codex", ""),
+            ("start", "codex", ""),
+        ]
+    );
+}
+
+#[test]
+fn global_rules_against_the_built_in_ones() {
+    let (_tmp, root) = fixture();
+    let ws = Workspace::open(&root).unwrap();
+    let file = root.join(".workly/agent/AGENTS.md");
+    assert_eq!(ws.global_rules(), "builtin");
+    assert_eq!(workly_core::agent::builtin_rules(), fs::read_to_string(&file).unwrap());
+    fs::write(&file, "# My rules\n").unwrap();
+    assert_eq!(ws.global_rules(), "custom");
+    fs::remove_file(&file).unwrap();
+    assert_eq!(ws.global_rules(), "missing");
+}
