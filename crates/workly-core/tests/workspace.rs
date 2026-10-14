@@ -1087,7 +1087,8 @@ fn review_summary_is_one_updates_item() {
     ws.start_task("WR-8", None, "agent:codex").unwrap();
     let before = fs::read_to_string(root.join(WR8)).unwrap();
     let n = log_lines(&root).len();
-    let summary = "Migrated 12 pages\n\n   Verify: open /blog  \nOpen: legacy URLs";
+    // `\n` as an agent passes it through the shell: a literal backslash-n.
+    let summary = "Migrated 12 pages\n\n   Verify: open /blog  \\nOpen: legacy URLs";
     ws.review_task("WR-8", None, Some(summary), "agent:codex").unwrap();
     let after = fs::read_to_string(root.join(WR8)).unwrap();
     let stamp = after.split("## Updates\n- ").nth(1).unwrap().split(" · ").next().unwrap();

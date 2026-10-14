@@ -200,6 +200,8 @@ impl Workspace {
         }
         let lines: Option<String> = match summary {
             Some(text) => {
+                // A shell keeps `\n` inside double quotes as it is; an agent means a line break.
+                let text = text.replace("\\n", "\n");
                 let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
                 if lines.is_empty() {
                     return Err(Error::Invalid("a summary needs text".into()));

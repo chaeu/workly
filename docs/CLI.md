@@ -63,7 +63,7 @@ The run log is not in `.workly/log/` and not in the workspace backup (`.gitignor
   Open: dark mode colours
 ```
 
-The first line follows the stamp, further lines are continuation lines indented by two spaces. Lines are trimmed, blank lines dropped; an empty summary is exit 1. The log gets one `task.summary` line besides the field changes. `--commit` stays for humans.
+The first line follows the stamp, further lines are continuation lines indented by two spaces. A literal `\n` (what a shell passes for `"a\nb"`) is a line break too. Lines are trimmed, blank lines dropped; an empty summary is exit 1. The log gets one `task.summary` line besides the field changes. `--commit` stays for humans.
 
 ### Changed files (baseline and review)
 
