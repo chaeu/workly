@@ -8,7 +8,7 @@
 cargo install --path crates/wly      # -> ~/.cargo/bin/wly
 ```
 
-or in the app: Settings → Agent features → **Install CLI**. That links `~/.local/bin/wly` to the app binary (no sudo), which runs the CLI when it is started as `wly`. An existing `~/.local/bin/wly` that is not a link is never replaced.
+or in the app: Agents → Setup → **Install CLI** (also under Problems while it is missing). That links `~/.local/bin/wly` to the app binary (no sudo), which runs the CLI when it is started as `wly`. An existing `~/.local/bin/wly` that is not a link is never replaced.
 
 ## Global options
 
