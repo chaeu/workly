@@ -1,6 +1,7 @@
 <script lang="ts">
   import {
     workspace,
+    changeDiff,
     clearAgent,
     commitTask,
     expandHome,
@@ -13,6 +14,7 @@
     type FileChange,
     type TaskEntry,
   } from "$lib/stores/workspace.svelte";
+  import DiffView from "$lib/components/DiffView.svelte";
   import { agentBadge, agentInbox, blockedReason, agentStale, isoDate, projectOf, shortDate, today, updatesOf } from "$lib/tasks.svelte";
 
   let { onopen }: { onopen: (id: string) => void } = $props();
@@ -50,14 +52,17 @@
     return isoDate(d) === today() ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : shortDate(isoDate(d));
   }
 
-  // Expanded review rows: the summary from ## Updates and the files as they are now.
+  // Expanded review rows: the summary from ## Updates, the files as they are now and their diffs, like a pull request.
   let open = $state<Record<string, boolean>>({});
-  let detail = $state<Record<string, { summary: string; files: FileChange[] }>>({});
+  let detail = $state<Record<string, { summary: string; files: FileChange[]; diffs: Record<string, string> }>>({});
   async function loadDetail(t: TaskEntry) {
     const [body, files] = await Promise.all([readMarkdown(t.path).catch(() => ""), t.agent?.changes?.length ? taskChanges(t.id).catch(() => []) : []]);
     const summary = updatesOf(body).at(-1)?.text ?? "";
-    detail[t.id] = { summary, files };
+    const diffs = await Promise.all(files.map((f) => changeDiff(t.id, f.path).then((d) => d || "No difference to the last commit", String)));
+    detail[t.id] = { summary, files, diffs: Object.fromEntries(files.map((f, i) => [f.path, diffs[i]])) };
   }
+  /** Collapsed file diffs, by `<id> <path>`. */
+  let shut = $state<Record<string, boolean>>({});
   function toggle(t: TaskEntry) {
     open[t.id] = !open[t.id];
     if (open[t.id]) loadDetail(t);
@@ -175,16 +180,19 @@
             {#if open[t.id]}
               <div class="ndetail">
                 {#if d?.summary}<p class="summary">{d.summary}</p>{/if}
-                {#if d?.files.length}
-                  <div class="files">
-                    {#each d.files as f (f.path)}
-                      <div class="file">
-                        <b class="k {f.kind}">{KIND[f.kind]}</b><span class="w-mono path">{f.path}</span>{#if f.drifted}<span class="drift">edited</span>{/if}
-                      </div>
-                    {/each}
+                {#each d?.files ?? [] as f (f.path)}
+                  {@const key = `${t.id} ${f.path}`}
+                  <div class="file">
+                    <button type="button" class="fhead" aria-expanded={!shut[key]} onclick={() => (shut[key] = !shut[key])}>
+                      <b class="k {f.kind}">{KIND[f.kind]}</b><span class="w-mono path">{f.path}</span>{#if f.drifted}<span class="drift">edited</span>{/if}
+                      <svg class="fchev" width="12" height="12" viewBox="0 0 14 14" aria-hidden="true"
+                        ><path d={shut[key] ? "M3 5l4 4 4-4" : "M3 9l4-4 4 4"} fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg
+                      >
+                    </button>
+                    {#if !shut[key] && d!.diffs[f.path]}<DiffView text={d!.diffs[f.path]} max="none" />{/if}
                   </div>
-                {/if}
-                <div><button type="button" class="w-btn w-btn--quiet sm" onclick={() => onopen(t.id)}>Open task · diffs</button></div>
+                {/each}
+                <div><button type="button" class="w-btn w-btn--quiet sm" onclick={() => onopen(t.id)}>Open task</button></div>
               </div>
             {/if}
           </article>
@@ -394,23 +402,39 @@
   .summary {
     margin: 0;
   }
-  .files {
+  .file {
     display: flex;
     flex-direction: column;
-    max-width: 720px;
+    gap: var(--w-s-1);
+    padding: var(--w-s-1);
     background: var(--w-surface);
     border-radius: var(--w-r-md);
     box-shadow: inset 0 0 0 1px var(--w-line);
+    min-width: 0;
   }
-  .file {
+  .fhead {
     display: flex;
     align-items: center;
     gap: var(--w-s-2);
-    padding: 6px 10px;
-    border-top: 1px solid var(--w-line);
+    padding: 4px 6px;
+    border: 0;
+    border-radius: var(--w-r-sm);
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
   }
-  .file:first-child {
-    border-top: 0;
+  .fhead:hover {
+    background: var(--w-sunk);
+  }
+  .fchev {
+    flex: none;
+    margin-left: auto;
+    color: var(--w-muted);
+  }
+  .drift + .fchev {
+    margin-left: 0;
   }
   .k {
     width: 12px;

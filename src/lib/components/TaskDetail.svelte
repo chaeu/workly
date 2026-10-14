@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ask } from "@tauri-apps/plugin-dialog";
+  import DiffView from "$lib/components/DiffView.svelte";
   import { grow } from "$lib/grow";
   import { tip } from "$lib/tip";
   import { renderMarkdown } from "$lib/markdown";
@@ -120,8 +121,6 @@
     diffs[path] = await changeDiff(id, path).then((d) => d || "No difference to the last commit", String);
   }
   const toggleDiff = (path: string) => (path in diffs ? delete diffs[path] : loadDiff(path));
-  const lineClass = (l: string) =>
-    /^(\+\+\+|---|diff |index |new file|deleted file)/.test(l) ? "meta" : l.startsWith("@@") ? "hunk" : l[0] === "+" ? "add" : l[0] === "-" ? "del" : "";
   /** Edited after the review: show those diffs and ask first. Commit & Done then sets done. */
   async function commit(done: boolean) {
     if (!t || committing) return;
@@ -610,7 +609,7 @@
                 {#if f.drifted}<span class="t-drift" use:tip={"Edited after the review: Commit shows the diff and asks first"}>edited</span>{/if}
               </button>
               {#if f.path in diffs}
-                <pre class="t-diff">{#each diffs[f.path].split("\n") as l, i (i)}<span class={lineClass(l)}>{l}</span>{/each}</pre>
+                <DiffView text={diffs[f.path]} />
               {/if}
             {/each}
             {#if t.status === "review" && !t.agent?.commit}
@@ -1129,12 +1128,10 @@
     width: 1.2em;
     color: var(--w-muted);
   }
-  .t-kind--new,
-  .t-diff .add {
+  .t-kind--new {
     color: var(--w-ok);
   }
-  .t-kind--deleted,
-  .t-diff .del {
+  .t-kind--deleted {
     color: var(--w-danger);
   }
   .t-drift,
@@ -1145,29 +1142,6 @@
   .t-drift {
     flex: none;
     margin-left: auto;
-  }
-  .t-diff {
-    margin: 0;
-    max-height: 320px;
-    overflow: auto;
-    border-radius: var(--w-r-sm);
-    padding: var(--w-s-2);
-    background: var(--w-sunk);
-    font-family: var(--w-font-mono);
-    font-size: var(--w-fs-micro);
-    user-select: text;
-    -webkit-user-select: text;
-  }
-  .t-diff span {
-    display: block;
-    min-height: 1lh;
-    white-space: pre;
-  }
-  .t-diff .hunk {
-    color: var(--w-info);
-  }
-  .t-diff .meta {
-    color: var(--w-muted);
   }
   .t-more {
     justify-self: start;
