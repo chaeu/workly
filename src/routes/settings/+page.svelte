@@ -26,6 +26,20 @@
   // The open workspace can differ from `active` while WORKLY_WORKSPACE is set (dev).
   const openRoot = $derived(workspace.index?.root ?? null);
 
+  let newApp = $state("");
+  const apps = $derived(settings?.open_with ?? []);
+  function addApp(e: SubmitEvent) {
+    e.preventDefault();
+    const name = newApp.trim();
+    if (name && !apps.includes(name)) saveSettings({ open_with: [...apps, name] });
+    newApp = "";
+  }
+  function moveApp(i: number, by: number) {
+    const next = [...apps];
+    [next[i], next[i + by]] = [next[i + by], next[i]];
+    saveSettings({ open_with: next });
+  }
+
   async function chooseReposDir() {
     const start = settings?.repos_dir;
     const path = await openDialog({ directory: true, title: "Folder with your repos", defaultPath: start ? expandHome(start) : undefined });
@@ -185,6 +199,29 @@
         <button class="w-btn" onclick={chooseReposDir}>Choose…</button>
       </div>
     </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div class="grow">
+        <h2 class="w-h2">Open files with</h2>
+        <p class="w-sub">Buttons on files and task cards, in this order. Name as in Applications, e.g. Zed.</p>
+      </div>
+      <form class="w-toolbar" onsubmit={addApp}>
+        <input class="app-name" bind:value={newApp} placeholder="App name" aria-label="App name" />
+        <button class="w-btn" disabled={!newApp.trim()}>Add</button>
+      </form>
+    </div>
+    {#each apps as app, i (app)}
+      <div class="row">
+        <span class="name grow">{app}</span>
+        <button class="w-btn w-btn--quiet" aria-label="Move {app} up" disabled={i === 0} onclick={() => moveApp(i, -1)}>↑</button>
+        <button class="w-btn w-btn--quiet" aria-label="Move {app} down" disabled={i === apps.length - 1} onclick={() => moveApp(i, 1)}>↓</button>
+        <button class="w-btn w-btn--quiet" onclick={() => saveSettings({ open_with: apps.filter((a) => a !== app) })}>Remove</button>
+      </div>
+    {:else}
+      <p class="w-sub">No apps. Files open in Finder only.</p>
+    {/each}
   </section>
 
   <section class="panel">
@@ -351,7 +388,8 @@
     border-radius: var(--w-r-md);
     user-select: text;
   }
-  .fte-hours {
+  .fte-hours,
+  .app-name {
     width: 90px;
     box-sizing: border-box;
     border: 1px solid var(--w-line);
@@ -362,8 +400,13 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  .fte-hours:focus {
+  .fte-hours:focus,
+  .app-name:focus {
     border-color: var(--w-accent);
     outline: none;
+  }
+  .app-name {
+    width: 160px;
+    text-align: left;
   }
 </style>

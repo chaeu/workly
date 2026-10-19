@@ -15,8 +15,9 @@
     moveTask,
     setFocus,
     openUrl,
-    openInObsidian,
-    openInVscode,
+    openWith,
+    openWithApps,
+    appLabel,
     openRepo,
     copyText,
     inDailyWork,
@@ -660,8 +661,9 @@
 
     <div class="t-foot">
       <button type="button" class="w-btn w-btn--quiet danger" onclick={remove}>Delete…</button>
-      <button type="button" class="w-btn w-btn--quiet" onclick={() => openInObsidian(t.path)}>Obsidian</button>
-      <button type="button" class="w-btn w-btn--quiet" onclick={() => openInVscode(t.path)}>VS Code</button>
+      {#each openWithApps() as app (app)}
+        <button type="button" class="w-btn w-btn--quiet" onclick={() => openWith(app, t.path)}>{appLabel(app)}</button>
+      {/each}
       <button type="button" class="w-btn w-btn--primary" disabled={!note.trim()} onclick={saveNote}>Save update</button>
     </div>
   </div>

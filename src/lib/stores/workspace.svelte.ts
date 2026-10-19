@@ -163,6 +163,8 @@ export type Settings = {
   active: string | null;
   repos_dir: string | null;
   theme: "system" | "light" | "dark" | null;
+  /** App names for the file buttons; the core fills the default. */
+  open_with: string[];
   focus_hidden?: boolean;
   /** Task board: hide tasks that have sub-tasks. */
   hide_parents?: boolean;
@@ -389,6 +391,10 @@ export const copyText = (text: string) =>
     (e) => ((workspace.error = String(e)), false),
   );
 export const reveal = (path: string) => run("reveal", { path });
+/** Apps for the file buttons; the default only until settings have loaded. */
+export const openWithApps = () => workspace.settings?.open_with ?? ["Obsidian", "Visual Studio Code"];
+export const appLabel = (app: string) => (app === "Visual Studio Code" ? "VS Code" : app);
+export const openWith = (app: string, path: string) => run("open_with", { app, path });
 export const openInObsidian = (path: string) =>
   openUrl(`obsidian://open?path=${encodeURIComponent(`${workspace.index?.root}/${path}`)}`);
 

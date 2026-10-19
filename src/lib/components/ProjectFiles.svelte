@@ -4,8 +4,9 @@
     workspace,
     projectFiles,
     readMarkdown,
-    openInObsidian,
-    openInVscode,
+    openWith,
+    openWithApps,
+    appLabel,
     openRepo,
     openUrl,
     reveal,
@@ -139,8 +140,9 @@
   <section class="preview">
     <div class="preview-head">
       <span class="w-mono path">{shortPath(current)}</span>
-      <button class="w-btn w-btn--quiet" onclick={() => openInObsidian(current)}>Obsidian</button>
-      <button class="w-btn w-btn--quiet" onclick={() => openInVscode(current)}>VS Code</button>
+      {#each openWithApps() as app (app)}
+        <button class="w-btn w-btn--quiet" onclick={() => openWith(app, current)}>{appLabel(app)}</button>
+      {/each}
       <button class="w-btn w-btn--quiet" onclick={() => reveal(current)}>Finder</button>
     </div>
     {#if previewError}
