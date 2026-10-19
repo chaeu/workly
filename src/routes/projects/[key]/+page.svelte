@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
+  import MarkdownEditor from "$lib/components/MarkdownEditor.svelte";
   import ProjectFiles from "$lib/components/ProjectFiles.svelte";
   import ProjectForm from "$lib/components/ProjectForm.svelte";
   import ProcessError from "$lib/components/ProcessError.svelte";
@@ -19,6 +20,7 @@
     readMarkdown,
     reveal,
     moveUseCase,
+    projectTemplate,
   } from "$lib/stores/workspace.svelte";
   import { fmtFte, label, PROCESS, savedFte, type UC } from "$lib/usecases.svelte";
 
@@ -37,6 +39,8 @@
 
   let selected = $state<string | null>(null);
   let editing = $state(false);
+  /** Overview: the _project.md whose description (body) is in the editor; another project shows its text. */
+  let editingDesc = $state<string | null>(null);
 
   // Overview and Use case: body of _project.md, reloaded on every index change so edits in Obsidian show up live.
   const overviewPath = $derived(project ? `${project.path}/_project.md` : "");
@@ -137,7 +141,10 @@
     </header>
     {@render bar()}
     {#if tab === "files"}
-      <ProjectFiles {project} bind:selected />
+      <!-- Fresh per project: an open editor does not carry over. -->
+      {#key project.key}
+        <ProjectFiles {project} bind:selected />
+      {/key}
     {:else if tab === "usecase"}
       {#if proc && !procBroken}
         <!-- No toast here: the new step shows right away. -->
@@ -147,7 +154,14 @@
       {/if}
     {:else}
       <div class="overview">
-        <section class="desc" aria-label="Description">{@render description()}</section>
+        <section class="desc" aria-label="Description">
+          {#if editingDesc === overviewPath}
+            <MarkdownEditor path={overviewPath} onclose={() => (editingDesc = null)} template={projectTemplate} />
+          {:else}
+            <div class="desc-head"><button class="w-btn w-btn--quiet" onclick={() => (editingDesc = overviewPath)}>Edit</button></div>
+            {@render description()}
+          {/if}
+        </section>
 
         <aside class="props" aria-label="Properties">
           <dl>
@@ -238,6 +252,15 @@
   }
   .desc {
     padding: var(--w-s-3) var(--w-s-6) var(--w-s-6);
+  }
+  /* Edit sits top right; the text starts where it did. */
+  .desc-head {
+    float: right;
+    margin-right: calc(-1 * var(--w-s-3));
+  }
+  .desc-head .w-btn {
+    padding: 4px 10px;
+    font-size: var(--w-fs-caption);
   }
   .props {
     padding: var(--w-s-4) var(--w-s-5);
