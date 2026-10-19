@@ -103,6 +103,25 @@
     </div>
 
     <div class="grid">
+      <label for="qa-desc" class="top">Description</label>
+      <textarea id="qa-desc" class="field" bind:value={description} placeholder="What and why, in Markdown" use:grow></textarea>
+
+      <span class="label top" id="qa-acc">Acceptance</span>
+      <div class="crit" role="group" aria-labelledby="qa-acc">
+        {#each criteria as _, i (i)}
+          <label class="field crit-row">
+            <span class="box" aria-hidden="true"></span>
+            <input
+              bind:this={rows[i]}
+              bind:value={criteria[i]}
+              placeholder={i === 0 ? "Done when … (Enter adds the next)" : "Next criterion"}
+              aria-label="Acceptance criterion {i + 1}"
+              onkeydown={(e) => onCriterionKey(e, i)}
+            />
+          </label>
+        {/each}
+      </div>
+
       <label for="qa-project">Project</label>
       <span class="select">
         <select id="qa-project" bind:value={project}>
@@ -129,25 +148,6 @@
 
       <label for="qa-tags">Tags</label>
       <input id="qa-tags" class="field" bind:value={tags} placeholder="frontend, ux" />
-
-      <label for="qa-desc" class="top">Description</label>
-      <textarea id="qa-desc" class="field" bind:value={description} placeholder="What and why, in Markdown" use:grow></textarea>
-
-      <span class="label top" id="qa-acc">Acceptance</span>
-      <div class="crit" role="group" aria-labelledby="qa-acc">
-        {#each criteria as _, i (i)}
-          <label class="field crit-row">
-            <span class="box" aria-hidden="true"></span>
-            <input
-              bind:this={rows[i]}
-              bind:value={criteria[i]}
-              placeholder={i === 0 ? "Done when … (Enter adds the next)" : "Next criterion"}
-              aria-label="Acceptance criterion {i + 1}"
-              onkeydown={(e) => onCriterionKey(e, i)}
-            />
-          </label>
-        {/each}
-      </div>
     </div>
 
     {#if agentsEnabled()}
