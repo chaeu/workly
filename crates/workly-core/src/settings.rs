@@ -10,7 +10,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Settings {
     pub workspaces: Vec<WorkspaceRef>,
@@ -19,9 +19,25 @@ pub struct Settings {
     pub repos_dir: Option<String>,
     /// system | light | dark
     pub theme: Option<String>,
+    /// macOS app names for the file buttons, in button order. "Obsidian" opens via obsidian://.
+    pub open_with: Vec<String>,
     /// Keys from newer app versions survive a save.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
+}
+
+// By hand: `#[serde(default)]` fills a missing `open_with` from here too.
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            workspaces: Vec::new(),
+            active: None,
+            repos_dir: None,
+            theme: None,
+            open_with: vec!["Obsidian".into(), "Visual Studio Code".into()],
+            extra: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -160,6 +176,18 @@ mod tests {
         assert_eq!(back.extra["focus_hidden"], Value::Bool(true));
         fs::write(&file, "{broken").unwrap();
         assert!(Settings::load(&file).is_err());
+    }
+
+    #[test]
+    fn open_with_default_and_custom() {
+        let old: Settings = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert_eq!(old.open_with, ["Obsidian", "Visual Studio Code"]);
+        let custom: Settings = serde_json::from_str(r#"{"open_with":["Zed","Obsidian"]}"#).unwrap();
+        assert_eq!(custom.open_with, ["Zed", "Obsidian"]);
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&custom).unwrap()).unwrap();
+        assert_eq!(back.open_with, ["Zed", "Obsidian"]);
+        let none: Settings = serde_json::from_str(r#"{"open_with":[]}"#).unwrap();
+        assert!(none.open_with.is_empty());
     }
 
     #[test]
