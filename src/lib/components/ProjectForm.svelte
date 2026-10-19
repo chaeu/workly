@@ -256,7 +256,7 @@
           {#each links as l, i (i)}
             <div class="list-row">
               <input class="label" bind:value={l.label} placeholder="Label" aria-label="Link label" />
-              <input class="grow" bind:value={l.url} placeholder="https://" aria-label="Link URL" />
+              <input class="grow" autocapitalize="off" autocorrect="off" spellcheck="false" bind:value={l.url} placeholder="https://" aria-label="Link URL" />
               <button type="button" class="w-btn w-btn--quiet" onclick={() => links.splice(i, 1)}>Remove</button>
             </div>
           {/each}

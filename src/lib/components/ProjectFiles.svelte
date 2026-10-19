@@ -171,8 +171,10 @@
 
 {#snippet addRow(depth: number)}
   <div class="add-row" style:--depth={depth}>
+    <!-- Names stay as typed: no macOS auto-capitalisation or autocorrect. -->
     <input
       class="name"
+      autocapitalize="off" autocorrect="off" spellcheck="false"
       aria-label={adding?.kind === "file" ? "New file name" : "New folder name"}
       placeholder={adding?.kind === "file" ? "File name" : "Folder name"}
       bind:value={addName}

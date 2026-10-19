@@ -141,13 +141,13 @@
       <input id="qa-due" class="field" class:empty={!due} type="date" bind:value={due} />
 
       <label for="qa-parent">Parent</label>
-      <input id="qa-parent" class="field" list="qa-parents" bind:value={parent} placeholder="None – or a task id like WR-12" />
+      <input id="qa-parent" class="field" list="qa-parents" autocapitalize="off" autocorrect="off" spellcheck="false" bind:value={parent} placeholder="None – or a task id like WR-12" />
       <datalist id="qa-parents">
         {#each parents as t (t.id)}<option value={t.id}>{t.title}</option>{/each}
       </datalist>
 
       <label for="qa-tags">Tags</label>
-      <input id="qa-tags" class="field" bind:value={tags} placeholder="frontend, ux" />
+      <input id="qa-tags" class="field" autocapitalize="off" autocorrect="off" spellcheck="false" bind:value={tags} placeholder="frontend, ux" />
     </div>
 
     {#if agentsEnabled()}

@@ -480,6 +480,7 @@
             {#key tagsText}
               <input
                 class="field w-mono"
+                autocapitalize="off" autocorrect="off" spellcheck="false"
                 value={tagsText}
                 placeholder="frontend, ux"
                 aria-label="Tags, comma separated"
@@ -509,6 +510,7 @@
                 <input
                   class="field w-mono"
                   list="t-parents"
+                  autocapitalize="off" autocorrect="off" spellcheck="false"
                   value={t.parent ?? ""}
                   placeholder="–"
                   aria-label="Parent task id"

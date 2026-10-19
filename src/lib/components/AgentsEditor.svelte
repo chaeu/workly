@@ -71,6 +71,7 @@
                 <td>
                   <input
                     class="w-mono"
+                    autocapitalize="off" autocorrect="off" spellcheck="false"
                     value={a.model ?? ""}
                     disabled={copilot}
                     placeholder={copilot ? "Picked in VS Code" : "Codex default"}
