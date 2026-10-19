@@ -12,6 +12,7 @@ use workly_core::agent::{AgentContext, RunEntry};
 use workly_core::backup::{self, BackupInfo};
 use workly_core::changes::FileChange;
 use workly_core::feed::FeedEvent;
+use workly_core::files::FileNode;
 use workly_core::frontmatter::AcceptanceItem;
 use workly_core::history::PhaseSpan;
 use workly_core::model::{Config, Process};
@@ -236,8 +237,40 @@ fn delete_project(app: AppHandle, state: State<AppState>, key: String) -> Result
 }
 
 #[tauri::command]
-fn project_files(state: State<AppState>, key: String) -> Result<Vec<String>, String> {
+fn project_files(state: State<AppState>, key: String) -> Result<Vec<FileNode>, String> {
     with_ws(&state, |ws| ws.project_files(&key))
+}
+
+/// True when saved, false when the file's body changed outside (nothing written).
+#[tauri::command]
+fn set_body(app: AppHandle, state: State<AppState>, path: String, text: String, expected: String) -> Result<bool, String> {
+    changed(
+        &app,
+        with_ws(&state, |ws| match ws.set_body(&path, &text, &expected, ACTOR) {
+            Err(workly_core::Error::Conflict(_)) => Ok(false),
+            r => r.map(|()| true),
+        }),
+    )
+}
+
+#[tauri::command]
+fn create_file(app: AppHandle, state: State<AppState>, key: String, dir: String, name: String) -> Result<String, String> {
+    changed(&app, with_ws(&state, |ws| ws.create_file(&key, &dir, &name, ACTOR)))
+}
+
+#[tauri::command]
+fn create_folder(app: AppHandle, state: State<AppState>, key: String, dir: String, name: String) -> Result<String, String> {
+    changed(&app, with_ws(&state, |ws| ws.create_folder(&key, &dir, &name, ACTOR)))
+}
+
+#[tauri::command]
+fn delete_path(app: AppHandle, state: State<AppState>, path: String) -> Result<(), String> {
+    changed(&app, with_ws(&state, |ws| ws.delete_path(&path, ACTOR)))
+}
+
+#[tauri::command]
+fn project_template(state: State<AppState>) -> Result<String, String> {
+    with_ws(&state, |ws| Ok(ws.project_template()))
 }
 
 #[tauri::command]
@@ -774,6 +807,11 @@ pub fn run() {
             reorder_projects,
             delete_project,
             project_files,
+            set_body,
+            create_file,
+            create_folder,
+            delete_path,
+            project_template,
             read_markdown,
             usecase_history,
             agent_context,
