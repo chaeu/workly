@@ -899,7 +899,7 @@ fn fixture_assessments_load() {
     let ws = Workspace::open(FIXTURE).unwrap();
     let a = ws.index.project("ST").unwrap().project.usecase.as_ref().unwrap().assessment.clone().unwrap();
     assert_eq!((a.date.as_deref(), a.ko.len(), a.scores.len(), a.scores.get("integration")), (Some("2026-10-06"), 0, 5, None));
-    // IE's volume comes from Manual effort (fte on the criterion), so it is not stored.
+    // IE's volume comes from savings (fte on the criterion), so it is not stored.
     let ie = ws.index.project("IE").unwrap().project.usecase.as_ref().unwrap().assessment.clone().unwrap();
     assert_eq!((ie.scores.len(), ie.scores.get("volume")), (5, None));
     let method = ws.process.as_ref().unwrap().assessment.as_ref().unwrap();

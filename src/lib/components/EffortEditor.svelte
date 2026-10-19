@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Manual effort of one use case as a table. Every complete change writes the whole list right away.
+  // Savings of one use case as a table. Every complete change writes the whole list right away.
   import { workspace, updateProjectField, type Saving } from "$lib/stores/workspace.svelte";
   import { fmtFte, fmtHours, fteHours, PER_YEAR, savedHours, savingHours, type UC } from "$lib/usecases.svelte";
 
@@ -59,7 +59,7 @@
   <div class="w-modal" role="dialog" aria-modal="true" aria-labelledby="ee-title">
     <div class="head">
       <span class="w-mono">{u.key}</span>
-      <h2 class="w-h2" id="ee-title">Manual effort today</h2>
+      <h2 class="w-h2" id="ee-title">Savings potential</h2>
       <button type="button" class="rm x" aria-label="Close" onclick={onclose}>✕</button>
     </div>
     <div class="body">

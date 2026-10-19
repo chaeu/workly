@@ -193,7 +193,7 @@
                 <dd>{stepLabel(uc)}</dd>
                 <dt>Status</dt>
                 <dd>{workspace.index?.process ? label(workspace.index.process.statuses, uc.usecase.status) : (uc.usecase.status ?? "–")}</dd>
-                <dt>Manual effort</dt>
+                <dt>Savings</dt>
                 <dd>{fte === null ? "–" : `${fmtFte(fte)} FTE`}</dd>
               </dl>
               <a href={tabHref("usecase")}>Open use case</a>

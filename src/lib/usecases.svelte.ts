@@ -121,8 +121,8 @@ export const QUADRANT_COLOR: Record<Quadrant | "K.O.", string> = {
 };
 
 /**
- * Points from Manual effort for a criterion with `fte: [low, high]`: continuous, 1 + 2 · (FTE − low) / (high − low)
- * within 1–3 (D12); null without thresholds or effort entries. Rounded to one decimal so the shown arithmetic adds up.
+ * Points from savings for a criterion with `fte: [low, high]`: continuous, 1 + 2 · (FTE − low) / (high − low)
+ * within 1–3 (D12); null without thresholds or savings entries. Rounded to one decimal so the shown arithmetic adds up.
  */
 export function fteScore(c: Criterion, fte: number | null) {
   if (!c.fte || fte == null) return null;
@@ -174,7 +174,7 @@ export function assessRank(p: Process, u: UC) {
 }
 const scoreFmt = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 export const fmtScore = (n: number | null) => (n === null ? "–" : scoreFmt.format(n));
-/** One criterion's points: "3", or "2.9" for one derived from Manual effort. */
+/** One criterion's points: "3", or "2.9" for one derived from savings. */
 const ptsFmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 /** The arithmetic behind one axis from the effective scores (AssessResult.scores): "(2.9 + 2 + 3) / 3 = 2.6"; "nothing scored" when no criterion has points. */
 export function axisCalc(p: Process, scores: Record<string, number>, axis: string) {
@@ -197,10 +197,10 @@ export function ucTip(p: Process, u: UC) {
     .join("\n");
 }
 export const stepTip = (s: Step) => [stepName(s), s.kind === "gate" ? s.hint : s.sub, s.optional && "Optional"].filter(Boolean).join("\n");
-/** Manual effort: one line per activity, then the conversion. */
+/** Savings: one line per activity, then the conversion. */
 export const fteTip = (u: UC) =>
   [
-    "Manual effort",
+    "Savings potential",
     ...u.usecase.savings.map((s) => {
       const h = savingHours(s);
       return `${s.what ?? "–"} · ${s.count ?? "–"}/${s.per ?? "–"} × ${s.minutes ?? "–"} min = ${h == null ? "–" : `${fmtHours(h)} h`}`;

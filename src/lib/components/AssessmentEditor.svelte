@@ -29,7 +29,7 @@
     ),
     note: cur?.note ?? "",
   });
-  // A criterion with `fte` takes its points from Manual effort while there is any (D12): fixed here, never written.
+  // A criterion with `fte` takes its points from savings while there is any (D12): fixed here, never written.
   const fte = $derived(u ? savedFte(u) : null);
   const r = $derived(assess(p, draft, fte));
 
@@ -114,7 +114,7 @@
                 </ol>
               </div>
               {#if derived !== null}
-                <span class="derived">From Manual effort: {fmtFte(fte ?? 0)} FTE → <b class="w-mono">{fmtScore(derived)}</b></span>
+                <span class="derived">From savings: {fmtFte(fte ?? 0)} FTE → <b class="w-mono">{fmtScore(derived)}</b></span>
               {:else}
                 <div class="w-seg" role="group" aria-label={c.label}>
                   {#each [1, 2, 3, null] as n (n)}

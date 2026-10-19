@@ -236,11 +236,11 @@
     {/if}
     <!-- Light version: the total only; the list and the editor are on the page. -->
     <section>
-      <h3 class="w-caps">Manual effort</h3>
+      <h3 class="w-caps">Savings potential</h3>
       {#if uc.savings.length}
         <span class="sum" use:tip={fteTip(u)}><b>≈ {fmtFte(hours / fteHours())} FTE</b> · {fmtHours(hours)} h/yr</span>
       {:else}
-        <span class="sum">No effort recorded · <a href={pageHref}>Open page</a></span>
+        <span class="sum">No savings recorded · <a href={pageHref}>Open page</a></span>
       {/if}
     </section>
     {@render taskList()}
@@ -275,7 +275,7 @@
           <div class="cls">{@render classification()}</div>
           {@render description?.()}
         </div>
-        <!-- Assessment and effort: always in the same place below the description, however long that gets. -->
+        <!-- Assessment and savings: always in the same place below the description, however long that gets. -->
         {#if p.assessment}
           {@const a = uc.assessment}
           <section class="card effort" aria-label="Assessment">
@@ -307,14 +307,15 @@
             <button type="button" class="w-btn" onclick={() => (editingAssessment = true)}>{a ? "Re-assess…" : "Assess…"}</button>
           </section>
         {/if}
-        <section class="card effort" aria-label="Manual effort">
+        <section class="card effort" aria-label="Savings potential">
           <div class="eff-sum">
-            <span class="w-caps">Manual effort today</span>
+            <span class="w-caps">Savings potential</span>
+            <span class="w-sub">Manual work today that this use case takes over</span>
             {#if uc.savings.length}
               <b class="big" use:tip={fteTip(u)}>≈ {fmtFte(hours / fteHours())} FTE</b>
               <span class="w-sub">{fmtHours(hours)} h/yr</span>
             {:else}
-              <span class="w-sub">No effort recorded</span>
+              <span class="w-sub">No savings recorded</span>
             {/if}
           </div>
           <div class="eff-list">

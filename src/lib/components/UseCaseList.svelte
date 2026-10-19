@@ -20,7 +20,7 @@
     ["step", "Phase / step", stepRank],
     ["status", "Status", (u: UC) => p.statuses.findIndex((s) => s.id === u.usecase.status)],
     ["days", "Days", (u: UC) => daysInStep(u) ?? -1],
-    ["fte", "Effort", savedFte],
+    ["fte", "Savings", savedFte],
     ["assess", "Assessment", (u: UC) => assessRank(p, u)],
   ] as const;
   const NUM: string[] = ["days", "fte"];

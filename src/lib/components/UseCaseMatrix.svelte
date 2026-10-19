@@ -1,6 +1,6 @@
 <script lang="ts">
   // Feasibility matrix: assessed use cases by value (up) and feasibility (right), with a list by quadrant beside it.
-  // Read-only; scores change in the editor (D5). Advanced adds bubble size by manual effort and quadrant colours.
+  // Read-only; scores change in the editor (D5). Advanced adds bubble size by savings and quadrant colours.
   import { projColor, type Process } from "$lib/stores/workspace.svelte";
   import {
     ASSESS_THRESHOLD,
@@ -181,7 +181,7 @@
     <div class="legend">
       {#if advanced}
         <span><i class="lg"></i>Pilot or later</span><span><i class="lg early"></i>Still in {p.phases[0]?.name ?? "the first phase"}</span>
-        <span>Size = manual effort (FTE)</span><span>Colour = quadrant</span>
+        <span>Size = savings (FTE)</span><span>Colour = quadrant</span>
       {/if}
       <!-- The method in one card, built from process.yml, for "how is this calculated?". Shown on hover or focus. -->
       <span class="how">
@@ -202,12 +202,12 @@
             <span class="w-caps">Value &lt; {fmtScore(ASSESS_THRESHOLD)}</span><span style:--c={QUADRANT_COLOR["Fill-in"]}>Fill-in</span><span style:--c={QUADRANT_COLOR.Drop}>Drop</span>
           </span>
           {#each p.assessment!.criteria.filter((c) => c.fte) as c (c.id)}
-            <span><b>{c.label}</b> comes from Manual effort once there are entries: 1 + 2 × (FTE − {fmtFte(c.fte![0])}) / ({fmtFte(c.fte![1])} − {fmtFte(c.fte![0])}), between 1 and 3.</span>
+            <span><b>{c.label}</b> comes from savings once there are entries: 1 + 2 × (FTE − {fmtFte(c.fte![0])}) / ({fmtFte(c.fte![1])} − {fmtFte(c.fte![0])}), between 1 and 3.</span>
           {/each}
           {#if p.assessment!.ko.length}
             <span><b>K.O.</b>: one failed question ({p.assessment!.ko.map((k) => k.label).join(" · ")}) stops the assessment; the use case gets no position.</span>
           {/if}
-          {#if advanced}<span><b>Bubble size</b> = manual effort in FTE.</span>{/if}
+          {#if advanced}<span><b>Bubble size</b> = savings in FTE.</span>{/if}
         </span>
       </span>
     </div>

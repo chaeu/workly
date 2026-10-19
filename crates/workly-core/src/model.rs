@@ -398,7 +398,7 @@ pub struct Criterion {
     /// Yes/no on the value axis: yes is stored as 3, no is left out and never open.
     #[serde(default)]
     pub bonus: bool,
-    /// `[low, high]`: the app derives the points from Manual effort (FTE) when there is any.
+    /// `[low, high]`: the app derives the points from savings (FTE) when there is any.
     pub fte: Option<Vec<f64>>,
 }
 
