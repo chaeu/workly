@@ -121,6 +121,8 @@ pub struct Workspace {
     pub process: Option<Process>,
     pub index: Index,
     own: OwnWrites,
+    /// When `set_body` last logged a file: the editor autosaves, the log keeps one line per stretch of editing.
+    body_logged: std::collections::HashMap<PathBuf, std::time::Instant>,
 }
 
 impl Workspace {
@@ -128,7 +130,7 @@ impl Workspace {
         let root = root.as_ref();
         // Canonical, because the watcher reports canonical paths (/private/var/...).
         let root = root.canonicalize().map_err(|e| Error::NotFound(format!("workspace {}: {e}", root.display())))?;
-        let mut ws = Workspace { root, config: Config::default(), process: None, index: Index::default(), own: OwnWrites::default() };
+        let mut ws = Workspace { root, config: Config::default(), process: None, index: Index::default(), own: OwnWrites::default(), body_logged: Default::default() };
         ws.rescan();
         Ok(ws)
     }

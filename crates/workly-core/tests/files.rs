@@ -100,6 +100,16 @@ fn set_body_keeps_frontmatter_bytes() {
     let n = log_lines(&root).len();
     ws.set_body(&note, "New body\n", "New body\n", "app").unwrap();
     assert_eq!(log_lines(&root).len(), n);
+
+    // Autosave right after: written, but no second log line for this file.
+    ws.set_body(&note, "Newer\n", "New body\n", "app").unwrap();
+    assert_eq!(fs::read_to_string(root.join(&note)).unwrap(), format!("{head}Newer\n"));
+    assert_eq!(log_lines(&root).len(), n);
+    // Another file logs its own line.
+    let doc = format!("{WR}/docs/architecture.md");
+    let old = fs::read_to_string(root.join(&doc)).unwrap();
+    ws.set_body(&doc, "x\n", &old, "app").unwrap();
+    assert_eq!(log_lines(&root).len(), n + 1);
 }
 
 #[test]

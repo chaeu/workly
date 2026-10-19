@@ -9,6 +9,9 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// The editor autosaves; one `file.body` log line per file per this many seconds.
+const BODY_LOG_EVERY: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
 /// Top-level project folders the Files tab never writes: tasks have the
 /// detail card, agent/ its own section behind the agent switch.
 const LOCKED: [&str; 2] = ["tasks", "agent"];
@@ -79,7 +82,8 @@ impl Workspace {
 
     /// Replace the body of a Markdown file in a project; the frontmatter (if
     /// any) stays byte-identical. `expected` is the body the caller started
-    /// from; if the file has another one now, nothing is written.
+    /// from; if the file has another one now, nothing is written. Logged at
+    /// most once per file per `BODY_LOG_EVERY` (autosave writes often).
     pub fn set_body(&mut self, rel_path: &str, text: &str, expected: &str, actor: &str) -> Result<()> {
         let (key, file, _) = self.project_target(rel_path)?;
         if !file.is_file() || file.extension().is_none_or(|e| e != "md") {
@@ -96,8 +100,13 @@ impl Workspace {
         // A closing fence at the very end of the file has no line break yet.
         let gap = if !p.fence.is_empty() && !p.fence.ends_with('\n') && !text.is_empty() { crate::frontmatter::eol_of(&src) } else { "" };
         atomic_write(&file, &[p.head, p.frontmatter, p.fence, gap, text].concat(), &self.own)?;
-        let path = rel(&self.root, &file);
-        log(&self.root, &LogEntry::new(actor, "file.body", &key, Some("path"), Value::Null, path.into()))?;
+        // ponytail: in-memory throttle, so an app restart logs the next save again.
+        let now = std::time::Instant::now();
+        if self.body_logged.get(&file).is_none_or(|t| now.duration_since(*t) >= BODY_LOG_EVERY) {
+            let path = rel(&self.root, &file);
+            log(&self.root, &LogEntry::new(actor, "file.body", &key, Some("path"), Value::Null, path.into()))?;
+            self.body_logged.insert(file, now);
+        }
         self.rescan();
         Ok(())
     }
