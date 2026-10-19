@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { beforeNavigate, goto } from "$app/navigation";
   import { ask } from "@tauri-apps/plugin-dialog";
   import { Prec } from "@codemirror/state";
@@ -8,16 +8,21 @@
   import { readMarkdown, setBody, workspace } from "$lib/stores/workspace.svelte";
 
   /**
-   * Edits the body of one Markdown file; the frontmatter is never shown or touched.
-   * ⌘S saves and keeps editing, Esc / Cancel closes (asks when there are unsaved changes).
-   * `dirty` is bindable so the parent can ask before switching files.
+   * Edits the body of one Markdown file, like Obsidian: always editable, saved on its own
+   * (a short pause after typing, leaving the editor, switching away, ⌘S). The frontmatter is
+   * never shown or touched. A file changed outside shows up live while there is nothing
+   * unsaved; otherwise the save stops with Reload / Overwrite. `unsaved` (bindable) is true
+   * only then, so the parent can ask before switching files.
    */
   let {
     path,
-    onclose,
     template,
-    dirty = $bindable(false),
-  }: { path: string; onclose: () => void; template?: () => Promise<string>; dirty?: boolean } = $props();
+    autofocus = false,
+    unsaved = $bindable(false),
+  }: { path: string; template?: () => Promise<string>; autofocus?: boolean; unsaved?: boolean } = $props();
+
+  /** Idle time after the last keystroke before saving. */
+  const SAVE_AFTER_MS = 800;
 
   let host: HTMLDivElement;
   let view: EditorView | null = null;
@@ -26,54 +31,85 @@
   let empty = $state(false);
   let conflict = $state(false);
   let saving = false;
+  let again = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   const extras = [
-    Prec.high(
-      keymap.of([
-        { key: "Mod-s", run: () => (save(), true) },
-        { key: "Escape", run: () => (cancel(), true) },
-      ]),
-    ),
-    EditorView.updateListener.of((u) => u.docChanged && sync()),
+    Prec.high(keymap.of([{ key: "Mod-s", run: () => (save(), true) }])),
+    EditorView.updateListener.of((u) => {
+      if (u.docChanged) {
+        sync();
+        clearTimeout(timer);
+        timer = setTimeout(save, SAVE_AFTER_MS);
+      }
+      if (u.focusChanged && !u.view.hasFocus) save();
+    }),
   ];
 
+  const text = () => (view ? fileText(view.state) : expected);
+
   function sync() {
-    const text = view ? fileText(view.state) : expected;
-    dirty = text !== expected;
-    empty = text.trim() === "";
+    empty = text().trim() === "";
+    unsaved = conflict && text() !== expected;
   }
 
-  function load(text: string) {
-    expected = text;
+  function load(body: string) {
+    expected = body;
     conflict = false;
-    const state = markdownState(text, extras);
+    const state = markdownState(body, extras);
     if (view) view.setState(state);
     else view = new EditorView({ parent: host, state });
     sync();
-    view.focus();
+    if (autofocus) view.focus();
   }
 
   onMount(() => {
     readMarkdown(path).then(load, (e) => (workspace.error = String(e)));
-    return () => view?.destroy();
+    return () => {
+      save(); // reads the text before the view goes away
+      view?.destroy();
+    };
   });
 
   async function save() {
-    if (!view || saving || conflict) return;
-    const text = fileText(view.state);
-    if (text === expected) return;
+    clearTimeout(timer);
+    if (!view || conflict) return;
+    if (saving) {
+      again = true;
+      return;
+    }
+    const body = text();
+    if (body === expected) return;
     saving = true;
-    const ok = await setBody(path, text, expected);
+    const ok = await setBody(path, body, expected);
     saving = false;
-    if (ok) expected = text;
+    if (ok) expected = body;
     else if (ok === false) conflict = true;
     sync();
+    if (again) {
+      again = false;
+      save();
+    }
   }
 
-  async function cancel() {
-    if (dirty && !(await ask("Discard your changes to this file?", { title: "Unsaved changes", kind: "warning", okLabel: "Discard" }))) return;
-    dirty = false;
-    onclose();
+  // Changed outside (Obsidian, git): show it, as long as nothing here is unsaved.
+  $effect(() => {
+    void workspace.reloads;
+    untrack(refresh);
+  });
+
+  async function refresh() {
+    if (!view || saving || conflict) return;
+    const disk = await readMarkdown(path).catch(() => null);
+    if (disk === null || !view || saving || disk === expected || text() !== expected) return;
+    // Replace only the changed middle, so the cursor stays where it was.
+    const old = expected;
+    let a = 0;
+    while (a < old.length && a < disk.length && old[a] === disk[a]) a++;
+    let b = 0;
+    while (b < old.length - a && b < disk.length - a && old[old.length - 1 - b] === disk[disk.length - 1 - b]) b++;
+    expected = disk;
+    view.dispatch({ changes: { from: a, to: old.length - b, insert: disk.slice(a, disk.length - b) } });
   }
 
   /** Conflict: drop my edit and show the file as it is now. */
@@ -88,18 +124,18 @@
 
   async function insertTemplate() {
     if (!view || !template) return;
-    const text = await template();
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+    const body = await template();
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: body } });
     view.focus();
   }
 
-  // Leaving the page with unsaved changes asks first.
+  // Leaving the page while a conflict holds unsaved text asks first.
   let leaving = false;
   beforeNavigate((nav) => {
-    if (!dirty || leaving || !nav.to) return;
+    if (!unsaved || leaving || !nav.to) return;
     nav.cancel();
     const to = nav.to.url;
-    ask("Discard your changes to this file?", { title: "Unsaved changes", kind: "warning", okLabel: "Discard" }).then((ok) => {
+    ask("Your changes to this file are not saved. Discard them?", { title: "Unsaved changes", kind: "warning", okLabel: "Discard" }).then((ok) => {
       if (!ok) return;
       leaving = true;
       goto(to);
@@ -108,20 +144,15 @@
 </script>
 
 <div class="editor">
-  <div class="bar">
-    {#if conflict}
-      <div class="conflict" role="alert">
-        Changed outside Workly since you opened it.
-        <button type="button" class="w-btn w-btn--quiet" onclick={reload}>Reload</button>
-        <button type="button" class="w-btn w-btn--quiet" onclick={overwrite}>Overwrite</button>
-      </div>
-    {:else if empty && template}
-      <button type="button" class="w-btn w-btn--quiet" onclick={insertTemplate}>Insert template</button>
-    {/if}
-    <span class="spacer"></span>
-    <button type="button" class="w-btn w-btn--quiet" onclick={cancel}>{dirty ? "Cancel" : "Close"}</button>
-    <button type="button" class="w-btn w-btn--primary" disabled={!dirty || conflict} onclick={save}>Save</button>
-  </div>
+  {#if conflict}
+    <div class="bar conflict" role="alert">
+      Changed outside Workly while you were typing – not saved.
+      <button type="button" class="w-btn w-btn--quiet" onclick={reload}>Reload</button>
+      <button type="button" class="w-btn w-btn--quiet" onclick={overwrite}>Overwrite</button>
+    </div>
+  {:else if empty && template}
+    <div class="bar"><button type="button" class="w-btn w-btn--quiet" onclick={insertTemplate}>Insert template</button></div>
+  {/if}
   <div class="host" bind:this={host}></div>
 </div>
 
@@ -141,17 +172,7 @@
     padding: 4px 10px;
     font-size: var(--w-fs-caption);
   }
-  .bar .w-btn:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .spacer {
-    flex: 1;
-  }
   .conflict {
-    display: flex;
-    align-items: center;
-    gap: var(--w-s-1);
     color: var(--w-warn);
     font-size: var(--w-fs-small);
   }

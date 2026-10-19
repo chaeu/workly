@@ -41,7 +41,7 @@ docs/                 spec, design, prototypes, prompts
 4. **Design tokens only.** No hex colors, no ad-hoc px values for colors, radii, shadows or fonts in components. Use `var(--w-*)`. If a token is missing, add it to `tokens.css` and say so.
 5. **Atomic writes.** Write to a temp file in the same folder, then rename. Ignore the watcher event caused by our own write.
 6. **Delete = move to `.workly/trash/`** with the relative path preserved. Never `rm`. Empty trash moves to the macOS Trash.
-7. **Log every change** to `.workly/log/YYYY-MM.jsonl`.
+7. **Log every change** to `.workly/log/YYYY-MM.jsonl`. One exception: the editor autosaves, so `set_body` logs at most one `file.body` line per file per 10 minutes.
 8. **Never write to `fixtures/workspace` in tests.** Copy it to a temp dir first (`tempfile`).
 9. **No company data.** Only neutral sample data in the repo.
 10. **Agents never set `done`.** The CLI refuses it for actors other than the human user (exit code 3).

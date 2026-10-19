@@ -39,17 +39,15 @@
 
   let selected = $state<string | null>(null);
   let editing = $state(false);
-  /** Overview: the _project.md whose description (body) is in the editor; another project shows its text. */
-  let editingDesc = $state<string | null>(null);
 
-  // Overview and Use case: body of _project.md, reloaded on every index change so edits in Obsidian show up live.
+  // Use case tab: body of _project.md, reloaded on every index change so edits in Obsidian show up live (Overview edits it in place).
   const overviewPath = $derived(project ? `${project.path}/_project.md` : "");
   let html = $state("");
   let descError = $state<string | null>(null);
   $effect(() => {
     void workspace.reloads;
     const path = overviewPath;
-    if ((tab !== "overview" && tab !== "usecase") || !path) return;
+    if (tab !== "usecase" || !path) return;
     readMarkdown(path).then(
       (src) => {
         if (path !== overviewPath) return;
@@ -155,12 +153,10 @@
     {:else}
       <div class="overview">
         <section class="desc" aria-label="Description">
-          {#if editingDesc === overviewPath}
-            <MarkdownEditor path={overviewPath} onclose={() => (editingDesc = null)} template={projectTemplate} />
-          {:else}
-            <div class="desc-head"><button class="w-btn w-btn--quiet" onclick={() => (editingDesc = overviewPath)}>Edit</button></div>
-            {@render description()}
-          {/if}
+          <!-- The description (body of _project.md) is edited in place, like the Files tab. -->
+          {#key overviewPath}
+            <MarkdownEditor path={overviewPath} template={projectTemplate} />
+          {/key}
         </section>
 
         <aside class="props" aria-label="Properties">
@@ -252,15 +248,6 @@
   }
   .desc {
     padding: var(--w-s-3) var(--w-s-6) var(--w-s-6);
-  }
-  /* Edit sits top right; the text starts where it did. */
-  .desc-head {
-    float: right;
-    margin-right: calc(-1 * var(--w-s-3));
-  }
-  .desc-head .w-btn {
-    padding: 4px 10px;
-    font-size: var(--w-fs-caption);
   }
   .props {
     padding: var(--w-s-4) var(--w-s-5);

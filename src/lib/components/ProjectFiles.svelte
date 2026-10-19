@@ -35,8 +35,10 @@
   const flat = $derived(flatten(files));
   /** Folders the user collapsed; all others are open. */
   const closed = new SvelteSet<string>();
-  let editing = $state(false);
-  let dirty = $state(false);
+  /** The open editor holds text it could not save (conflict); switching files asks first. */
+  let unsaved = $state(false);
+  /** A file just created opens with the cursor in it. */
+  let created = $state<string | null>(null);
   /** Inline name input for a new file or folder in `dir`. */
   let adding = $state<{ dir: string; kind: "file" | "folder" } | null>(null);
   let addName = $state("");
@@ -62,9 +64,8 @@
   /** Switch the open file; asks first when the editor has unsaved changes. */
   async function select(path: string) {
     if (path === current) return;
-    if (editing && dirty && !(await ask("Discard your changes to this file?", { title: "Unsaved changes", kind: "warning", okLabel: "Discard" }))) return;
-    editing = false;
-    dirty = false;
+    if (unsaved && !(await ask("Your changes to this file are not saved. Discard them?", { title: "Unsaved changes", kind: "warning", okLabel: "Discard" }))) return;
+    unsaved = false;
     selected = path;
   }
 
@@ -82,8 +83,8 @@
       const path = kind === "file" ? await createFile(project.key, dir, addName) : await createFolder(project.key, dir, addName);
       adding = null;
       if (kind === "file") {
+        created = path;
         await select(path);
-        editing = true;
       }
     } catch (e) {
       addError = String(e);
@@ -107,10 +108,7 @@
     const ok = await ask(`Move ${what} to the trash? You can restore it from Trash.`, { title: "Delete", kind: "warning", okLabel: "Move to trash" });
     if (!ok) return;
     await deletePath(path);
-    if (current === path || current.startsWith(path + "/")) {
-      editing = false;
-      selected = overview;
-    }
+    if (current === path || current.startsWith(path + "/")) selected = overview;
   }
 
   // Reload tree and preview on every index change, so edits in Obsidian show up live.
@@ -139,7 +137,7 @@
   $effect(() => {
     void workspace.reloads;
     const path = current;
-    if (!path || !path.endsWith(".md")) {
+    if (!path || !path.endsWith(".md") || canEdit) {
       html = "";
       return;
     }
@@ -259,18 +257,16 @@
   <section class="preview">
     <div class="preview-head">
       <span class="w-mono path">{shortPath(current)}</span>
-      {#if !editing}
-        {#if canEdit}<button class="w-btn w-btn--quiet" onclick={() => (editing = true)}>Edit</button>{/if}
-        {#if canDelete}<button class="w-btn w-btn--quiet" onclick={() => remove(current)}>Delete</button>{/if}
-      {/if}
+      {#if canDelete}<button class="w-btn w-btn--quiet" onclick={() => remove(current)}>Delete</button>{/if}
       {#each openWithApps() as app (app)}
         <button class="w-btn w-btn--quiet" onclick={() => openWith(app, current)}>{appLabel(app)}</button>
       {/each}
       <button class="w-btn w-btn--quiet" onclick={() => reveal(current)}>Finder</button>
     </div>
-    {#if editing && canEdit}
+    {#if canEdit}
+      <!-- Markdown opens straight in the editor, like Obsidian; agent/ files stay a read-only preview. -->
       {#key current}
-        <MarkdownEditor path={current} bind:dirty onclose={() => (editing = false)} template={current === overview ? projectTemplate : undefined} />
+        <MarkdownEditor path={current} bind:unsaved autofocus={current === created} template={current === overview ? projectTemplate : undefined} />
       {/key}
     {:else if previewError}
       <p class="w-sub">{previewError}</p>
