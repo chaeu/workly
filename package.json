@@ -9,11 +9,19 @@
     "prepare": "svelte-kit sync || echo ''",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "tauri": "tauri",
-    "dev:fixture": "rm -rf /tmp/workly-dev && cp -R fixtures/workspace /tmp/workly-dev && WORKLY_WORKSPACE=/tmp/workly-dev tauri dev"
+    "dev:fixture": "rm -rf /tmp/workly-dev && cp -R fixtures/workspace /tmp/workly-dev && WORKLY_WORKSPACE=/tmp/workly-dev tauri dev",
+    "test:editor": "node scripts/editor-roundtrip.ts"
   },
   "dependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.14",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@lezer/highlight": "1.2.5",
     "@tauri-apps/api": "^2.12.1",
     "@tauri-apps/plugin-dialog": "^2.8.1",
     "dompurify": "^3.4.16",

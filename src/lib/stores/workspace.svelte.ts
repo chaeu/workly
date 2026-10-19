@@ -194,7 +194,7 @@ export type FileChange = { path: string; kind: "new" | "modified" | "deleted" | 
 export type Skill = { name: string; description: string; path: string };
 export type AgentContext = { global: AgentFile | null; project: AgentFile | null; skills: Skill[] };
 // Mirrors trash::TrashItem; `path` is relative to the trash and to the workspace.
-export type TrashItem = { path: string; kind: "task" | "project" | "file"; id: string; title: string; deleted_at: string | null };
+export type TrashItem = { path: string; kind: "task" | "project" | "folder" | "file"; id: string; title: string; deleted_at: string | null };
 /** `~/.local/bin/wly`: null = no link; ok = false when its target is gone. */
 export type CliLink = { target: string; ok: boolean } | null;
 
@@ -315,7 +315,16 @@ export async function moveUseCase(key: string, step: string) {
 }
 export const reorderProjects = (keys: string[]) => run("reorder_projects", { keys });
 export const deleteProject = (key: string) => run("delete_project", { key });
-export const projectFiles = (key: string) => invoke<string[]>("project_files", { key });
+/** Mirrors files::FileNode; `children` is null for a file. `path` is workspace-relative. */
+export type FileNode = { name: string; path: string; children: FileNode[] | null };
+export const projectFiles = (key: string) => invoke<FileNode[]>("project_files", { key });
+/** true = saved, false = the body changed outside since `expected` was read (nothing written). */
+export const setBody = (path: string, text: string, expected: string) => run<boolean>("set_body", { path, text, expected });
+/** Throw on a bad name, so the inline input can show why. Return the new path. */
+export const createFile = (key: string, dir: string, name: string) => invoke<string>("create_file", { key, dir, name });
+export const createFolder = (key: string, dir: string, name: string) => invoke<string>("create_folder", { key, dir, name });
+export const deletePath = (path: string) => run("delete_path", { path });
+export const projectTemplate = () => invoke<string>("project_template");
 export const readMarkdown = (path: string) => invoke<string>("read_markdown", { path });
 /** Per phase: time span and events, from .workly/log (core `history.rs`). */
 export type PhaseSpan = {
