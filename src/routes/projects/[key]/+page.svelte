@@ -7,7 +7,7 @@
   import ProcessError from "$lib/components/ProcessError.svelte";
   import UseCaseDetail from "$lib/components/UseCaseDetail.svelte";
   import TaskBoard from "$lib/components/TaskBoard.svelte";
-  import { renderMarkdown, resolveLink } from "$lib/markdown";
+  import { flatFiles, isWebLink, linkTarget, renderMarkdown } from "$lib/markdown";
   import {
     workspace,
     stepLabel,
@@ -20,6 +20,7 @@
     readMarkdown,
     reveal,
     moveUseCase,
+    projectFiles,
     projectTemplate,
   } from "$lib/stores/workspace.svelte";
   import { fmtFte, label, PROCESS, savedFte, type UC } from "$lib/usecases.svelte";
@@ -63,14 +64,18 @@
     const a = (e.target as HTMLElement).closest("a");
     if (!a || !project) return;
     e.preventDefault();
-    const href = a.getAttribute("href") ?? "";
-    if (/^(https?|mailto):/i.test(href)) openUrl(href);
-    else if (href && !href.includes(":") && !href.startsWith("#")) {
-      const target = resolveLink(overviewPath, href);
-      if (target.startsWith(project.path + "/")) {
-        selected = target;
-        goto(tabHref("files"));
-      }
+    openDescLink(a.getAttribute("href") ?? "", false);
+  }
+
+  /** A link in the description: web links in the browser, a project file opens in the Files tab. */
+  async function openDescLink(href: string, wiki: boolean) {
+    if (!project) return;
+    if (isWebLink(href)) return openUrl(href);
+    const files = flatFiles(await projectFiles(project.key).catch(() => []));
+    const target = linkTarget(overviewPath, href, wiki, files);
+    if (target) {
+      selected = target;
+      goto(tabHref("files"));
     }
   }
 
@@ -155,7 +160,7 @@
         <section class="desc" aria-label="Description">
           <!-- The description (body of _project.md) is edited in place, like the Files tab. -->
           {#key overviewPath}
-            <MarkdownEditor path={overviewPath} template={projectTemplate} />
+            <MarkdownEditor path={overviewPath} template={projectTemplate} onlink={openDescLink} />
           {/key}
         </section>
 

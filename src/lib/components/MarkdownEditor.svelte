@@ -5,21 +5,31 @@
   import { Prec } from "@codemirror/state";
   import { EditorView, keymap } from "@codemirror/view";
   import { fileText, markdownState } from "$lib/editor/setup";
-  import { readMarkdown, setBody, workspace } from "$lib/stores/workspace.svelte";
+  import { linkClicks } from "$lib/editor/livePreview";
+  import { isWebLink } from "$lib/markdown";
+  import { openUrl, readMarkdown, setBody, workspace } from "$lib/stores/workspace.svelte";
 
   /**
    * Edits the body of one Markdown file, like Obsidian: always editable, saved on its own
    * (a short pause after typing, leaving the editor, switching away, ⌘S). The frontmatter is
    * never shown or touched. A file changed outside shows up live while there is nothing
    * unsaved; otherwise the save stops with Reload / Overwrite. `unsaved` (bindable) is true
-   * only then, so the parent can ask before switching files.
+   * only then, so the parent can ask before switching files. `onlink` opens a clicked link
+   * (default: web links in the browser, nothing else).
    */
   let {
     path,
     template,
     autofocus = false,
     unsaved = $bindable(false),
-  }: { path: string; template?: () => Promise<string>; autofocus?: boolean; unsaved?: boolean } = $props();
+    onlink,
+  }: {
+    path: string;
+    template?: () => Promise<string>;
+    autofocus?: boolean;
+    unsaved?: boolean;
+    onlink?: (href: string, wiki: boolean) => void;
+  } = $props();
 
   /** Idle time after the last keystroke before saving. */
   const SAVE_AFTER_MS = 800;
@@ -36,6 +46,7 @@
 
   const extras = [
     Prec.high(keymap.of([{ key: "Mod-s", run: () => (save(), true) }])),
+    linkClicks((href, wiki) => (onlink ? onlink(href, wiki) : isWebLink(href) && openUrl(href))),
     EditorView.updateListener.of((u) => {
       if (u.docChanged) {
         sync();
@@ -235,6 +246,7 @@
   .host :global(.tok-link),
   .host :global(.cm-wiki) {
     color: var(--w-accent);
+    cursor: pointer;
   }
   .host :global(.tok-code) {
     font-family: var(--w-font-mono);

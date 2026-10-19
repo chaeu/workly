@@ -2,7 +2,7 @@
   import { ask } from "@tauri-apps/plugin-dialog";
   import { SvelteSet } from "svelte/reactivity";
   import MarkdownEditor from "./MarkdownEditor.svelte";
-  import { renderMarkdown, resolveLink } from "$lib/markdown";
+  import { flatFiles, isWebLink, linkTarget, renderMarkdown } from "$lib/markdown";
   import {
     workspace,
     projectFiles,
@@ -32,7 +32,7 @@
 
   // Everything in the project except tasks/ and agent/ (own section below, behind the agent switch).
   let files = $state<FileNode[]>([]);
-  const flat = $derived(flatten(files));
+  const flat = $derived(flatFiles(files));
   /** Folders the user collapsed; all others are open. */
   const closed = new SvelteSet<string>();
   /** The open editor holds text it could not save (conflict); switching files asks first. */
@@ -56,10 +56,6 @@
   const isAgent = $derived(current.startsWith(project.path + "/agent/"));
   const canEdit = $derived(isMarkdown && !isAgent);
   const canDelete = $derived(current !== overview && !isAgent);
-
-  function flatten(nodes: FileNode[]): string[] {
-    return nodes.flatMap((n) => (n.children ? flatten(n.children) : [n.path]));
-  }
 
   /** Switch the open file; asks first when the editor has unsaved changes. */
   async function select(path: string) {
@@ -103,7 +99,7 @@
 
   async function remove(path: string, node?: FileNode) {
     const name = path.split("/").pop();
-    const n = node?.children ? flatten(node.children).length : 0;
+    const n = node?.children ? flatFiles(node.children).length : 0;
     const what = node?.children ? `the folder “${name}” with ${n} ${n === 1 ? "file" : "files"}` : `“${name}”`;
     const ok = await ask(`Move ${what} to the trash? You can restore it from Trash.`, { title: "Delete", kind: "warning", okLabel: "Move to trash" });
     if (!ok) return;
@@ -158,12 +154,14 @@
     const a = (e.target as HTMLElement).closest("a");
     if (!a) return;
     e.preventDefault();
-    const href = a.getAttribute("href") ?? "";
-    if (/^(https?|mailto):/i.test(href)) openUrl(href);
-    else if (href && !href.includes(":") && !href.startsWith("#")) {
-      const target = resolveLink(current, href);
-      if (target === overview || flat.includes(target)) select(target);
-    }
+    openLink(a.getAttribute("href") ?? "", false);
+  }
+
+  /** A link in the preview or editor: web links in the browser, project files here. */
+  function openLink(href: string, wiki: boolean) {
+    if (isWebLink(href)) return openUrl(href);
+    const target = linkTarget(current, href, wiki, [overview, ...flat]);
+    if (target) select(target);
   }
 </script>
 
@@ -266,7 +264,7 @@
     {#if canEdit}
       <!-- Markdown opens straight in the editor, like Obsidian; agent/ files stay a read-only preview. -->
       {#key current}
-        <MarkdownEditor path={current} bind:unsaved autofocus={current === created} template={current === overview ? projectTemplate : undefined} />
+        <MarkdownEditor path={current} bind:unsaved onlink={openLink} autofocus={current === created} template={current === overview ? projectTemplate : undefined} />
       {/key}
     {:else if previewError}
       <p class="w-sub">{previewError}</p>

@@ -1,8 +1,44 @@
 // Obsidian-style live preview for CodeMirror: Markdown syntax is hidden on lines
 // without a cursor. Decorations only – the document is always the raw file text.
-import { type ChangeSpec, type Range } from "@codemirror/state";
+import { type ChangeSpec, type EditorState, type Range } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
+
+/** The link at `pos`: a Markdown link's target, a bare URL or autolink, or the name inside `[[name]]`. */
+export function linkAt(state: EditorState, pos: number): { href: string; wiki: boolean } | null {
+  const line = state.doc.lineAt(pos);
+  for (const m of line.text.matchAll(WIKI)) {
+    const a = line.from + m.index!;
+    if (pos >= a && pos <= a + m[0].length) return { href: m[1], wiki: true };
+  }
+  for (let n = syntaxTree(state).resolveInner(pos, 1); n.parent; n = n.parent) {
+    const url = n.name === "URL" ? n : n.name === "Link" || n.name === "Autolink" ? n.getChild("URL") : null;
+    if (url) return { href: state.sliceDoc(url.from, url.to), wiki: false };
+    if (n.name === "Link" || n.name === "Autolink") return null;
+  }
+  return null;
+}
+
+/**
+ * Click on a link opens it (`open`), like Obsidian: a plain click where the syntax is hidden
+ * (no cursor on that line), ⌘-click anywhere. A plain click on the cursor line edits.
+ */
+export const linkClicks = (open: (href: string, wiki: boolean) => void) =>
+  EditorView.domEventHandlers({
+    mousedown(e, view) {
+      if (e.button !== 0) return false;
+      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+      if (pos === null) return false;
+      const { doc, selection } = view.state;
+      const onCursorLine = view.hasFocus && selection.ranges.some((r) => doc.lineAt(r.head).number === doc.lineAt(pos).number);
+      if (onCursorLine && !e.metaKey) return false;
+      const link = linkAt(view.state, pos);
+      if (!link) return false;
+      e.preventDefault();
+      open(link.href, link.wiki);
+      return true;
+    },
+  });
 
 /** The change that checks or unchecks the task marker `[ ]` / `[x]` at `pos`: one character. */
 export function toggleTask(marker: string, pos: number): ChangeSpec {
@@ -58,7 +94,8 @@ const WIKI = /\[\[([^\[\]\n]+)\]\]/g;
 
 function build(view: EditorView): DecorationSet {
   const { doc, selection } = view.state;
-  const active = new Set(selection.ranges.flatMap((r) => [doc.lineAt(r.from).number, doc.lineAt(r.to).number]));
+  // Raw syntax only where the cursor is, and only while the editor has focus.
+  const active = new Set(view.hasFocus ? selection.ranges.flatMap((r) => [doc.lineAt(r.from).number, doc.lineAt(r.to).number]) : []);
   const out: Range<Decoration>[] = [];
   // Wiki-links [[x]] first; Markdown marks inside them are left alone.
   const wikis: [number, number][] = [];
@@ -127,7 +164,7 @@ export const livePreview = ViewPlugin.fromClass(
       this.decorations = build(view);
     }
     update(u: ViewUpdate) {
-      if (u.docChanged || u.viewportChanged || u.selectionSet || syntaxTree(u.startState) !== syntaxTree(u.state)) this.decorations = build(u.view);
+      if (u.docChanged || u.viewportChanged || u.selectionSet || u.focusChanged || syntaxTree(u.startState) !== syntaxTree(u.state)) this.decorations = build(u.view);
     }
   },
   { decorations: (p) => p.decorations },
