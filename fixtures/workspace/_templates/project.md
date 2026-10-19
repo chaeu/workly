@@ -8,8 +8,20 @@ repos: []
 links: []
 created: {{date}}
 ---
+## Summary
+One or two sentences.
+
+## Problem
+
 ## Goal
 
-## Stakeholders
+## Scope
+**In:**
+**Out:**
 
-## Notes
+## Users & stakeholders
+
+## Success criteria
+Measurable, e.g. "processing time per case < 2 min".
+
+## Open questions & risks

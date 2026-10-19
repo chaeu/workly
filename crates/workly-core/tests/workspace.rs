@@ -395,20 +395,9 @@ fn delete_project_moves_folder_to_trash() {
 }
 
 #[test]
-fn project_files_and_preview() {
+fn markdown_preview() {
     let (_tmp, root) = fixture();
     let ws = Workspace::open(&root).unwrap();
-    assert_eq!(
-        ws.project_files("WR").unwrap(),
-        [
-            "projects/website-relaunch/agent/AGENTS.md",
-            "projects/website-relaunch/agent/skills/release-check/SKILL.md",
-            "projects/website-relaunch/decisions/0001-hosting.md",
-            "projects/website-relaunch/docs/architecture.md",
-            "projects/website-relaunch/notes/2026-09-15-kickoff.md",
-        ]
-    );
-    assert!(ws.project_files("ST").unwrap().is_empty());
     let body = ws.read_markdown("projects/website-relaunch/_project.md").unwrap();
     assert!(body.starts_with("Relaunch of the portfolio site"), "{body}");
     assert!(matches!(ws.read_markdown("../outside.md"), Err(Error::Invalid(_))));

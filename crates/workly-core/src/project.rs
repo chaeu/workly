@@ -42,8 +42,6 @@ pub const COLORS: [&str; 6] = ["proj-1", "proj-2", "proj-3", "proj-4", "proj-5",
 const MOVE_FIELDS: [&str; 3] = ["usecase.step", "usecase.step_since", "usecase.decisions"];
 /// Something that is neither a project nor a use case is archived, not untracked.
 const UNTRACK_PLAIN: &str = "only a use case can be untracked; archive a plain project instead";
-/// Folders the project detail shows as a tree.
-pub const DOC_DIRS: [&str; 4] = ["docs", "notes", "decisions", "agent"];
 
 pub(crate) const AGENTS_TEMPLATE: &str = "# {{title}} – agent instructions\n\n\
     Project rules for agents, on top of the workspace rules in `.workly/agent/AGENTS.md`.\n\n- \n";
@@ -465,27 +463,6 @@ impl Workspace {
             write_code_workspace(&dir, key, repos, &self.own)?;
         }
         Ok(file)
-    }
-
-    /// Files under docs/, notes/, decisions/ and agent/, relative to the workspace.
-    pub fn project_files(&self, key: &str) -> Result<Vec<String>> {
-        let dir = self.project_dir(key)?;
-        let mut files = Vec::new();
-        let mut stack: Vec<PathBuf> = DOC_DIRS.iter().map(|d| dir.join(d)).collect();
-        while let Some(d) = stack.pop() {
-            for e in fs::read_dir(&d).into_iter().flatten().flatten() {
-                if e.file_name().to_string_lossy().starts_with('.') {
-                    continue;
-                }
-                if e.file_type().is_ok_and(|t| t.is_dir()) {
-                    stack.push(e.path());
-                } else {
-                    files.push(rel(&self.root, &e.path()));
-                }
-            }
-        }
-        files.sort();
-        Ok(files)
     }
 
     /// Absolute path for a workspace-relative path; refuses `..`, absolute
