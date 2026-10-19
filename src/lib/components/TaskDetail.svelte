@@ -528,6 +528,10 @@
               </datalist>
             </dd>
           {/if}
+          {#if t.created}
+            <dt>Created</dt>
+            <dd class="w-mono">{shortDate(t.created)}</dd>
+          {/if}
           {#if t.status === "done" && t.done_at}
             <dt>Done</dt>
             <dd class="w-mono">{shortDate(t.done_at)}</dd>

@@ -16,6 +16,7 @@ export type TaskEntry = {
   focus: string | null;
   focus_order: number | null;
   order: number | null;
+  created: string | null;
   done_at: string | null;
   /** Only while the status is `waiting`. */
   waiting_for: string | null;
