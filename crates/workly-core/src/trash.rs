@@ -8,12 +8,13 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// One restorable thing: a task file or a whole project folder.
+/// One restorable thing: a task file, a whole project folder, or a file or
+/// folder deleted from the Files tab.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TrashItem {
     /// Relative to the trash, which is also where it goes back to in the workspace.
     pub path: String,
-    /// task | project | file (unreadable or not a task)
+    /// task | project | folder | file (not a task)
     pub kind: &'static str,
     /// Task id or project key; the file name when unreadable.
     pub id: String,
@@ -31,17 +32,57 @@ impl Workspace {
         self.index.trash.iter().filter_map(|p| p.strip_suffix("/_project.md")).collect()
     }
 
-    /// Trash contents, a project folder as one item.
+    /// Trash contents, a project or a deleted folder as one item.
     pub fn trash_items(&self) -> Vec<TrashItem> {
         let projects = self.trashed_projects();
+        let loose = self.loose_items();
+        let folders: Vec<&str> = loose.iter().filter(|i| i.kind == "folder").map(|i| i.path.as_str()).collect();
         let mut items: Vec<TrashItem> = projects.iter().map(|dir| self.trash_item(dir, "project")).collect();
         for path in &self.index.trash {
-            if !projects.iter().any(|dir| path.starts_with(&format!("{dir}/"))) {
+            if !projects.iter().chain(&folders).any(|dir| path.starts_with(&format!("{dir}/"))) {
                 items.push(self.trash_item(path, "task"));
             }
         }
+        items.extend(loose.iter().cloned());
         items.sort_by(|a, b| b.deleted_at.cmp(&a.deleted_at).then_with(|| a.path.cmp(&b.path)));
         items
+    }
+
+    /// Folders and non-Markdown files deleted from the Files tab: the topmost
+    /// trash entry whose place in the workspace is free. Folders that hold a
+    /// deleted task are walked instead, so the task stays its own item; empty
+    /// folders are left out.
+    // ponytail: derived from the trash layout, no marker; a folder recreated in the workspace splits into its files.
+    fn loose_items(&self) -> Vec<TrashItem> {
+        let trash = self.trash_dir();
+        let projects = self.trashed_projects();
+        let mut out = Vec::new();
+        let mut stack = vec![trash.clone()];
+        while let Some(dir) = stack.pop() {
+            for e in fs::read_dir(&dir).into_iter().flatten().flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                let path = crate::scan::rel(&trash, &e.path());
+                if name.starts_with('.') || projects.contains(&path.as_str()) {
+                    continue;
+                }
+                let item = |kind| TrashItem { path: path.clone(), kind, id: name.clone(), title: name.clone(), deleted_at: None };
+                if e.file_type().is_ok_and(|t| t.is_dir()) {
+                    let files = files_below(&e.path());
+                    if files.is_empty() {
+                        continue;
+                    }
+                    if self.root.join(&path).exists() || files.iter().any(|f| stamped(f)) {
+                        stack.push(e.path());
+                    } else {
+                        out.push(item("folder"));
+                    }
+                } else if !name.ends_with(".md") {
+                    // Markdown files are in the index.
+                    out.push(item("file"));
+                }
+            }
+        }
+        out
     }
 
     fn trash_item(&self, path: &str, kind: &'static str) -> TrashItem {
@@ -62,11 +103,13 @@ impl Workspace {
         }
     }
 
-    /// Move a trash item (task file or project folder, path relative to the
-    /// trash) back to where it was.
+    /// Move a trash item (task file, project folder, deleted file or folder;
+    /// path relative to the trash) back to where it was.
     pub fn restore(&mut self, trash_path: &str, actor: &str) -> Result<()> {
         let is_project = self.trashed_projects().contains(&trash_path);
-        if !is_project && !self.index.trash.iter().any(|p| p == trash_path) {
+        let is_md = self.index.trash.iter().any(|p| p == trash_path);
+        let loose = !is_project && !is_md && self.loose_items().iter().any(|i| i.path == trash_path);
+        if !is_project && !is_md && !loose {
             return Err(Error::NotFound(format!("{trash_path} is not in the trash")));
         }
         let from = self.trash_dir().join(trash_path);
@@ -89,14 +132,28 @@ impl Workspace {
         if !dir.is_dir() && !project_tasks {
             return Err(Error::Invalid(format!("the folder of {trash_path} is gone; restore its project first")));
         }
+        if loose {
+            let name = trash_path.rsplit('/').next().unwrap_or(trash_path);
+            if from.is_dir() {
+                merge_into(&from, &to, &self.own, &|_| false)?;
+            } else {
+                own_rename(&from, &to, &self.own)?;
+            }
+            log(&self.root, &LogEntry::new(actor, "file.restore", name, Some("path"), trashed.into(), trash_path.into()))?;
+            self.rescan();
+            return Ok(());
+        }
         // Unstamp inside the trash first, so the restored file appears once, final.
         let src = fs::read_to_string(&from)?;
         if let Ok(out) = patch::remove_field(&src, &["deleted_at"]) {
             atomic_write(&from, &out, &self.own)?;
         }
         own_rename(&from, &to, &self.own)?;
-        let id = parse_file::<Task>(trash_path, &fs::read_to_string(&to)?).map(|t| t.id).unwrap_or_default();
-        log(&self.root, &LogEntry::new(actor, "task.restore", &id, Some("path"), trashed.into(), trash_path.into()))?;
+        let (kind, id) = match parse_file::<Task>(trash_path, &fs::read_to_string(&to)?) {
+            Ok(t) => ("task.restore", t.id),
+            Err(_) => ("file.restore", trash_path.rsplit('/').next().unwrap_or(trash_path).to_string()),
+        };
+        log(&self.root, &LogEntry::new(actor, kind, &id, Some("path"), trashed.into(), trash_path.into()))?;
         self.rescan();
         Ok(())
     }
