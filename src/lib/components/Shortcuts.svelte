@@ -6,6 +6,7 @@
     ["⌘K", "Search"],
     ...views.map((v, i) => [`⌘${i + 1}`, v]),
     ["⌘,", "Settings"],
+    ["⌘?", "Help"],
     ["Enter", "Open the focused card"],
     ["⌘↩", "Open the use-case page from its card"],
     ["Esc", "Close card or dialog"],

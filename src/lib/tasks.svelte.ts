@@ -257,6 +257,9 @@ export const EFFORTS = ["", "low", "medium", "high", "xhigh", "max", "ultra"];
 /** Codex permissions (B11): ask = Codex asks, auto = never asks, sandboxed; full = no sandbox. */
 export const PERMISSIONS = ["ask", "auto", "full"];
 
+/** The shortcut list (?) lives in the layout; the help page opens it too. */
+export const shortcuts = $state({ open: false });
+
 /** Quick add (⌘N) lives in the layout. `hint` is the project the board filter suggests; `parent` opens it as a sub-task. */
 export const quickAdd = $state({ open: false, project: null as string | null, parent: null as string | null, hint: null as string | null });
 export function openQuickAdd(project: string | null = quickAdd.hint, parent: string | null = null) {

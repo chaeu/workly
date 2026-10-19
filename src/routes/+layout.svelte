@@ -14,7 +14,7 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import QuickAdd from "$lib/components/QuickAdd.svelte";
   import Shortcuts from "$lib/components/Shortcuts.svelte";
-  import { agentInbox, isTyping, openQuickAdd, quickAdd, startClock } from "$lib/tasks.svelte";
+  import { agentInbox, isTyping, openQuickAdd, quickAdd, shortcuts, startClock } from "$lib/tasks.svelte";
   import {
     workspace,
     startWorkspace,
@@ -84,8 +84,6 @@
     const when = b.at ? ago(b.at, now) : "";
     return b.state === "local" ? `Backed up locally ${when}` : `Backed up ${when}`;
   });
-  let showKeys = $state(false);
-
   // Start time on stderr once the first screen with data is painted.
   let reported = false;
   $effect(() => {
@@ -109,7 +107,13 @@
   function onkeydown(e: KeyboardEvent) {
     if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey && !isTyping(e)) {
       e.preventDefault();
-      showKeys = true;
+      shortcuts.open = true;
+      return;
+    }
+    // ⌘? (⇧⌘/ on a US layout): help.
+    if (e.metaKey && !e.ctrlKey && !e.altKey && (e.key === "?" || (e.shiftKey && e.code === "Slash"))) {
+      e.preventDefault();
+      goto("/help");
       return;
     }
     if (!e.metaKey || e.shiftKey || e.altKey || e.ctrlKey) return;
@@ -189,6 +193,7 @@
           <a class="w-nav-item" href="/trash" aria-current={page.url.pathname === "/trash" ? "page" : undefined}>Trash</a>
         {/if}
         <a class="w-nav-item" href="/settings" aria-current={page.url.pathname === "/settings" ? "page" : undefined}>Settings</a>
+        <a class="w-nav-item" href="/help" aria-current={page.url.pathname === "/help" ? "page" : undefined}>Help</a>
       </div>
       {#if workspace.index}
         {#if workspace.backup?.state === "failed"}
@@ -210,7 +215,7 @@
     {/if}
     {#if !workspace.ready}
       <!-- first load, avoids flashing the onboarding -->
-    {:else if workspace.index || page.url.pathname === "/settings"}
+    {:else if workspace.index || page.url.pathname === "/settings" || page.url.pathname === "/help"}
       <!-- A rendering error shows here instead of a blank window. -->
       <svelte:boundary onerror={(e) => console.error(e)}>
         {@render children()}
@@ -260,8 +265,8 @@
 {#if quickAdd.open}
   <QuickAdd project={quickAdd.project} parent={quickAdd.parent} onclose={() => (quickAdd.open = false)} />
 {/if}
-{#if showKeys}
-  <Shortcuts views={views.map((v) => v.label)} onclose={() => (showKeys = false)} />
+{#if shortcuts.open}
+  <Shortcuts views={views.map((v) => v.label)} onclose={() => (shortcuts.open = false)} />
 {/if}
 
 <style>

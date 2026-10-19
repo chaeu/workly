@@ -1,4 +1,4 @@
-# Workly
+## What Workly is
 
 Workly keeps your projects, tasks and use cases in plain Markdown files in one folder, your **workspace**. The files are the truth: Workly has no database and no server, and nothing leaves your Mac.
 
@@ -72,4 +72,6 @@ Files and task cards have buttons to open the file in other apps, by default Obs
 
 ## Keyboard shortcuts
 
-⌘N new task, ⌘K search, ⌘1, ⌘2, … switch views, ⌘, Settings, ⌘? this page. [See all shortcuts](#shortcuts), or press ? anywhere.
+⌘N new task · ⌘K search · ⌘1, ⌘2 … switch views · ⌘, Settings · ⌘? this page.
+
+[See all shortcuts](#shortcuts), or press ? anywhere.
