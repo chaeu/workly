@@ -203,7 +203,7 @@
         {@render tree(n.children, depth + 1)}
       {/if}
     {:else}
-      <button class="file" style:--depth={depth} aria-current={current === n.path ? "true" : undefined} title={n.path} onclick={() => select(n.path)}
+      <button class="file leaf" style:--depth={depth} aria-current={current === n.path ? "true" : undefined} title={n.path} onclick={() => select(n.path)}
         >{n.name}</button
       >
     {/if}
@@ -354,6 +354,10 @@
     flex: 1;
     min-width: 0;
   }
+  /* Files line up with the folder names, past the caret. */
+  .leaf {
+    padding-left: calc(20px + var(--depth, 0) * 14px);
+  }
   .folder {
     color: var(--w-muted);
     font-weight: 500;
@@ -372,7 +376,7 @@
     display: flex;
   }
   .add-row {
-    padding: 2px 4px 2px calc(8px + var(--depth, 0) * 14px);
+    padding: 2px 4px 2px calc(20px + var(--depth, 0) * 14px);
   }
   .name {
     width: 100%;
