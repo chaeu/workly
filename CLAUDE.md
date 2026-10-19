@@ -61,6 +61,7 @@ pnpm install
 pnpm tauri dev                          # run the app on the active workspace from device settings ($WORKLY_WORKSPACE overrides, not saved)
 pnpm dev:fixture                        # run the app on a fresh copy of the fixture in /tmp/workly-dev; ⌘0 = debug view
 pnpm check                              # svelte-kit sync + svelte-check
+pnpm test:editor                        # editor round trip (plain node): load + save without edits = same bytes
 cargo test --workspace                  # core + cli tests
 cargo clippy --workspace -- -D warnings
 cargo run -p wly -- --version
