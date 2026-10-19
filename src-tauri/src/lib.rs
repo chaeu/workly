@@ -397,13 +397,29 @@ fn open_in_vscode(state: State<AppState>, path: String, line: Option<u32>) -> Re
     let abs = with_ws(&state, |ws| ws.resolve(&path))?;
     match line {
         None => open(&["-b", VSCODE, &abs.to_string_lossy()]),
-        Some(line) => {
-            let enc: String = (abs.to_string_lossy().bytes())
-                .map(|b| if b.is_ascii_alphanumeric() || b"-._~/".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
-                .collect();
-            open(&[&format!("vscode://file{enc}:{line}")])
-        }
+        Some(line) => open(&[&format!("vscode://file{}:{line}", percent(&abs.to_string_lossy(), b"-._~/"))]),
     }
+}
+
+/// Percent-encode everything but ASCII alphanumerics and `keep`.
+fn percent(s: &str, keep: &[u8]) -> String {
+    s.bytes().map(|b| if b.is_ascii_alphanumeric() || keep.contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
+}
+
+/// Workspace-relative path in one of the apps from the `open_with` device setting.
+/// Obsidian through obsidian:// so the file opens inside its vault.
+#[tauri::command]
+fn open_with(state: State<AppState>, app: String, path: String) -> Result<(), String> {
+    let apps = Settings::load(&settings::default_path()).map_err(|e| e.to_string())?.open_with;
+    if !apps.contains(&app) {
+        return Err(format!("{app} is not in Open files with"));
+    }
+    let abs = with_ws(&state, |ws| ws.resolve(&path))?;
+    let abs = abs.to_string_lossy();
+    if app == "Obsidian" {
+        return open(&[&format!("obsidian://open?path={}", percent(&abs, b"-._~"))]);
+    }
+    open(&["-a", &app, &abs]).map_err(|e| if e.contains("Unable to find application") { format!("{app} is not installed") } else { e })
 }
 
 /// The project's `<key>.code-workspace` in VS Code, rewritten first: its
@@ -778,6 +794,7 @@ pub fn run() {
             install_cli,
             open_url,
             open_in_vscode,
+            open_with,
             open_project_in_vscode,
             open_repo,
             copy_text,
