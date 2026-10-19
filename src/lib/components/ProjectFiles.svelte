@@ -1,9 +1,17 @@
 <script lang="ts">
+  import { ask } from "@tauri-apps/plugin-dialog";
+  import { SvelteSet } from "svelte/reactivity";
+  import MarkdownEditor from "./MarkdownEditor.svelte";
   import { renderMarkdown, resolveLink } from "$lib/markdown";
   import {
     workspace,
     projectFiles,
     readMarkdown,
+    createFile,
+    createFolder,
+    deletePath,
+    projectTemplate,
+    type FileNode,
     openWith,
     openWithApps,
     appLabel,
@@ -20,12 +28,19 @@
   /** `selected` lives in the page, so switching tabs keeps the open file. */
   let { project, selected = $bindable(null) }: { project: ProjectEntry; selected?: string | null } = $props();
 
-  // agent/ has its own section below, behind the agent switch.
-  const DOC_DIRS = ["docs", "notes", "decisions"];
-
   const overview = $derived(`${project.path}/_project.md`);
 
-  let files = $state<string[]>([]);
+  // Everything in the project except tasks/ and agent/ (own section below, behind the agent switch).
+  let files = $state<FileNode[]>([]);
+  const flat = $derived(flatten(files));
+  /** Folders the user collapsed; all others are open. */
+  const closed = new SvelteSet<string>();
+  let editing = $state(false);
+  let dirty = $state(false);
+  /** Inline name input for a new file or folder in `dir`. */
+  let adding = $state<{ dir: string; kind: "file" | "folder" } | null>(null);
+  let addName = $state("");
+  let addError = $state<string | null>(null);
   let agent = $state<AgentContext | null>(null);
   let html = $state("");
   let previewError = $state<string | null>(null);
@@ -35,6 +50,68 @@
     selected?.startsWith(project.path + "/") && (agentsEnabled() || !selected.startsWith(project.path + "/agent/")) ? selected : overview,
   );
   const isMarkdown = $derived(current.endsWith(".md"));
+  // agent/ files stay read-only here; _project.md is edited (body only) but deleted with the project.
+  const isAgent = $derived(current.startsWith(project.path + "/agent/"));
+  const canEdit = $derived(isMarkdown && !isAgent);
+  const canDelete = $derived(current !== overview && !isAgent);
+
+  function flatten(nodes: FileNode[]): string[] {
+    return nodes.flatMap((n) => (n.children ? flatten(n.children) : [n.path]));
+  }
+
+  /** Switch the open file; asks first when the editor has unsaved changes. */
+  async function select(path: string) {
+    if (path === current) return;
+    if (editing && dirty && !(await ask("Discard your changes to this file?", { title: "Unsaved changes", kind: "warning", okLabel: "Discard" }))) return;
+    editing = false;
+    dirty = false;
+    selected = path;
+  }
+
+  function startAdd(dir: string, kind: "file" | "folder") {
+    closed.delete(dir);
+    adding = { dir, kind };
+    addName = "";
+    addError = null;
+  }
+
+  async function add() {
+    if (!adding || !addName.trim()) return;
+    const { dir, kind } = adding;
+    try {
+      const path = kind === "file" ? await createFile(project.key, dir, addName) : await createFolder(project.key, dir, addName);
+      adding = null;
+      if (kind === "file") {
+        await select(path);
+        editing = true;
+      }
+    } catch (e) {
+      addError = String(e);
+    }
+  }
+
+  function onAddKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      add();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      adding = null;
+    }
+  }
+
+  async function remove(path: string, node?: FileNode) {
+    const name = path.split("/").pop();
+    const n = node?.children ? flatten(node.children).length : 0;
+    const what = node?.children ? `the folder “${name}” with ${n} ${n === 1 ? "file" : "files"}` : `“${name}”`;
+    const ok = await ask(`Move ${what} to the trash? You can restore it from Trash.`, { title: "Delete", kind: "warning", okLabel: "Move to trash" });
+    if (!ok) return;
+    await deletePath(path);
+    if (current === path || current.startsWith(path + "/")) {
+      editing = false;
+      selected = overview;
+    }
+  }
 
   // Reload tree and preview on every index change, so edits in Obsidian show up live.
   $effect(() => {
@@ -76,8 +153,6 @@
     );
   });
 
-  const group = (dir: string) => files.filter((f) => f.startsWith(`${project.path}/${dir}/`));
-  const inGroup = (dir: string, f: string) => f.slice(`${project.path}/${dir}/`.length);
   const shortPath = (f: string) => f.slice(project.path.length + 1);
 
   // Links in the preview must never navigate the app window.
@@ -89,31 +164,73 @@
     if (/^(https?|mailto):/i.test(href)) openUrl(href);
     else if (href && !href.includes(":") && !href.startsWith("#")) {
       const target = resolveLink(current, href);
-      if (target === overview || files.includes(target)) selected = target;
+      if (target === overview || flat.includes(target)) select(target);
     }
   }
 </script>
 
+{#snippet addRow(depth: number)}
+  <div class="add-row" style:--depth={depth}>
+    <input
+      class="name"
+      aria-label={adding?.kind === "file" ? "New file name" : "New folder name"}
+      placeholder={adding?.kind === "file" ? "File name" : "Folder name"}
+      bind:value={addName}
+      onkeydown={onAddKey}
+      onblur={() => !addName.trim() && (adding = null)}
+      {@attach (el) => el.focus()}
+    />
+    {#if addError}<div class="add-error" role="alert">{addError}</div>{/if}
+  </div>
+{/snippet}
+
+{#snippet tree(nodes: FileNode[], depth: number)}
+  {#each nodes as n (n.path)}
+    {#if n.children}
+      {@const open = !closed.has(n.path)}
+      <div class="folder-row" style:--depth={depth}>
+        <button class="file folder" aria-expanded={open} title={n.path} onclick={() => (open ? closed.add(n.path) : closed.delete(n.path))}
+          ><span class="caret" aria-hidden="true">{open ? "▾" : "▸"}</span>{n.name}</button
+        >
+        <span class="acts">
+          <button type="button" class="act" title="New file in {n.name}" onclick={() => startAdd(n.path, "file")}>+ File</button>
+          <button type="button" class="act" title="New folder in {n.name}" onclick={() => startAdd(n.path, "folder")}>+ Folder</button>
+          <button type="button" class="act" title="Delete {n.name}" onclick={() => remove(n.path, n)}>Delete</button>
+        </span>
+      </div>
+      {#if open}
+        {#if adding?.dir === n.path}{@render addRow(depth + 1)}{/if}
+        {@render tree(n.children, depth + 1)}
+      {/if}
+    {:else}
+      <button class="file" style:--depth={depth} aria-current={current === n.path ? "true" : undefined} title={n.path} onclick={() => select(n.path)}
+        >{n.name}</button
+      >
+    {/if}
+  {/each}
+{/snippet}
+
 <div class="layout">
   <nav class="w-tray side" aria-label="Project files">
-    <button class="file" aria-current={current === overview ? "true" : undefined} onclick={() => (selected = overview)}>Overview</button>
-    {#each DOC_DIRS as dir (dir)}
-      <div class="w-caps group">{dir}</div>
-      {#each group(dir) as f (f)}
-        <button class="file" aria-current={current === f ? "true" : undefined} title={f} onclick={() => (selected = f)}>{inGroup(dir, f)}</button>
-      {/each}
-    {/each}
+    <button class="file" aria-current={current === overview ? "true" : undefined} onclick={() => select(overview)}>Overview</button>
+    <div class="w-caps group head">
+      <span>Files</span>
+      <button type="button" class="act" onclick={() => startAdd(project.path, "file")}>New file</button>
+      <button type="button" class="act" onclick={() => startAdd(project.path, "folder")}>New folder</button>
+    </div>
+    {#if adding?.dir === project.path}{@render addRow(0)}{/if}
+    {@render tree(files, 0)}
 
     {#if agentsEnabled() && agent}
       <div class="w-caps group">Agent</div>
       {#if agent.project}
         {@const md = agent.project.path}
-        <button class="file" aria-current={current === md ? "true" : undefined} title={md} onclick={() => (selected = md)}>AGENTS.md</button>
+        <button class="file" aria-current={current === md ? "true" : undefined} title={md} onclick={() => select(md)}>AGENTS.md</button>
       {:else}
         <button class="file add" onclick={createAgents}>Create AGENTS.md</button>
       {/if}
       {#each agent.skills as s (s.path)}
-        <button class="file skill" aria-current={current === s.path ? "true" : undefined} title={s.path} onclick={() => (selected = s.path)}
+        <button class="file skill" aria-current={current === s.path ? "true" : undefined} title={s.path} onclick={() => select(s.path)}
           >{s.name}{#if s.description}<span class="desc">{s.description}</span>{/if}</button
         >
       {/each}
@@ -140,12 +257,20 @@
   <section class="preview">
     <div class="preview-head">
       <span class="w-mono path">{shortPath(current)}</span>
+      {#if !editing}
+        {#if canEdit}<button class="w-btn w-btn--quiet" onclick={() => (editing = true)}>Edit</button>{/if}
+        {#if canDelete}<button class="w-btn w-btn--quiet" onclick={() => remove(current)}>Delete</button>{/if}
+      {/if}
       {#each openWithApps() as app (app)}
         <button class="w-btn w-btn--quiet" onclick={() => openWith(app, current)}>{appLabel(app)}</button>
       {/each}
       <button class="w-btn w-btn--quiet" onclick={() => reveal(current)}>Finder</button>
     </div>
-    {#if previewError}
+    {#if editing && canEdit}
+      {#key current}
+        <MarkdownEditor path={current} bind:dirty onclose={() => (editing = false)} template={current === overview ? projectTemplate : undefined} />
+      {/key}
+    {:else if previewError}
       <p class="w-sub">{previewError}</p>
     {:else if isMarkdown}
       <!-- Sanitised by DOMPurify in renderMarkdown. -->
@@ -193,6 +318,79 @@
   .missing {
     cursor: default;
     color: var(--w-muted);
+  }
+  .file {
+    padding-left: calc(8px + var(--depth, 0) * 14px);
+  }
+  .head {
+    display: flex;
+    align-items: center;
+    gap: var(--w-s-1);
+  }
+  .head span {
+    flex: 1;
+  }
+  .act {
+    border: 0;
+    background: none;
+    padding: 2px 4px;
+    border-radius: var(--w-r-sm);
+    color: var(--w-muted);
+    font: 500 var(--w-fs-micro) var(--w-font-label);
+    text-transform: none;
+    letter-spacing: 0;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .act:hover {
+    background: var(--w-surface);
+    color: var(--w-ink);
+  }
+  .folder-row {
+    display: flex;
+    align-items: center;
+  }
+  .folder-row .file {
+    flex: 1;
+    min-width: 0;
+  }
+  .folder {
+    color: var(--w-muted);
+    font-weight: 500;
+  }
+  .caret {
+    display: inline-block;
+    width: 12px;
+    font-size: var(--w-fs-micro);
+  }
+  /* Folder actions show on hover or keyboard focus. */
+  .folder-row .acts {
+    display: none;
+  }
+  .folder-row:hover .acts,
+  .folder-row:focus-within .acts {
+    display: flex;
+  }
+  .add-row {
+    padding: 2px 4px 2px calc(8px + var(--depth, 0) * 14px);
+  }
+  .name {
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid var(--w-line);
+    border-radius: var(--w-r-sm);
+    background: var(--w-surface);
+    color: var(--w-ink);
+    font: var(--w-fs-small) var(--w-font-sans);
+  }
+  .name:focus {
+    outline: none;
+    border-color: var(--w-accent);
+  }
+  .add-error {
+    padding-top: 2px;
+    color: var(--w-danger);
+    font-size: var(--w-fs-micro);
   }
   .file:hover {
     background: color-mix(in srgb, var(--w-surface) 55%, transparent);

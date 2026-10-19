@@ -32,7 +32,7 @@
     <p class="w-sub">
       {items.length
         ? `${items.length} ${items.length === 1 ? "item" : "items"} in .workly/trash/. Restore puts each back where it was.`
-        : "Empty. Deleted tasks and projects wait here until you restore them or empty the trash."}
+        : "Empty. Deleted tasks, projects, files and folders wait here until you restore them or empty the trash."}
     </p>
   </div>
   {#if items.length}
@@ -48,7 +48,7 @@
       <div class="row">
         <span class="w-mono id">{it.id}</span>
         <div class="text">
-          <span class="title">{it.title}{#if it.kind === "project"}<span class="w-type">Project</span>{/if}</span>
+          <span class="title">{it.title}{#if it.kind === "project"}<span class="w-type">Project</span>{:else if it.kind === "folder"}<span class="w-type">Folder</span>{/if}</span>
           <span class="w-mono where" title={it.path}>{it.kind === "project" ? it.path : folder(it.path)}</span>
         </div>
         <span class="w-mono when">{deleted(it.deleted_at)}</span>
