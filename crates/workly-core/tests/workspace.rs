@@ -411,7 +411,8 @@ fn project_files_and_preview() {
     assert!(ws.project_files("ST").unwrap().is_empty());
     let body = ws.read_markdown("projects/website-relaunch/_project.md").unwrap();
     assert!(body.starts_with("Relaunch of the portfolio site"), "{body}");
-    assert!(matches!(ws.read_markdown("../outside.md"), Err(Error::NotFound(_))));
+    assert!(matches!(ws.read_markdown("../outside.md"), Err(Error::Invalid(_))));
+    assert!(matches!(ws.read_markdown("/etc/hosts"), Err(Error::Invalid(_))));
     fs::write(root.parent().unwrap().join("outside.md"), "x").unwrap();
     assert!(matches!(ws.read_markdown("../outside.md"), Err(Error::Invalid(_))));
     assert!(matches!(ws.read_markdown("projects/../../outside.md"), Err(Error::Invalid(_))));

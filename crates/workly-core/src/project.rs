@@ -488,8 +488,12 @@ impl Workspace {
         Ok(files)
     }
 
-    /// Absolute path for a workspace-relative path; refuses anything outside the workspace.
+    /// Absolute path for a workspace-relative path; refuses `..`, absolute
+    /// paths and anything (also through a symlink) outside the workspace.
     pub fn resolve(&self, rel_path: &str) -> Result<PathBuf> {
+        if !Path::new(rel_path).components().all(|c| matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir)) {
+            return Err(Error::Invalid(format!("{rel_path} must be a plain path inside the workspace")));
+        }
         let path = self.root.join(rel_path);
         let real = path.canonicalize().map_err(|e| Error::NotFound(format!("{rel_path}: {e}")))?;
         if !real.starts_with(&self.root) {
