@@ -1539,18 +1539,29 @@ fn description_write_in_sections() {
 }
 
 #[test]
-fn add_criterion_and_sections() {
+fn first_criterion_adds_sections() {
     let (_tmp, root) = fixture();
     let mut ws = Workspace::open(&root).unwrap();
+    // Old layout: the text becomes the description, the criterion goes under ## Acceptance, one write.
     let wr5 = "projects/website-relaunch/tasks/WR-5-navigation.md";
     let before = fs::read_to_string(root.join(wr5)).unwrap();
-    ws.add_sections("WR-5", "app").unwrap();
-    let body = "## Description\nBurger menu below 720 px, keyboard accessible.\n\n## Acceptance\n";
-    assert_eq!(fs::read_to_string(root.join(wr5)).unwrap(), before.replace("Burger menu below 720 px, keyboard accessible.\n", body));
+    let logs = log_lines(&root).len();
     ws.add_acceptance("WR-5", "  Works   with keyboard ", "app").unwrap();
-    assert!(fs::read_to_string(root.join(wr5)).unwrap().ends_with("## Acceptance\n- [ ] Works with keyboard\n"));
+    let body = "## Description\nBurger menu below 720 px, keyboard accessible.\n\n## Acceptance\n- [ ] Works with keyboard\n";
+    assert_eq!(fs::read_to_string(root.join(wr5)).unwrap(), before.replace("Burger menu below 720 px, keyboard accessible.\n", body));
+    assert_eq!(log_lines(&root).len(), logs + 1);
     assert_eq!(ws.index.task("WR-5").unwrap().acceptance, [item("Works with keyboard", false)]);
+    // With sections in place only the criterion is appended.
+    ws.add_acceptance("WR-5", "Second", "app").unwrap();
+    assert!(fs::read_to_string(root.join(wr5)).unwrap().ends_with("## Acceptance\n- [ ] Works with keyboard\n- [ ] Second\n"));
     assert!(matches!(ws.add_acceptance("WR-5", " ", "app"), Err(Error::Invalid(_))));
+    // WR-8: frontmatter byte-identical, body without final newline keeps its text under ## Description.
+    let before = fs::read_to_string(root.join(WR8)).unwrap();
+    let (fm, body) = before.split_at(before.find("---\nBody").unwrap() + 4);
+    ws.add_acceptance("WR-8", "Legacy URLs redirect", "app").unwrap();
+    let after = fs::read_to_string(root.join(WR8)).unwrap();
+    assert_eq!(after, format!("{fm}## Description\n{body}\n\n## Acceptance\n- [ ] Legacy URLs redirect\n"));
+    assert_eq!(ws.index.task("WR-8").unwrap().acceptance, [item("Legacy URLs redirect", false)]);
 }
 
 #[test]

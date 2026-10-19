@@ -394,15 +394,12 @@ impl Workspace {
         })
     }
 
-    /// Append one open criterion `- [ ] <text>` to the Acceptance section (created when missing).
+    /// Append one open criterion `- [ ] <text>` to the Acceptance section. An
+    /// old-layout body gets `## Description` / `## Acceptance` first, in the same write.
     pub fn add_acceptance(&mut self, id: &str, text: &str, actor: &str) -> Result<()> {
+        use crate::frontmatter::{add_sections, append_acceptance};
         let text = one_line(text, "a criterion needs text")?;
-        self.patch_body(id, "acceptance", actor, |body| Ok((crate::frontmatter::append_acceptance(body, &text), Value::Null, text.clone().into())))
-    }
-
-    /// Old layout -> `## Description` on top, empty `## Acceptance` above `## Updates`.
-    pub fn add_sections(&mut self, id: &str, actor: &str) -> Result<()> {
-        self.patch_body(id, "sections", actor, |body| Ok((crate::frontmatter::add_sections(body), Value::Null, "## Description, ## Acceptance".into())))
+        self.patch_body(id, "acceptance", actor, |body| Ok((append_acceptance(&add_sections(body), &text), Value::Null, text.clone().into())))
     }
 
     /// Rewrite a task's body with `f` -> (body, log from, log to); the

@@ -269,7 +269,6 @@ export const createTask = (task: NewTask) => run<string>("create_task", { task }
 /** `shown` is the item as displayed; core refuses the toggle when the file has something else there. */
 export const toggleAcceptance = (id: string, n: number, shown: AcceptanceItem) => run("toggle_acceptance", { id, n, shown });
 export const addAcceptance = (id: string, text: string) => run("add_acceptance", { id, text });
-export const addSections = (id: string) => run("add_sections", { id });
 export const reorderTasks = (ids: string[]) => run("reorder_tasks", { ids });
 /** Inserts the Waiting line into .workly/config.yml; throws when the list has a shape it cannot edit. */
 export const addWaitingStatus = () => invoke("add_waiting_status");

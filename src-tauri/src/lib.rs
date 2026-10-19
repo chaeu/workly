@@ -161,11 +161,6 @@ fn add_acceptance(app: AppHandle, state: State<AppState>, id: String, text: Stri
 }
 
 #[tauri::command]
-fn add_sections(app: AppHandle, state: State<AppState>, id: String) -> Result<(), String> {
-    changed(&app, with_ws(&state, |ws| ws.add_sections(&id, ACTOR)))
-}
-
-#[tauri::command]
 fn move_task(app: AppHandle, state: State<AppState>, id: String, project: Option<String>) -> Result<(), String> {
     changed(&app, with_ws(&state, |ws| ws.move_task(&id, project.as_deref(), ACTOR)))
 }
@@ -748,7 +743,6 @@ pub fn run() {
             set_description,
             toggle_acceptance,
             add_acceptance,
-            add_sections,
             move_task,
             delete_task,
             restore,

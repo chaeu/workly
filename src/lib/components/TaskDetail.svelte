@@ -32,7 +32,6 @@
     openProjectInVscode,
     toggleAcceptance,
     addAcceptance,
-    addSections,
     type AcceptanceItem,
     type RunEntry,
     type FileChange,
@@ -48,7 +47,6 @@
     bodyView,
     confirmDeleteTask,
     descriptionOf,
-    hasSections,
     openQuickAdd,
     projectOf,
     runnerOf,
@@ -434,34 +432,24 @@
           <button type="button" class="t-desc-add" onclick={editDesc}>Add description</button>
         {/if}
 
-        {#if t.acceptance.length || hasSections(body)}
-          <div class="t-group">
-            <span class="w-caps">Acceptance{t.acceptance.length ? ` · ${checked}/${t.acceptance.length}` : ""}</span>
-            <ul class="t-acc">
-              {#each t.acceptance as a, n (n)}
-                <li class:done={a.done}>
-                  <input type="checkbox" id="acc-{n}" checked={a.done} onchange={(e) => toggle(e, n, a)} />
-                  <label for="acc-{n}">{a.text}</label>
-                </li>
-              {/each}
-            </ul>
-            <input
-              class="t-acc-add"
-              bind:value={criterion}
-              placeholder="+ Add criterion"
-              aria-label="Add acceptance criterion"
-              onkeydown={(e) => e.key === "Enter" && addCriterion()}
-            />
-          </div>
-        {/if}
-        {#if !hasSections(body)}
-          <button
-            type="button"
-            class="t-desc-add"
-            use:tip={"Puts ## Description above the text and an empty ## Acceptance above ## Updates"}
-            onclick={() => addSections(id)}>Add sections</button
-          >
-        {/if}
+        <div class="t-group">
+          <span class="w-caps">Acceptance{t.acceptance.length ? ` · ${checked}/${t.acceptance.length}` : ""}</span>
+          <ul class="t-acc">
+            {#each t.acceptance as a, n (n)}
+              <li class:done={a.done}>
+                <input type="checkbox" id="acc-{n}" checked={a.done} onchange={(e) => toggle(e, n, a)} />
+                <label for="acc-{n}">{a.text}</label>
+              </li>
+            {/each}
+          </ul>
+          <input
+            class="t-acc-add"
+            bind:value={criterion}
+            placeholder="+ Add criterion"
+            aria-label="Add acceptance criterion"
+            onkeydown={(e) => e.key === "Enter" && addCriterion()}
+          />
+        </div>
       </div>
 
       <div class="t-side">

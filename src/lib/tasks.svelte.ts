@@ -247,12 +247,6 @@ export function bodyView(body: string) {
     .join("\n");
 }
 
-/** Whether the body has the B3 layout; "Add sections" is offered otherwise. */
-export const hasSections = (body: string) => {
-  const lines = body.split(/\r?\n/);
-  return lines.some(isDescription) && lines.some(isAcceptance);
-};
-
 /** A task just moved to waiting: its detail card focuses "Waiting for" once. */
 export const waitingFocus = $state({ id: null as string | null });
 
